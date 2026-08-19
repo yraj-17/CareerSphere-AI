@@ -10,6 +10,20 @@
 
   body {
     @apply bg-slate-950 text-slate-100 font-sans antialiased min-h-screen selection:bg-indigo-500/30 selection:text-indigo-200;
+    scroll-behavior: smooth;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  .display-font {
+    @apply font-semibold;
+  }
+
+  a,
+  button {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -43,4 +57,8 @@
 /* Focus ring styles */
 .input-focus-ring {
   @apply focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-200;
+}
+
+.glass-panel {
+  @apply border border-white/10 bg-white/[0.05] backdrop-blur-xl;
 }
