@@ -1,4 +1,5 @@
 import SignupForm from '@/components/auth/SignupForm';
+import BackgroundFX from '@/components/landing/BackgroundFX';
 
 export const metadata = {
   title: 'Sign Up — CareerSphere AI',
@@ -7,8 +8,10 @@ export const metadata = {
 
 export default function SignupPage() {
   return (
-    <div className="flex-1 flex items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+    <div className="relative min-h-[calc(100vh-5rem)] flex-1 flex items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+      <BackgroundFX />
       <SignupForm />
     </div>
   );
 }
+

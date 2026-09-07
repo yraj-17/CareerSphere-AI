@@ -82,6 +82,34 @@ export const checkUsername = async (username) => {
 };
 
 /**
+ * Check if email is available and valid
+ */
+export const checkEmail = async (email) => {
+  const response = await apiClient.get('/api/auth/check-email', {
+    params: { email },
+  });
+  return response.data;
+};
+
+/**
+ * Send a 6-digit OTP to the given email address
+ */
+export const sendOtp = async (email) => {
+  const response = await apiClient.post('/api/auth/send-otp', { email });
+  return response.data;
+};
+
+/**
+ * Verify the OTP for the given email address
+ * Returns { verification_token } on success
+ */
+export const verifyOtp = async (email, otp) => {
+  const response = await apiClient.post('/api/auth/verify-otp', { email, otp });
+  return response.data;
+};
+
+
+/**
  * Register a new user
  */
 export const registerUser = async (userData) => {

@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000"]
 
+    # Email / SMTP (Gmail)
+    EMAIL_HOST: str = "smtp.gmail.com"
+    EMAIL_PORT: int = 587
+    EMAIL_HOST_USER: str = ""
+    EMAIL_HOST_PASSWORD: str = ""
+
+    # OTP settings
+    OTP_EXPIRE_MINUTES: int = 10
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
@@ -34,7 +43,8 @@ class Settings(BaseSettings):
         return ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Load both the backend-local .env and the root .env (later files win on conflicts)
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="allow",

@@ -4,24 +4,23 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { Sparkles, LogOut, User as UserIcon, LayoutDashboard } from 'lucide-react';
+import { LogOut, LayoutDashboard } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <header className="sticky top-0 z-50 w-full px-4 py-3 md:px-8">
+      <div className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/10 bg-slate-950/70 px-5 py-3 shadow-glow backdrop-blur-xl transition-all duration-300">
         {/* Brand Logo */}
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform duration-200">
-            <Sparkles className="h-5 w-5 text-white" />
+        <Link href="/" className="flex items-center gap-3 group">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 text-sm font-bold text-accent shadow-[0_0_25px_rgba(255,143,50,0.25)] transition-transform duration-200 group-hover:scale-105">
+            CS
           </div>
-          <div className="flex flex-col">
-            <span className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
-              CareerSphere <span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">AI</span>
-            </span>
+          <div>
+            <div className="text-sm font-semibold tracking-wide text-white">CareerSphere AI</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-slate-400">AI Career Ecosystem</div>
           </div>
         </Link>
 
@@ -31,23 +30,23 @@ export default function Navbar() {
             <div className="flex items-center gap-3">
               <Link
                 href="/dashboard"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${
                   pathname === '/dashboard'
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                    ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
+                    : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
                 }`}
               >
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Dashboard</span>
               </Link>
 
-              <div className="h-4 w-px bg-slate-800 hidden sm:block" />
+              <div className="hidden h-4 w-px bg-white/10 sm:block" />
 
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800">
-                <div className="h-6 w-6 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-xs font-semibold text-indigo-300 uppercase">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                <div className="flex h-6 w-6 uppercase items-center justify-center rounded-full bg-accent/20 border border-accent/40 text-xs font-bold text-accent">
                   {user.first_name?.[0] || user.username?.[0] || 'U'}
                 </div>
-                <span className="text-xs font-medium text-slate-300 hidden md:inline">
+                <span className="hidden text-xs font-medium text-slate-200 md:inline">
                   {user.first_name} {user.last_name}
                 </span>
               </div>
@@ -56,9 +55,9 @@ export default function Navbar() {
                 type="button"
                 onClick={logout}
                 title="Log out"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all"
+                className="flex items-center gap-1.5 rounded-full border border-white/10 px-3.5 py-1.5 text-xs text-slate-300 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300 transition-all"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
@@ -66,17 +65,21 @@ export default function Navbar() {
             <div className="flex items-center gap-2 sm:gap-3">
               <Link
                 href="/login"
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
                   pathname === '/login'
-                    ? 'text-white bg-slate-900 border border-slate-700'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-900/60'
+                    ? 'border border-accent/40 bg-accent/10 text-accent shadow-[0_0_15px_rgba(255,143,50,0.2)]'
+                    : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
                 }`}
               >
                 Login
               </Link>
               <Link
                 href="/signup"
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 shadow-md shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all"
+                className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
+                  pathname === '/signup'
+                    ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
+                    : 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)] hover:-translate-y-0.5 hover:bg-accentSoft'
+                }`}
               >
                 Create Account
               </Link>
@@ -87,3 +90,4 @@ export default function Navbar() {
     </header>
   );
 }
+

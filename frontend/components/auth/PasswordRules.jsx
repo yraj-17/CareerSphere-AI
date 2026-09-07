@@ -28,7 +28,7 @@ export default function PasswordRules({ password = '' }) {
   ];
 
   return (
-    <div className="rounded-lg bg-slate-900/60 border border-slate-800/80 p-3 space-y-2 text-xs">
+    <div className="rounded-xl bg-slate-950/60 border border-white/10 p-3.5 space-y-2 text-xs backdrop-blur-md">
       <p className="font-medium text-slate-400">Password must contain:</p>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label="Password requirements">
         {rules.map((rule) => (
@@ -50,3 +50,4 @@ export default function PasswordRules({ password = '' }) {
     </div>
   );
 }
+

@@ -4,12 +4,31 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
+class OtpSendRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email address to send OTP to")
+
+
+class OtpSendResponse(BaseModel):
+    message: str
+
+
+class OtpVerifyRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email address the OTP was sent to")
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP code")
+
+
+class OtpVerifyResponse(BaseModel):
+    message: str
+    verification_token: str
+
+
 class UserRegisterRequest(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100, description="User first name")
     last_name: str = Field(..., min_length=1, max_length=100, description="User last name")
     username: str = Field(..., min_length=3, max_length=30, description="Unique username")
     email: EmailStr = Field(..., description="Unique email address")
     password: str = Field(..., min_length=8, description="User password")
+    email_verification_token: str = Field(..., description="Token received after OTP verification")
 
     @field_validator("first_name", "last_name", mode="before")
     @classmethod
@@ -83,7 +102,14 @@ class UsernameCheckResponse(BaseModel):
     message: str
 
 
+class EmailCheckResponse(BaseModel):
+    email: str
+    available: bool
+    message: str
+
+
 class HealthResponse(BaseModel):
     status: str
     message: str
     service: str = "CareerSphere AI Backend"
+
