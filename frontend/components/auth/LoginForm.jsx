@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import PasswordInput from './PasswordInput';
 import { User, ArrowRight, AlertCircle, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 
-export default function LoginForm({ searchParams = {} }) {
+export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -20,7 +21,7 @@ export default function LoginForm({ searchParams = {} }) {
   const [generalError, setGeneralError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [successNotice, setSuccessNotice] = useState(
-    searchParams?.registered ? 'Account created successfully. Please login to continue.' : ''
+    searchParams?.get('registered') ? 'Account created successfully. Please login to continue.' : ''
   );
 
   const validateForm = () => {
@@ -103,7 +104,7 @@ export default function LoginForm({ searchParams = {} }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-5">
+        <form onSubmit={handleSubmit} method="post" noValidate className="space-y-5">
           {/* Username or Email Input */}
           <div className="space-y-1.5">
             <label htmlFor="identifier" className="block text-sm font-medium text-slate-200">
@@ -125,11 +126,10 @@ export default function LoginForm({ searchParams = {} }) {
                 autoComplete="username"
                 aria-invalid={fieldErrors.identifier ? 'true' : 'false'}
                 aria-describedby={fieldErrors.identifier ? 'identifier-error' : undefined}
-                className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-                  fieldErrors.identifier
+                className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${fieldErrors.identifier
                     ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                     : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
             </div>
             {fieldErrors.identifier && (

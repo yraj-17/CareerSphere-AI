@@ -7,15 +7,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     PROJECT_NAME: str = "CareerSphere AI"
     API_V1_STR: str = "/api"
-    
-    # Database
-    DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/careersphere_db"
-    
+
+    # PostgreSQL (primary database)
+    DATABASE_URL: str
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     # JWT Security
-    SECRET_KEY: str = "careersphere_super_secret_jwt_key_change_in_production_98374298734982374"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
-    
+
     # CORS
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000"]
 
@@ -43,7 +46,6 @@ class Settings(BaseSettings):
         return ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(
-        # Load both the backend-local .env and the root .env (later files win on conflicts)
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=True,

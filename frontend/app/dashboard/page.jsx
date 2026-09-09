@@ -41,10 +41,10 @@ export default function DashboardPage() {
 
   const formattedDate = user.created_at
     ? new Date(user.created_at).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
     : 'Active Member';
 
   return (

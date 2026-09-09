@@ -30,11 +30,10 @@ export default function Navbar() {
             <div className="flex items-center gap-3">
               <Link
                 href="/dashboard"
-                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                  pathname === '/dashboard'
+                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${pathname === '/dashboard'
                     ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
                     : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
-                }`}
+                  }`}
               >
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Dashboard</span>
@@ -65,21 +64,19 @@ export default function Navbar() {
             <div className="flex items-center gap-2 sm:gap-3">
               <Link
                 href="/login"
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                  pathname === '/login'
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${pathname === '/login'
                     ? 'border border-accent/40 bg-accent/10 text-accent shadow-[0_0_15px_rgba(255,143,50,0.2)]'
                     : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
-                }`}
+                  }`}
               >
                 Login
               </Link>
               <Link
                 href="/signup"
-                className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
-                  pathname === '/signup'
+                className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${pathname === '/signup'
                     ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
                     : 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)] hover:-translate-y-0.5 hover:bg-accentSoft'
-                }`}
+                  }`}
               >
                 Create Account
               </Link>

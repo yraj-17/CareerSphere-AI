@@ -33,11 +33,10 @@ export default function Navbar() {
   return (
     <header className="fixed inset-x-0 top-0 z-50 px-4 py-4 md:px-8">
       <div
-        className={`mx-auto flex max-w-7xl items-center justify-between rounded-full border px-5 py-3 transition-all duration-300 ${
-          scrolled
+        className={`mx-auto flex max-w-7xl items-center justify-between rounded-full border px-5 py-3 transition-all duration-300 ${scrolled
             ? 'border-white/10 bg-slate-950/70 shadow-glow backdrop-blur-xl'
             : 'border-white/8 bg-slate-950/35 backdrop-blur-md'
-        }`}
+          }`}
       >
         <a href="#home" className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 text-sm font-bold text-accent shadow-[0_0_25px_rgba(255,143,50,0.25)]">

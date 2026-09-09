@@ -46,11 +46,10 @@ export default function PasswordInput({
           autoComplete={autoComplete}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={error ? `${id}-error` : undefined}
-          className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-11 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-            error
+          className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-11 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${error
               ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
               : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-          } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         />
 
         <button

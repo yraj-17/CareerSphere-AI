@@ -34,9 +34,8 @@ export default function PasswordRules({ password = '' }) {
         {rules.map((rule) => (
           <li
             key={rule.id}
-            className={`flex items-center gap-1.5 transition-colors duration-200 ${
-              rule.valid ? 'text-emerald-400 font-medium' : 'text-slate-500'
-            }`}
+            className={`flex items-center gap-1.5 transition-colors duration-200 ${rule.valid ? 'text-emerald-400 font-medium' : 'text-slate-500'
+              }`}
           >
             {rule.valid ? (
               <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" aria-hidden="true" />

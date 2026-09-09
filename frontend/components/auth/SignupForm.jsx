@@ -458,11 +458,10 @@ export default function SignupForm() {
                 autoComplete="given-name"
                 aria-invalid={fieldErrors.first_name ? 'true' : 'false'}
                 aria-describedby={fieldErrors.first_name ? 'first_name-error' : undefined}
-                className={`block w-full rounded-xl bg-slate-950/80 border px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-                  fieldErrors.first_name
+                className={`block w-full rounded-xl bg-slate-950/80 border px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${fieldErrors.first_name
                     ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                     : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
               {fieldErrors.first_name && (
                 <p id="first_name-error" className="text-xs text-rose-400 font-medium">
@@ -487,11 +486,10 @@ export default function SignupForm() {
                 autoComplete="family-name"
                 aria-invalid={fieldErrors.last_name ? 'true' : 'false'}
                 aria-describedby={fieldErrors.last_name ? 'last_name-error' : undefined}
-                className={`block w-full rounded-xl bg-slate-950/80 border px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-                  fieldErrors.last_name
+                className={`block w-full rounded-xl bg-slate-950/80 border px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${fieldErrors.last_name
                     ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                     : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
               {fieldErrors.last_name && (
                 <p id="last_name-error" className="text-xs text-rose-400 font-medium">
@@ -541,13 +539,12 @@ export default function SignupForm() {
                 autoComplete="username"
                 aria-invalid={fieldErrors.username || usernameStatus.available === false ? 'true' : 'false'}
                 aria-describedby={fieldErrors.username ? 'username-error' : undefined}
-                className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-                  fieldErrors.username || usernameStatus.available === false
+                className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${fieldErrors.username || usernameStatus.available === false
                     ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                     : usernameStatus.available === true
-                    ? 'border-emerald-500/80 focus:border-emerald-500 focus:ring-emerald-500/30'
-                    : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      ? 'border-emerald-500/80 focus:border-emerald-500 focus:ring-emerald-500/30'
+                      : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
+                  } ${isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
             </div>
             {fieldErrors.username && (
@@ -603,13 +600,12 @@ export default function SignupForm() {
                   autoComplete="email"
                   aria-invalid={fieldErrors.email || emailStatus.available === false ? 'true' : 'false'}
                   aria-describedby={fieldErrors.email ? 'email-error' : undefined}
-                  className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${
-                    fieldErrors.email || emailStatus.available === false
+                  className={`block w-full rounded-xl bg-slate-950/80 border pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 ${fieldErrors.email || emailStatus.available === false
                       ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                       : emailStatus.available === true || otpStep === 'verified'
-                      ? 'border-emerald-500/80 focus:border-emerald-500 focus:ring-emerald-500/30'
-                      : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                  } ${isSubmitting || otpStep === 'sent' || otpStep === 'verifying' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        ? 'border-emerald-500/80 focus:border-emerald-500 focus:ring-emerald-500/30'
+                        : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
+                    } ${isSubmitting || otpStep === 'sent' || otpStep === 'verifying' ? 'opacity-60 cursor-not-allowed' : ''}`}
                 />
               </div>
 
@@ -658,11 +654,10 @@ export default function SignupForm() {
                       onChange={(e) => handleOtpDigitChange(i, e.target.value)}
                       onKeyDown={(e) => handleOtpKeyDown(i, e)}
                       disabled={otpStep === 'verifying'}
-                      className={`h-11 w-10 sm:w-11 text-center rounded-lg bg-slate-950/80 border text-base font-semibold text-slate-100 transition-all duration-150 focus:outline-none focus:ring-2 ${
-                        otpError
+                      className={`h-11 w-10 sm:w-11 text-center rounded-lg bg-slate-950/80 border text-base font-semibold text-slate-100 transition-all duration-150 focus:outline-none focus:ring-2 ${otpError
                           ? 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/30'
                           : 'border-white/10 hover:border-white/20 focus:border-accent/80 focus:ring-accent/30'
-                      } ${otpStep === 'verifying' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        } ${otpStep === 'verifying' ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                   ))}
                 </div>
