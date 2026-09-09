@@ -1,18 +1,58 @@
 import json
 from typing import List, Union
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def normalize_database_url(url: str) -> str:
+    """Ensure SQLAlchemy uses the psycopg (v3) driver for PostgreSQL URLs."""
+    if not url:
+        return url
+    # Guard against accidental "DATABASE_URL=DATABASE_URL=..." duplication in .env
+    while url.startswith("DATABASE_URL="):
+        url = url[len("DATABASE_URL=") :]
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    if url.startswith("sqlite"):
+        raise ValueError(
+            "SQLite is no longer supported. Set DATABASE_URL to a PostgreSQL URL "
+            "(postgresql+psycopg://user:pass@host:5432/dbname)."
+        )
+    return url
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "CareerSphere AI"
     API_V1_STR: str = "/api"
 
-    # PostgreSQL (primary database)
+    # PostgreSQL (primary relational database)
     DATABASE_URL: str
 
-    # Redis
+    # Redis (cache / OTP / temporary state) — must run via Docker
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Qdrant (vector database)
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: str = ""
+    QDRANT_COLLECTION_PROFILES: str = "user_profiles"
+    QDRANT_COLLECTION_CONTENT: str = "career_content"
+    EMBEDDING_DIMENSION: int = 768
+
+    # MinIO (object storage)
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET: str = "careersphere"
+    MINIO_SECURE: bool = False
+    MINIO_PUBLIC_URL: str = ""  # optional override for browser-facing URLs
+
+    # Ollama (local LLM — optional until AI features are wired)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen3.5:9b"
 
     # JWT Security
     SECRET_KEY: str
@@ -30,6 +70,14 @@ class Settings(BaseSettings):
 
     # OTP settings
     OTP_EXPIRE_MINUTES: int = 10
+
+    # Availability-check cache TTL (seconds)
+    AVAILABILITY_CACHE_TTL: int = 60
+
+    @model_validator(mode="after")
+    def normalize_urls(self) -> "Settings":
+        self.DATABASE_URL = normalize_database_url(self.DATABASE_URL)
+        return self
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

@@ -4,7 +4,6 @@ import random
 import smtplib
 import secrets
 import hashlib
-from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -18,6 +17,11 @@ from app.db.models import User
 from app.db.redis_client import get_redis
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token
+from app.services.cache_service import (
+    get_cached_availability,
+    set_cached_availability,
+    invalidate_availability,
+)
 from app.schemas.auth import (
     UserRegisterRequest,
     UserLoginRequest,
@@ -33,8 +37,6 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Redis key prefixes
-_OTP_KEY = "otp:{email}"           # stores { otp, verified_token, token_raw }
 _OTP_TTL = settings.OTP_EXPIRE_MINUTES * 60   # seconds
 
 
@@ -116,7 +118,7 @@ def send_otp(
 
     try:
         # Store in Redis with automatic TTL expiry
-        rdb.setex(_otp_key(email), _OTP_TTL, payload)
+        rdb.set(_otp_key(email), payload, ex=_OTP_TTL)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -174,7 +176,7 @@ def verify_otp(
 
     # Update the record in Redis, preserving remaining TTL
     ttl = rdb.ttl(key)
-    rdb.setex(key, max(ttl, 1), json.dumps(record))
+    rdb.set(key, json.dumps(record), ex=max(ttl, 1))
 
     return OtpVerifyResponse(
         message="Email verified successfully.",
@@ -206,12 +208,20 @@ def check_username(
         return UsernameCheckResponse(username=username, available=False,
                                      message="Username must not exceed 30 characters.")
 
-    if db.query(User).filter(User.username == username).first():
-        return UsernameCheckResponse(username=username, available=False,
-                                     message="This username is already taken.")
+    cached = get_cached_availability("username", username)
+    if cached:
+        data = json.loads(cached)
+        return UsernameCheckResponse(**data)
 
-    return UsernameCheckResponse(username=username, available=True,
-                                 message="Username is available")
+    if db.query(User).filter(User.username == username).first():
+        response = UsernameCheckResponse(username=username, available=False,
+                                         message="This username is already taken.")
+    else:
+        response = UsernameCheckResponse(username=username, available=True,
+                                         message="Username is available")
+
+    set_cached_availability("username", username, response.model_dump_json())
+    return response
 
 
 @router.get("/check-email", response_model=EmailCheckResponse)
@@ -227,11 +237,20 @@ def check_email(
     if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
         return EmailCheckResponse(email=email, available=False,
                                   message="Please enter a valid email address format.")
-    if db.query(User).filter(User.email == email).first():
-        return EmailCheckResponse(email=email, available=False,
-                                  message="An account with this email already exists.")
 
-    return EmailCheckResponse(email=email, available=True, message="Email is available")
+    cached = get_cached_availability("email", email)
+    if cached:
+        data = json.loads(cached)
+        return EmailCheckResponse(**data)
+
+    if db.query(User).filter(User.email == email).first():
+        response = EmailCheckResponse(email=email, available=False,
+                                      message="An account with this email already exists.")
+    else:
+        response = EmailCheckResponse(email=email, available=True, message="Email is available")
+
+    set_cached_availability("email", email, response.model_dump_json())
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +321,8 @@ def register(
         db.commit()
         db.refresh(new_user)
         rdb.delete(key)  # clean up OTP record
+        invalidate_availability("username", normalized_username)
+        invalidate_availability("email", normalized_email)
     except Exception:
         db.rollback()
         raise HTTPException(

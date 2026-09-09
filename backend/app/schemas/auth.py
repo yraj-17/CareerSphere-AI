@@ -112,4 +112,8 @@ class HealthResponse(BaseModel):
     status: str
     message: str
     service: str = "CareerSphere AI Backend"
+    postgres: Optional[str] = None
+    redis: Optional[str] = None
+    qdrant: Optional[str] = None
+    minio: Optional[str] = None
 

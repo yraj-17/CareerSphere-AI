@@ -5,27 +5,46 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.session import engine, Base
-from app.db.models import User  # ensures models are registered with Base
+from app.db.models import User, MediaObject  # noqa: F401 — register models with Base
 from app.db.redis_client import ping_redis
 from app.api.auth import router as auth_router
+from app.api.media import router as media_router
 from app.schemas.auth import HealthResponse
+from app.services.qdrant_service import ping_qdrant, ensure_default_collections
+from app.services.storage_service import ping_minio, ensure_bucket
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
-    # Create all PostgreSQL tables if they don't exist yet
     Base.metadata.create_all(bind=engine)
     print("[Startup] PostgreSQL tables ready.")
 
-    # Verify Redis is reachable
     if ping_redis():
         print("[Startup] Redis connection verified.")
     else:
-        print("[Startup] WARNING: Redis is not reachable. OTP features will not work.")
+        print("[Startup] WARNING: Redis is not reachable. OTP/cache features will not work.")
+
+    if ping_qdrant():
+        try:
+            ensure_default_collections()
+            print("[Startup] Qdrant connection verified.")
+        except Exception as exc:
+            print(f"[Startup] WARNING: Qdrant collections init failed: {exc}")
+    else:
+        print("[Startup] WARNING: Qdrant is not reachable. Vector search will not work.")
+
+    if ping_minio():
+        try:
+            ensure_bucket()
+            print("[Startup] MinIO connection verified.")
+        except Exception as exc:
+            print(f"[Startup] WARNING: MinIO bucket init failed: {exc}")
+    else:
+        print("[Startup] WARNING: MinIO is not reachable. File uploads will not work.")
 
     yield
-    # --- Shutdown (nothing to clean up for now) ---
+    # --- Shutdown ---
 
 
 app = FastAPI(
@@ -50,8 +69,7 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
 def health_check():
-    """Health check — reports PostgreSQL and Redis connectivity."""
-    # PostgreSQL
+    """Health check — reports PostgreSQL, Redis, Qdrant, and MinIO connectivity."""
     pg_status = "connected"
     try:
         with engine.connect() as conn:
@@ -59,19 +77,30 @@ def health_check():
     except Exception as e:
         pg_status = f"error: {e}"
 
-    # Redis
     redis_status = "connected" if ping_redis() else "unreachable"
+    qdrant_status = "connected" if ping_qdrant() else "unreachable"
+    minio_status = "connected" if ping_minio() else "unreachable"
 
-    overall = "healthy" if pg_status == "connected" and redis_status == "connected" else "degraded"
+    core_ok = pg_status == "connected" and redis_status == "connected"
+    all_ok = core_ok and qdrant_status == "connected" and minio_status == "connected"
+    overall = "healthy" if all_ok else ("degraded" if core_ok else "unhealthy")
 
     return HealthResponse(
         status=overall,
-        message=f"PostgreSQL: {pg_status} | Redis: {redis_status}",
+        message=(
+            f"PostgreSQL: {pg_status} | Redis: {redis_status} | "
+            f"Qdrant: {qdrant_status} | MinIO: {minio_status}"
+        ),
         service="CareerSphere AI Backend",
+        postgres=pg_status,
+        redis=redis_status,
+        qdrant=qdrant_status,
+        minio=minio_status,
     )
 
 
 app.include_router(auth_router, prefix=settings.API_V1_STR)
+app.include_router(media_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":
