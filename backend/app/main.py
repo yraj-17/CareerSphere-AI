@@ -9,6 +9,7 @@ from app.db.models import User, MediaObject  # noqa: F401 — register models wi
 from app.db.redis_client import ping_redis
 from app.api.auth import router as auth_router
 from app.api.media import router as media_router
+from app.api.ai import router as ai_router
 from app.schemas.auth import HealthResponse
 from app.services.qdrant_service import ping_qdrant, ensure_default_collections
 from app.services.storage_service import ping_minio, ensure_bucket
@@ -101,6 +102,7 @@ def health_check():
 
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(media_router, prefix=settings.API_V1_STR)
+app.include_router(ai_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":
