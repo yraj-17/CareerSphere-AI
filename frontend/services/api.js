@@ -42,7 +42,10 @@ apiClient.interceptors.response.use(
  */
 export const extractErrorMessage = (error) => {
   if (!error.response) {
-    if (error.code === 'ECONNABORTED' || error.message?.includes('Network Error')) {
+    if (error.code === 'ECONNABORTED') {
+      return 'The request timed out. Please try again.';
+    }
+    if (error.message?.includes('Network Error')) {
       return 'Unable to connect to the server. Please try again later.';
     }
     return error.message || 'Unable to connect to the server. Please try again later.';
@@ -144,6 +147,22 @@ export const logoutUser = async () => {
   } finally {
     clearStoredAuth();
   }
+};
+
+/** Local CPU inference can exceed the default 10s client timeout. */
+const AI_CHAT_TIMEOUT_MS = 180000;
+
+/**
+ * Send a career-related prompt to the FastAPI AI chat endpoint.
+ * JWT is attached by the shared request interceptor when present.
+ */
+export const chatWithAI = async (prompt, think = false) => {
+  const response = await apiClient.post(
+    '/api/ai/chat',
+    { prompt, think },
+    { timeout: AI_CHAT_TIMEOUT_MS }
+  );
+  return response.data;
 };
 
 export default apiClient;

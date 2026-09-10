@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import Link from 'next/link';
 import {
   Sparkles,
   User,
@@ -12,7 +13,6 @@ import {
   LogOut,
   Loader2,
   CheckCircle2,
-  Briefcase,
   Layers,
 } from 'lucide-react';
 
@@ -163,18 +163,21 @@ export default function DashboardPage() {
           <span>Platform Capabilities Status</span>
         </div>
         <p className="text-sm text-slate-400">
-          Core authentication module is active. The following modules are staged for upcoming phases:
+          Core authentication is active. The AI Career Assistant is available now; additional modules are staged for upcoming phases:
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 opacity-80">
+          <Link
+            href="/dashboard/ai"
+            className="p-4 rounded-xl bg-slate-900/40 border border-accent/20 hover:border-accent/40 transition-colors"
+          >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-slate-400" /> AI Resume & Profile
+              <Sparkles className="h-4 w-4 text-accent" /> AI Career Assistant
             </h4>
-            <span className="mt-2 inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-400">
-              Phase 2
+            <span className="mt-2 inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+              Available
             </span>
-          </div>
+          </Link>
 
           <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 opacity-80">
             <h4 className="text-sm font-semibold text-white flex items-center gap-2">
