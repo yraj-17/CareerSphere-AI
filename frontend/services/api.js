@@ -223,4 +223,95 @@ export const checkGrammar = async (text) => {
   return response.data;
 };
 
+export const uploadMedia = async (file, purpose = 'general') => {
+  const formData = new FormData();
+  formData.append('purpose', purpose);
+  formData.append('file', file);
+  const response = await apiClient.post('/api/media/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  });
+  return response.data;
+};
+
+export const getMyProfile = async () => {
+  const response = await apiClient.get('/api/profile/me');
+  return response.data;
+};
+
+export const updateMyProfile = async (payload) => {
+  const response = await apiClient.patch('/api/profile/me', payload);
+  return response.data;
+};
+
+export const addSkill = async (payload) => {
+  const response = await apiClient.post('/api/profile/me/skills', payload);
+  return response.data;
+};
+
+export const deleteSkill = async (skillId) => {
+  await apiClient.delete(`/api/profile/me/skills/${skillId}`);
+};
+
+export const addEducation = async (payload) => {
+  const response = await apiClient.post('/api/profile/me/education', payload);
+  return response.data;
+};
+
+export const updateEducation = async (id, payload) => {
+  const response = await apiClient.put(`/api/profile/me/education/${id}`, payload);
+  return response.data;
+};
+
+export const deleteEducation = async (id) => {
+  await apiClient.delete(`/api/profile/me/education/${id}`);
+};
+
+export const addExperience = async (payload) => {
+  const response = await apiClient.post('/api/profile/me/experience', payload);
+  return response.data;
+};
+
+export const updateExperience = async (id, payload) => {
+  const response = await apiClient.put(`/api/profile/me/experience/${id}`, payload);
+  return response.data;
+};
+
+export const deleteExperience = async (id) => {
+  await apiClient.delete(`/api/profile/me/experience/${id}`);
+};
+
+export const addProject = async (payload) => {
+  const response = await apiClient.post('/api/profile/me/projects', payload);
+  return response.data;
+};
+
+export const updateProject = async (id, payload) => {
+  const response = await apiClient.put(`/api/profile/me/projects/${id}`, payload);
+  return response.data;
+};
+
+export const deleteProject = async (id) => {
+  await apiClient.delete(`/api/profile/me/projects/${id}`);
+};
+
+export const addCertification = async (payload) => {
+  const response = await apiClient.post('/api/profile/me/certifications', payload);
+  return response.data;
+};
+
+export const updateCertification = async (id, payload) => {
+  const response = await apiClient.put(`/api/profile/me/certifications/${id}`, payload);
+  return response.data;
+};
+
+export const deleteCertification = async (id) => {
+  await apiClient.delete(`/api/profile/me/certifications/${id}`);
+};
+
+export const updateCareerPreferences = async (payload) => {
+  const response = await apiClient.patch('/api/profile/me/preferences', payload);
+  return response.data;
+};
+
 export default apiClient;
