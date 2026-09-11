@@ -62,3 +62,9 @@
 .glass-panel {
   @apply border border-white/10 bg-white/[0.05] backdrop-blur-xl;
 }
+
+/* Keep long chat threads readable without page-level overflow quirks */
+.chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}

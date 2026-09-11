@@ -19,7 +19,7 @@ export default function AICareerAssistantPage() {
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 text-indigo-400 animate-spin mb-3" />
+        <Loader2 className="h-8 w-8 text-accent animate-spin mb-3" />
         <p className="text-sm text-slate-400">Verifying authenticated session...</p>
       </div>
     );
@@ -30,7 +30,7 @@ export default function AICareerAssistantPage() {
   }
 
   return (
-    <div className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 w-full animate-fade-in">
+    <div className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 flex flex-col min-h-[calc(100vh-10.5rem)]">
       <CareerAssistant />
     </div>
   );

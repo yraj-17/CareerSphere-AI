@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.session import engine, Base
-from app.db.models import User, MediaObject  # noqa: F401 — register models with Base
+from app.db.models import User, MediaObject, Conversation, ChatMessage  # noqa: F401 — register models with Base
 from app.db.redis_client import ping_redis
 from app.api.auth import router as auth_router
 from app.api.media import router as media_router

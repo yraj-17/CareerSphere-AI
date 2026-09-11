@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import LoginForm from '@/components/auth/LoginForm';
 import BackgroundFX from '@/components/landing/BackgroundFX';
 
@@ -10,7 +11,10 @@ export default function LoginPage() {
   return (
     <div className="relative min-h-[calc(100vh-5rem)] flex-1 flex items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
       <BackgroundFX />
-      <LoginForm />
+      <Suspense fallback={<div className="text-sm text-slate-400">Loading...</div>}>
+        <LoginForm />
+      </Suspense>
     </div>
   );
 }
+

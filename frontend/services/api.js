@@ -54,8 +54,12 @@ export const extractErrorMessage = (error) => {
   const data = error.response.data;
   if (!data) return 'An unexpected error occurred. Please try again.';
 
-  if (typeof data.detail === 'string') {
+    if (typeof data.detail === 'string') {
     return data.detail;
+  }
+
+  if (data.detail && typeof data.detail === 'object' && !Array.isArray(data.detail)) {
+    return data.detail.message || data.detail.detail || 'An unexpected error occurred. Please try again.';
   }
 
   if (Array.isArray(data.detail)) {
@@ -151,9 +155,10 @@ export const logoutUser = async () => {
 
 /** Local CPU inference can exceed the default 10s client timeout. */
 const AI_CHAT_TIMEOUT_MS = 180000;
+const GRAMMAR_TIMEOUT_MS = 30000;
 
 /**
- * Send a career-related prompt to the FastAPI AI chat endpoint.
+ * Send a career-related prompt to the FastAPI AI chat endpoint (one-shot, no history).
  * JWT is attached by the shared request interceptor when present.
  */
 export const chatWithAI = async (prompt, think = false) => {
@@ -161,6 +166,59 @@ export const chatWithAI = async (prompt, think = false) => {
     '/api/ai/chat',
     { prompt, think },
     { timeout: AI_CHAT_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const getConversations = async () => {
+  const response = await apiClient.get('/api/ai/conversations');
+  return response.data;
+};
+
+export const getConversation = async (conversationId) => {
+  const response = await apiClient.get(`/api/ai/conversations/${conversationId}`);
+  return response.data;
+};
+
+/**
+ * Create a conversation on the first user message and return the assistant reply.
+ */
+export const createConversation = async (content) => {
+  const response = await apiClient.post(
+    '/api/ai/conversations',
+    { content },
+    { timeout: AI_CHAT_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const sendConversationMessage = async (conversationId, content) => {
+  const response = await apiClient.post(
+    `/api/ai/conversations/${conversationId}/messages`,
+    { content },
+    { timeout: AI_CHAT_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const retryConversationMessage = async (conversationId) => {
+  const response = await apiClient.post(
+    `/api/ai/conversations/${conversationId}/retry`,
+    {},
+    { timeout: AI_CHAT_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const deleteConversation = async (conversationId) => {
+  await apiClient.delete(`/api/ai/conversations/${conversationId}`);
+};
+
+export const checkGrammar = async (text) => {
+  const response = await apiClient.post(
+    '/api/ai/grammar-check',
+    { text },
+    { timeout: GRAMMAR_TIMEOUT_MS }
   );
   return response.data;
 };

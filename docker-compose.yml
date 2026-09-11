@@ -64,6 +64,18 @@ services:
     profiles:
       - ai
 
+  languagetool:
+    image: erikvl87/languagetool:latest
+    container_name: careersphere-languagetool
+    ports:
+      - "8010:8010"
+    environment:
+      Java_Xms: 256m
+      Java_Xmx: 512m
+    restart: unless-stopped
+    profiles:
+      - languagetool
+
 volumes:
   redis_data:
   qdrant_data:

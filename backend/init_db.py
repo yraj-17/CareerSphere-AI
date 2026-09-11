@@ -11,7 +11,7 @@ from alembic import command
 from alembic.config import Config
 
 from app.db.session import engine, Base
-from app.db.models import User, MediaObject  # noqa: F401
+from app.db.models import User, MediaObject, Conversation, ChatMessage  # noqa: F401
 from app.services.qdrant_service import ensure_default_collections, ping_qdrant
 from app.services.storage_service import ensure_bucket, ping_minio
 
@@ -19,7 +19,7 @@ from app.services.storage_service import ensure_bucket, ping_minio
 def init_db() -> None:
     print("Initializing PostgreSQL tables...")
     Base.metadata.create_all(bind=engine)
-    print("  -> users, media_objects ready.")
+    print("  -> users, media_objects, conversations, chat_messages ready.")
 
     # Keep Alembic revision history aligned when bootstrapping via create_all
     try:

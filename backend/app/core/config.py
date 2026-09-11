@@ -53,6 +53,22 @@ class Settings(BaseSettings):
     # Ollama (local LLM — optional until AI features are wired)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen3.5:9b"
+    AI_SYSTEM_PROMPT: str = (
+        "You are CareerSphere AI, an AI career assistant. "
+        "Help users with career development, resumes, interviews, skills, "
+        "professional networking, job preparation and career planning. "
+        "Be practical, concise and helpful. "
+        "Use the conversation history to maintain context. "
+        "Do not claim to know personal information that has not been provided."
+    )
+    AI_MAX_PROMPT_CHARS: int = 8000
+    AI_CONTEXT_MESSAGES: int = 20
+    AI_CONTEXT_CHARS: int = 16000
+
+    # LanguageTool (grammar / writing assistant — not the AI model)
+    LANGUAGETOOL_URL: str = "http://localhost:8010"
+    LANGUAGETOOL_LANGUAGE: str = "en-US"
+    LANGUAGETOOL_TIMEOUT_SECONDS: float = 15.0
 
     # JWT Security
     SECRET_KEY: str

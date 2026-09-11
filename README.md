@@ -20,6 +20,8 @@ FastAPI Backend (:8000)
         └── MinIO (:9000/:9001)  → resumes, profile images, media objects
 
 Optional: Ollama (:11434) via `docker compose --profile ai up -d ollama`
+
+Optional: LanguageTool (:8010) via `docker compose --profile languagetool up -d languagetool`
 ```
 
 **SQLite is not used.** All relational data goes to PostgreSQL.
@@ -62,6 +64,14 @@ Optional local LLM:
 ```bash
 docker compose --profile ai up -d ollama
 ```
+
+Optional grammar service:
+
+```bash
+docker compose --profile languagetool up -d languagetool
+```
+
+LanguageTool is used only for grammar/spelling suggestions. The AI Career Assistant still goes through FastAPI → Ollama → Qwen.
 
 ### 2) Configure environment
 
@@ -149,6 +159,7 @@ See `.env.example` / `backend/.env.example` for the full list.
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO credentials |
 | `MINIO_BUCKET` | Default bucket (`careersphere`) |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Optional local LLM |
+| `LANGUAGETOOL_URL` | Optional LanguageTool base URL (`http://localhost:8010`) |
 | `SECRET_KEY` | JWT signing secret |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP for OTP |
 
@@ -165,6 +176,7 @@ When the backend runs **inside** Docker on the same compose network, use service
 | Qdrant | `careersphere-qdrant` | `6333`, `6334` | `qdrant_data` |
 | MinIO | `careersphere-minio` | `9000` (API), `9001` (console) | `minio_data` |
 | Ollama (optional) | `careersphere-ollama` | `11434` | `ollama_data` |
+| LanguageTool (optional) | `careersphere-languagetool` | `8010` | — |
 
 MinIO console: http://localhost:9001 (default `minioadmin` / `minioadmin`)
 
@@ -174,7 +186,7 @@ MinIO console: http://localhost:9001 (default `minioadmin` / `minioadmin`)
 
 | Store | Holds |
 | :--- | :--- |
-| **PostgreSQL** | `users`, `media_objects` (file metadata), future relational app data |
+| **PostgreSQL** | `users`, `media_objects`, `conversations`, `chat_messages` |
 | **Redis** | OTP + email verification tokens; short-lived username/email availability cache |
 | **Qdrant** | `user_profiles`, `career_content` vector collections (ready for embeddings) |
 | **MinIO** | Binary files (resumes, profile images, documents) |
@@ -204,6 +216,18 @@ MinIO console: http://localhost:9001 (default `minioadmin` / `minioadmin`)
 | `GET` | `/api/media/{id}/url` | Presigned URL |
 | `GET` | `/api/media/{id}/download` | Download bytes |
 | `DELETE` | `/api/media/{id}` | Delete object + metadata |
+
+### AI Career Assistant
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/ai/chat` | One-shot prompt (authenticated, no conversation history) |
+| `GET` | `/api/ai/conversations` | List current user's conversations |
+| `POST` | `/api/ai/conversations` | Create a conversation on the first message |
+| `GET` | `/api/ai/conversations/{id}` | Conversation + messages (owner only) |
+| `POST` | `/api/ai/conversations/{id}/messages` | Send a follow-up message |
+| `POST` | `/api/ai/conversations/{id}/retry` | Retry AI reply after a failed generation |
+| `DELETE` | `/api/ai/conversations/{id}` | Delete a conversation |
+| `POST` | `/api/ai/grammar-check` | LanguageTool grammar/spelling suggestions |
 
 ---
 

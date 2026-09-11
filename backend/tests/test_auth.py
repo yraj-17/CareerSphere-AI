@@ -15,7 +15,7 @@ from sqlalchemy import or_
 
 from app.main import app
 from app.db.session import SessionLocal, Base, engine
-from app.db.models import User, MediaObject
+from app.db.models import User, MediaObject, Conversation, ChatMessage
 from app.db.redis_client import redis_client
 from app.core.config import settings
 
@@ -36,6 +36,17 @@ def clean_state():
         )
         test_ids = [u.id for u in test_users]
         if test_ids:
+            conv_ids = [
+                row.id
+                for row in db.query(Conversation).filter(Conversation.user_id.in_(test_ids)).all()
+            ]
+            if conv_ids:
+                db.query(ChatMessage).filter(ChatMessage.conversation_id.in_(conv_ids)).delete(
+                    synchronize_session=False
+                )
+                db.query(Conversation).filter(Conversation.id.in_(conv_ids)).delete(
+                    synchronize_session=False
+                )
             db.query(MediaObject).filter(MediaObject.user_id.in_(test_ids)).delete(
                 synchronize_session=False
             )
