@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class AIRequest(BaseModel):
     prompt: str
     think: bool = False
+    use_profile: bool = False
 
 
 class AIResponse(BaseModel):
@@ -29,6 +30,7 @@ class ChatMessageOut(BaseModel):
     conversation_id: str
     role: str
     content: str
+    used_profile_context: bool = False
     created_at: datetime
 
 
@@ -38,6 +40,7 @@ class ConversationDetail(ConversationSummary):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
+    use_profile: bool = False
 
     @field_validator("content")
     @classmethod

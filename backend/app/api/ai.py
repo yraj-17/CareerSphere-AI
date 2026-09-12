@@ -15,6 +15,7 @@ from app.schemas.ai import (
     SendMessageResponse,
 )
 from app.services import conversation_service, languagetool_service
+from app.services import profile_context_service
 from app.services.languagetool_service import LanguageToolError
 from app.services.ollama_service import AIServiceError, generate_response
 
@@ -37,6 +38,7 @@ def _to_send_response(payload: dict) -> SendMessageResponse:
 @router.post("/chat", response_model=AIResponse)
 async def chat_with_ai(
     request: AIRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     prompt = (request.prompt or "").strip()
@@ -49,9 +51,18 @@ async def chat_with_ai(
         )
 
     try:
+        profile_context = (
+            profile_context_service.build_profile_context(db, current_user)
+            if request.use_profile
+            else None
+        )
         response = await generate_response(
             prompt=prompt,
-            system_prompt=settings.AI_SYSTEM_PROMPT,
+            system_prompt=(
+                f"{settings.AI_SYSTEM_PROMPT}\n\n{profile_context}"
+                if profile_context
+                else settings.AI_SYSTEM_PROMPT
+            ),
             think=request.think,
         )
         return AIResponse(response=response)
@@ -84,6 +95,7 @@ async def start_conversation(
         user=current_user,
         content=request.content,
         conversation=None,
+        use_profile=request.use_profile,
     )
     return _to_send_response(payload)
 
@@ -111,6 +123,7 @@ async def send_conversation_message(
         user=current_user,
         content=request.content,
         conversation=conversation,
+        use_profile=request.use_profile,
     )
     return _to_send_response(payload)
 

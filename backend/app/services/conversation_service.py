@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.db.models import ChatMessage, Conversation, User
 from app.services.ollama_service import AIServiceError, build_contextual_messages, generate_chat
+from app.services import profile_context_service
 
 
 def title_from_message(content: str, max_length: int = 72) -> str:
@@ -117,9 +118,17 @@ async def send_user_message(
     content: str,
     conversation: Conversation | None = None,
     think: bool = False,
+    use_profile: bool = False,
 ) -> dict:
     conversation, user_message = _persist_user_message(db, user, content, conversation)
-    return await _generate_assistant_reply(db, conversation, user_message, think=think)
+    return await _generate_assistant_reply(
+        db,
+        user,
+        conversation,
+        user_message,
+        think=think,
+        use_profile=use_profile,
+    )
 
 
 async def retry_assistant_reply(
@@ -135,17 +144,24 @@ async def retry_assistant_reply(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="There is no unanswered message to retry.",
         )
-    return await _generate_assistant_reply(db, conversation, history[-1], think=think)
+    return await _generate_assistant_reply(db, user, conversation, history[-1], think=think)
 
 
 async def _generate_assistant_reply(
     db: Session,
+    user: User,
     conversation: Conversation,
     user_message: ChatMessage,
     think: bool = False,
+    use_profile: bool = False,
 ) -> dict:
     history = _history_for_llm(db, conversation.id)
-    ollama_messages = build_contextual_messages(history)
+    profile_context = (
+        profile_context_service.build_profile_context(db, user)
+        if use_profile
+        else None
+    )
+    ollama_messages = build_contextual_messages(history, profile_context=profile_context)
 
     try:
         assistant_text = await generate_chat(ollama_messages, think=think)
@@ -161,6 +177,7 @@ async def _generate_assistant_reply(
         conversation_id=conversation.id,
         role="assistant",
         content=assistant_text,
+        used_profile_context=use_profile,
     )
     db.add(assistant_message)
     conversation.updated_at = datetime.now(timezone.utc)

@@ -10,6 +10,7 @@ import {
   Send,
   Sparkles,
   SpellCheck,
+  UserCheck,
 } from 'lucide-react';
 import {
   checkGrammar,
@@ -27,7 +28,7 @@ import MarkdownMessage from '@/components/ai/MarkdownMessage';
 
 function getAIErrorMessage(error) {
   if (error?.code === 'ECONNABORTED') {
-    return 'The AI request timed out. Please try again with a shorter question.';
+    return 'The AI is taking longer than expected. Please try again.';
   }
   if (!error?.response) {
     return 'Unable to reach the CareerSphere backend. Please try again later.';
@@ -37,7 +38,10 @@ function getAIErrorMessage(error) {
     if (typeof detail === 'string' && detail.toLowerCase().includes('languagetool')) {
       return 'Grammar checking is currently unavailable. Please try again in a moment.';
     }
-    return 'The AI service is currently unavailable. Please try again in a moment.';
+    if (typeof detail === 'string' && detail.toLowerCase().includes('taking longer')) {
+      return detail;
+    }
+    return 'AI service is currently unavailable. Please try again later.';
   }
   if (error.response.status === 404) {
     return 'That conversation could not be found.';
@@ -51,6 +55,7 @@ export default function CareerAssistant() {
   const [messages, setMessages] = useState([]);
   const [title, setTitle] = useState('New conversation');
   const [prompt, setPrompt] = useState('');
+  const [useProfile, setUseProfile] = useState(false);
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState('');
   const [listError, setListError] = useState('');
@@ -101,6 +106,7 @@ export default function CareerAssistant() {
     setError('');
     setFieldError('');
     setCanRetry(false);
+    setUseProfile(false);
     setGrammarResult(null);
     setGrammarError('');
     setSidebarOpen(false);
@@ -204,8 +210,8 @@ export default function CareerAssistant() {
 
     try {
       const payload = activeConversationId
-        ? await sendConversationMessage(activeConversationId, trimmedPrompt)
-        : await createConversation(trimmedPrompt);
+        ? await sendConversationMessage(activeConversationId, trimmedPrompt, useProfile)
+        : await createConversation(trimmedPrompt, useProfile);
       applySendPayload(payload);
     } catch (err) {
       setMessages((current) => current.filter((item) => item.id !== optimistic.id));
@@ -311,6 +317,11 @@ export default function CareerAssistant() {
               AI Career Assistant
             </h1>
             <p className="mt-1 truncate text-sm text-slate-400">{title}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {useProfile
+                ? '👤 Personalizing with your CareerSphere profile'
+                : 'General mode — enable "Use My Profile" to personalize responses'}
+            </p>
           </div>
           <button
             type="button"
@@ -446,6 +457,33 @@ export default function CareerAssistant() {
               {fieldError ? <p className="text-xs font-medium text-rose-400">{fieldError}</p> : null}
 
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setUseProfile((prev) => !prev)}
+                  disabled={isSubmitting}
+                  aria-pressed={useProfile}
+                  title={useProfile ? 'Disable profile context' : 'Enable profile context for personalized responses'}
+                  className={`inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                    useProfile
+                      ? 'border-accent/60 bg-accent/20 text-accent shadow-[0_0_16px_rgba(255,143,50,0.2)] hover:bg-accent/30'
+                      : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                  }`}
+                >
+                  <UserCheck className={`h-4 w-4 ${useProfile ? 'text-accent' : 'text-slate-400'}`} />
+                  Use My Profile
+                  <span
+                    className={`ml-0.5 inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                      useProfile ? 'bg-accent' : 'bg-white/15'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+                        useProfile ? 'translate-x-3.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={handleGrammarCheck}

@@ -1,8 +1,9 @@
 from ollama import AsyncClient
+from httpx import TimeoutException
 
 from app.core.config import settings
 
-client = AsyncClient(host=settings.OLLAMA_BASE_URL)
+client = AsyncClient(host=settings.OLLAMA_BASE_URL, timeout=settings.OLLAMA_TIMEOUT_SECONDS)
 
 DEFAULT_SYSTEM_PROMPT = settings.AI_SYSTEM_PROMPT
 
@@ -22,8 +23,10 @@ async def generate_chat(
             messages=messages,
             think=think,
         )
+    except TimeoutException as exc:
+        raise AIServiceError("The AI is taking longer than expected. Please try again.") from exc
     except Exception as exc:
-        raise AIServiceError("The AI model is currently unavailable.") from exc
+        raise AIServiceError("AI service is currently unavailable. Please try again later.") from exc
 
     message = response.get("message") if isinstance(response, dict) else getattr(response, "message", None)
     if isinstance(message, dict):
@@ -51,6 +54,7 @@ async def generate_response(
 def build_contextual_messages(
     history: list,
     system_prompt: str | None = None,
+    profile_context: str | None = None,
 ) -> list[dict]:
     """
     Build Ollama chat messages from stored turns.
@@ -76,4 +80,6 @@ def build_contextual_messages(
 
     selected.reverse()
     prompt = system_prompt if system_prompt is not None else DEFAULT_SYSTEM_PROMPT
+    if profile_context:
+        prompt = f"{prompt}\n\n{profile_context}"
     return [{"role": "system", "content": prompt}, *selected]

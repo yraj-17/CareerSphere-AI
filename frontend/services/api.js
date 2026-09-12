@@ -154,17 +154,17 @@ export const logoutUser = async () => {
 };
 
 /** Local CPU inference can exceed the default 10s client timeout. */
-const AI_CHAT_TIMEOUT_MS = 180000;
+const AI_CHAT_TIMEOUT_MS = 240000;
 const GRAMMAR_TIMEOUT_MS = 30000;
 
 /**
  * Send a career-related prompt to the FastAPI AI chat endpoint (one-shot, no history).
  * JWT is attached by the shared request interceptor when present.
  */
-export const chatWithAI = async (prompt, think = false) => {
+export const chatWithAI = async (prompt, think = false, useProfile = false) => {
   const response = await apiClient.post(
     '/api/ai/chat',
-    { prompt, think },
+    { prompt, think, use_profile: useProfile },
     { timeout: AI_CHAT_TIMEOUT_MS }
   );
   return response.data;
@@ -183,19 +183,19 @@ export const getConversation = async (conversationId) => {
 /**
  * Create a conversation on the first user message and return the assistant reply.
  */
-export const createConversation = async (content) => {
+export const createConversation = async (content, useProfile = false) => {
   const response = await apiClient.post(
     '/api/ai/conversations',
-    { content },
+    { content, use_profile: useProfile },
     { timeout: AI_CHAT_TIMEOUT_MS }
   );
   return response.data;
 };
 
-export const sendConversationMessage = async (conversationId, content) => {
+export const sendConversationMessage = async (conversationId, content, useProfile = false) => {
   const response = await apiClient.post(
     `/api/ai/conversations/${conversationId}/messages`,
-    { content },
+    { content, use_profile: useProfile },
     { timeout: AI_CHAT_TIMEOUT_MS }
   );
   return response.data;

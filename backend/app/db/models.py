@@ -86,6 +86,9 @@ class ChatMessage(Base):
     )
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
+    # Records whether the user's CareerSphere profile was included in the LLM
+    # prompt that produced this assistant message. Always False for user turns.
+    used_profile_context = Column(Boolean, nullable=False, server_default="false", default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
