@@ -304,6 +304,217 @@ CareerSphere AI/
 └── README.md
 ```
 
+
+---
+
+## Phase 1 — Career Knowledge Base
+
+### Purpose
+
+The career knowledge base is the semantic retrieval layer for CareerSphere AI.
+It converts structured domain/role/skill data into vector embeddings stored in
+Qdrant, enabling future features like Skill Analysis, Skill Gap Detection, and
+Career Readiness scoring to answer questions like:
+
+> *"Given a user's profile skills, how close are they to a Data Scientist role?"*
+
+The architectural flow is:
+
+```
+Structured career dataset  (backend/app/data/career_knowledge.py)
+          ↓  build documents
+Career indexing service    (backend/app/services/career_indexing_service.py)
+          ↓  embed_texts (nomic-embed-text via Ollama)
+Embedding service          (backend/app/services/embedding_service.py)
+          ↓  upsert_vectors
+Qdrant service             (backend/app/services/qdrant_service.py)
+          ↓
+Qdrant collection: career_content  (768-dim, cosine)
+          ↓
+Semantic retrieval  →  Phase 2: Skill Analysis + Skill Gap Detection
+```
+
+PostgreSQL remains the source of truth for **user** data.
+Qdrant is the **semantic retrieval** layer for career knowledge.
+
+---
+
+### Supported Career Domains
+
+| # | Domain |
+|---|--------|
+| 1 | Software Engineering & Technology |
+| 2 | Cloud & DevOps |
+| 3 | AI, Machine Learning & Data |
+| 4 | Product & Business |
+| 5 | Design & Creative |
+| 6 | Marketing & Communications |
+| 7 | Finance & Accounting |
+| 8 | Human Resources |
+| 9 | Sales & Business Development |
+| 10 | Operations & Supply Chain |
+| 11 | Education & Learning |
+| 12 | Engineering |
+| 13 | Healthcare & Health Administration |
+| 14 | Legal, Compliance & Risk |
+
+---
+
+### Initial Roles (30)
+
+| Domain | Roles |
+|--------|-------|
+| Software Engineering & Technology | Backend Engineer, Full Stack Developer, Frontend Developer |
+| Cloud & DevOps | DevOps Engineer, Cloud Engineer |
+| AI, ML & Data | Machine Learning Engineer, Data Scientist, Data Analyst |
+| Product & Business | Product Manager, Business Analyst |
+| Design & Creative | UI/UX Designer, Product Designer |
+| Marketing & Communications | Digital Marketing Specialist, Content Strategist |
+| Finance & Accounting | Financial Analyst, Accountant |
+| Human Resources | HR Specialist, Talent Acquisition Specialist |
+| Sales & Business Development | Sales Executive, Business Development Manager |
+| Operations & Supply Chain | Operations Manager, Supply Chain Analyst |
+| Education & Learning | Teacher / Educator, Instructional Designer |
+| Engineering | Mechanical Engineer, Civil Engineer, Electrical Engineer |
+| Healthcare & Health Administration | Healthcare Administrator |
+| Legal, Compliance & Risk | Compliance Analyst, Risk Analyst |
+
+---
+
+### Skill Dataset Structure
+
+Each skill in the catalog (`SKILLS` dict in `career_knowledge.py`) has:
+
+```python
+SkillEntry(
+    id="postgresql",           # stable slug — used as Qdrant source_id
+    name="PostgreSQL",         # display name
+    category="database",       # broad grouping
+    description="...",         # 1–3 sentence description (embedded as text)
+    aliases=["Postgres"],      # obvious equivalents
+)
+```
+
+Each role has:
+
+```python
+RoleEntry(
+    id="backend-engineer",     # stable slug
+    name="Backend Engineer",
+    domain="Software Engineering & Technology",
+    description="...",         # rich description (embedded as text)
+    required_skills=["python", "rest_apis", "postgresql", ...],
+    recommended_skills=["fastapi", "docker", "redis", ...],
+)
+```
+
+---
+
+### Qdrant Indexing Architecture
+
+| Property | Value |
+|----------|-------|
+| Collection | `career_content` (`QDRANT_COLLECTION_CONTENT`) |
+| Vector size | 768 (nomic-embed-text) |
+| Distance | Cosine |
+| Point ID scheme | Deterministic UUID5 keyed on `"{source_type}:{source_id}"` |
+| Idempotency | Upsert overwrites same point IDs — safe to re-run |
+| Coexistence | Does not delete or modify existing unrelated points |
+
+**Role payload example:**
+```json
+{
+  "source_type": "role",
+  "source_id": "backend-engineer",
+  "text": "Backend Engineer (Software Engineering & Technology): ...",
+  "metadata": {
+    "name": "Backend Engineer",
+    "domain": "Software Engineering & Technology",
+    "required_skills": ["Python", "REST APIs", "PostgreSQL"],
+    "recommended_skills": ["FastAPI", "Docker", "Redis"]
+  }
+}
+```
+
+**Skill payload example:**
+```json
+{
+  "source_type": "skill",
+  "source_id": "python",
+  "text": "Python: general-purpose programming language ...",
+  "metadata": {
+    "name": "Python",
+    "category": "programming",
+    "aliases": ["Python 3"]
+  }
+}
+```
+
+---
+
+### Initialisation Command
+
+Run once (or to re-index after dataset changes):
+
+```bash
+cd backend
+python -m scripts.index_career_knowledge
+```
+
+Or from the project root:
+
+```bash
+python -m backend.scripts.index_career_knowledge
+```
+
+This will print a full summary report including collection, vector count,
+embedding model, embedding dimension, and elapsed time.
+
+**Prerequisites:**
+- Qdrant container running: `docker compose up -d qdrant`
+- Ollama running with nomic-embed-text: `docker compose --profile ai up -d ollama`
+- Model pulled: `docker exec careersphere-ollama ollama pull nomic-embed-text`
+
+---
+
+### Re-indexing
+
+The indexing process is fully idempotent.
+Running the command multiple times is safe — it simply overwrites the same
+deterministic point IDs in Qdrant with the same content.
+
+It **never** deletes existing unrelated points (e.g. future user profile embeddings).
+
+---
+
+### Testing
+
+Unit tests (no external services required):
+
+```bash
+cd backend
+pytest tests/test_career_knowledge.py -v
+```
+
+Full regression suite:
+
+```bash
+cd backend
+pytest tests/ -v
+```
+
+Real integration test (requires live Qdrant + Ollama + nomic-embed-text):
+
+```bash
+cd backend
+$env:RUN_QDRANT_INTEGRATION="1"
+pytest tests/test_career_knowledge.py -v -m integration
+```
+
+The integration test uses a temporary isolated collection (cleaned up after).
+It verifies: embed → upsert → semantic search → correct role/skill payload →
+idempotency on second run.
+
 ---
 
 ## License
