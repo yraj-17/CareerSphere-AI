@@ -7,6 +7,7 @@ import {
   Briefcase,
   Camera,
   CheckCircle2,
+  Copy,
   Edit3,
   GraduationCap,
   Link as LinkIcon,
@@ -14,10 +15,12 @@ import {
   MapPin,
   Plus,
   Save,
+  Sparkles,
   Target,
   Trash2,
   User,
   X,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -33,6 +36,7 @@ import {
   deleteSkill,
   extractErrorMessage,
   getMyProfile,
+  optimizeMyProfile,
   updateCareerPreferences,
   updateCertification,
   updateEducation,
@@ -146,6 +150,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimization, setOptimization] = useState(null);
+  const [optimizationError, setOptimizationError] = useState('');
   const [error, setError] = useState('');
   const [editingBasic, setEditingBasic] = useState(false);
   const [skillName, setSkillName] = useState('');
@@ -192,6 +199,19 @@ export default function ProfilePage() {
   const confirmDelete = async (label, work) => {
     if (!window.confirm(`Delete ${label}?`)) return;
     await save(work);
+  };
+
+  const runProfileOptimization = async () => {
+    setOptimizing(true);
+    setOptimizationError('');
+    try {
+      const data = await optimizeMyProfile();
+      setOptimization(data);
+    } catch (err) {
+      setOptimizationError(extractErrorMessage(err));
+    } finally {
+      setOptimizing(false);
+    }
   };
 
   if (authLoading || loading) {
@@ -275,9 +295,23 @@ export default function ProfilePage() {
                 <span key={item} className="flex items-center gap-2 text-slate-500"><X className="h-3.5 w-3.5" />{item}</span>
               ))}
             </div>
+            <div className="mt-5 border-t border-white/10 pt-4">
+              <ActionButton icon={optimizing ? Loader2 : Sparkles} onClick={runProfileOptimization} disabled={optimizing}>
+                {optimizing ? 'Optimizing...' : 'Optimize My Profile'}
+              </ActionButton>
+              {optimizationError ? <p className="mt-3 text-sm text-rose-200">{optimizationError}</p> : null}
+            </div>
           </div>
         </div>
       </section>
+
+      {optimization || optimizing ? (
+        <ProfileOptimizationPanel
+          optimization={optimization}
+          loading={optimizing}
+          onRefresh={runProfileOptimization}
+        />
+      ) : null}
 
       <Section title="About" icon={User} action={<ActionButton icon={editingBasic ? X : Edit3} variant="ghost" onClick={() => setEditingBasic(!editingBasic)}>{editingBasic ? 'Cancel' : 'Edit'}</ActionButton>}>
         {editingBasic ? (
@@ -393,6 +427,134 @@ export default function ProfilePage() {
         />
       </Section>
     </div>
+  );
+}
+
+function ScoreRing({ score }) {
+  const safeScore = Math.max(0, Math.min(100, Number(score) || 0));
+  return (
+    <div className="flex h-32 w-32 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
+      <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-slate-950/80">
+        <span className="text-3xl font-extrabold text-white">{safeScore}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  if (!text || typeof navigator === 'undefined' || !navigator.clipboard) return null;
+  return (
+    <button
+      type="button"
+      title="Copy suggestion"
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      }}
+      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent/40 hover:text-accent"
+    >
+      <Copy className="h-3.5 w-3.5" />
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
+  if (loading && !optimization) {
+    return (
+      <section className="rounded-[2rem] border border-accent/20 bg-accent/10 p-6 shadow-glow backdrop-blur-xl">
+        <div className="flex items-center gap-3 text-white">
+          <Loader2 className="h-5 w-5 animate-spin text-accent" />
+          <div>
+            <h2 className="text-lg font-bold">AI Profile Optimization</h2>
+            <p className="mt-1 text-sm text-slate-300">Analyzing your profile quality and career positioning...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!optimization) return null;
+
+  return (
+    <section className="rounded-[2rem] border border-accent/20 bg-white/[0.04] p-5 shadow-glow backdrop-blur-xl sm:p-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <ScoreRing score={optimization.overall_score} />
+          <div>
+            <div className="flex items-center gap-2 text-lg font-bold text-white">
+              <Sparkles className="h-5 w-5 text-accent" />
+              <h2>AI Profile Optimization</h2>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{optimization.summary}</p>
+            <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">AI Profile Quality Score</p>
+          </div>
+        </div>
+        <ActionButton icon={loading ? Loader2 : Sparkles} variant="ghost" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Optimizing...' : 'Optimize Again'}
+        </ActionButton>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            Strengths
+          </div>
+          <ul className="space-y-2 text-sm text-slate-300">
+            {(optimization.strengths || []).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
+            <Zap className="h-4 w-4 text-accent" />
+            Improvements
+          </div>
+          <ul className="space-y-2 text-sm text-slate-300">
+            {(optimization.recommended_improvements || []).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {(optimization.sections || []).map((section) => (
+          <div key={section.section} className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold capitalize text-white">{section.section.replaceAll('_', ' ')}</h3>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">{section.score}/100</span>
+                  <span className="rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-xs font-semibold capitalize text-accent">{section.status.replaceAll('_', ' ')}</span>
+                </div>
+                {section.current ? <p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Current</p> : null}
+                {section.current ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-300">{section.current}</p> : null}
+              </div>
+              <CopyButton text={section.suggestion} />
+            </div>
+            <p className="mt-4 text-xs uppercase tracking-wide text-slate-500">Suggestion</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-white">{section.suggestion}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-400">{section.reason}</p>
+          </div>
+        ))}
+      </div>
+
+      {(optimization.suggested_skills_to_learn || []).length ? (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
+            <Target className="h-4 w-4 text-accent" />
+            Recommended Skills to Learn
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {optimization.suggested_skills_to_learn.map((skill) => (
+              <span key={skill} className="rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-sm text-accent">{skill}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

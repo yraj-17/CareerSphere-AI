@@ -1,5 +1,5 @@
 import json
-from typing import List, Union
+from typing import List, Optional, Union
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,7 +40,9 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str = ""
     QDRANT_COLLECTION_PROFILES: str = "user_profiles"
     QDRANT_COLLECTION_CONTENT: str = "career_content"
-    EMBEDDING_DIMENSION: int = 768
+    EMBEDDING_PROVIDER: str = "ollama"
+    EMBEDDING_MODEL: str = "nomic-embed-text"
+    EMBEDDING_DIMENSION: Optional[int] = None
 
     # MinIO (object storage)
     MINIO_ENDPOINT: str = "localhost:9000"
@@ -100,6 +102,13 @@ class Settings(BaseSettings):
     def normalize_urls(self) -> "Settings":
         self.DATABASE_URL = normalize_database_url(self.DATABASE_URL)
         return self
+
+    @field_validator("EMBEDDING_DIMENSION", mode="before")
+    @classmethod
+    def clean_embedding_dimension(cls, value):
+        if value in ("", None):
+            return None
+        return value
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

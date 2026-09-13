@@ -152,6 +152,144 @@ def test_ai_endpoints_require_auth():
     assert client.get("/api/ai/conversations").status_code == 401
     assert client.post("/api/ai/conversations", json={"content": "hello"}).status_code == 401
     assert client.post("/api/ai/grammar-check", json={"text": "hello"}).status_code == 401
+    assert client.post("/api/ai/profile/optimize", json={}).status_code == 401
+
+
+def _optimizer_json(
+    existing_skills: list[str] | None = None,
+    suggested_skills: list[str] | None = None,
+    target_role: str = "Backend Developer",
+) -> str:
+    import json
+
+    return json.dumps(
+        {
+            "overall_score": 74,
+            "summary": f"Your profile has a useful foundation for {target_role} roles, with room to improve clarity.",
+            "sections": [
+                {
+                    "section": "headline",
+                    "score": 72,
+                    "status": "needs_improvement",
+                    "current": "Backend Developer",
+                    "suggestion": "Backend Developer | Python | FastAPI | PostgreSQL | Docker",
+                    "reason": "The headline can communicate your specialization more clearly.",
+                },
+                {
+                    "section": "projects",
+                    "score": 58,
+                    "status": "needs_improvement",
+                    "current": None,
+                    "suggestion": "Add technologies, your role, and measurable outcomes to each project.",
+                    "reason": "Specific project detail makes your work easier to understand.",
+                },
+            ],
+            "strengths": ["Strong backend technology foundation"],
+            "recommended_improvements": [
+                "Clarify target career role",
+                "Add measurable project outcomes",
+                f"Emphasize backend API and database work for {target_role} goals.",
+            ],
+            "existing_skills": existing_skills or ["Python", "FastAPI", "PostgreSQL", "Docker"],
+            "suggested_skills_to_learn": suggested_skills or ["Kubernetes", "CI/CD"],
+        }
+    )
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_complete_profile(mock_generate):
+    mock_generate.return_value = _optimizer_json()
+    user_id, username = _create_user("opt_complete")
+    _add_profile(user_id, ["Python", "FastAPI", "PostgreSQL", "Docker"])
+    headers = _login(username)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers, json={})
+
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload["overall_score"] == 74
+    assert payload["sections"]
+    assert payload["strengths"]
+    assert payload["recommended_improvements"]
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_incomplete_profile_still_returns_recommendations(mock_generate):
+    mock_generate.return_value = _optimizer_json(existing_skills=[], suggested_skills=["Python"])
+    user_id, username = _create_user("opt_incomplete")
+    headers = _login(username)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers, json={})
+
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload["sections"]
+    assert any(section["status"] in ("missing", "needs_improvement") for section in payload["sections"])
+    assert payload["recommended_improvements"]
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_does_not_report_recommended_skill_as_existing(mock_generate):
+    mock_generate.return_value = _optimizer_json(
+        existing_skills=["Python", "FastAPI", "PostgreSQL", "Docker", "Kubernetes"],
+        suggested_skills=["Kubernetes", "CI/CD"],
+    )
+    user_id, username = _create_user("opt_skills")
+    _add_profile(user_id, ["Python", "FastAPI", "PostgreSQL", "Docker"])
+    headers = _login(username)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers, json={})
+
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload["existing_skills"] == ["Python", "FastAPI", "PostgreSQL", "Docker"]
+    assert "Kubernetes" not in payload["existing_skills"]
+    assert "Kubernetes" in payload["suggested_skills_to_learn"]
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_recommendations_align_with_backend_goal(mock_generate):
+    mock_generate.return_value = _optimizer_json(target_role="Backend Developer")
+    user_id, username = _create_user("opt_backend_goal")
+    _add_profile(user_id, ["Python", "FastAPI"])
+    headers = _login(username)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers, json={})
+
+    assert res.status_code == 200, res.text
+    improvements = " ".join(res.json()["recommended_improvements"]).lower()
+    assert "backend" in improvements
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_user_isolation(mock_generate):
+    mock_generate.return_value = _optimizer_json(existing_skills=["Rust"])
+    user_a_id, username_a = _create_user("opt_user_a")
+    user_b_id, username_b = _create_user("opt_user_b")
+    _add_profile(user_a_id, ["Rust"])
+    _add_profile(user_b_id, ["React"])
+    headers_a = _login(username_a)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers_a, json={})
+
+    assert res.status_code == 200, res.text
+    prompt = mock_generate.call_args.kwargs["prompt"]
+    assert "Rust" in prompt
+    assert "React" not in prompt
+    assert username_b not in prompt
+
+
+@patch("app.services.profile_optimizer_service.ollama_service.generate_response", new_callable=AsyncMock)
+def test_profile_optimizer_ollama_failure_has_clean_error(mock_generate):
+    mock_generate.side_effect = AIServiceError("AI service is currently unavailable. Please try again later.")
+    user_id, username = _create_user("opt_failure")
+    _add_profile(user_id, ["Python"])
+    headers = _login(username)
+
+    res = client.post("/api/ai/profile/optimize", headers=headers, json={})
+
+    assert res.status_code == 503
+    assert res.json()["detail"] == "AI service is currently unavailable. Please try again later."
 
 
 # ---------------------------------------------------------------------------

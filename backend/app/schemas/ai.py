@@ -85,3 +85,22 @@ class GrammarCheckResponse(BaseModel):
     original_text: str
     corrected_text: str
     matches: List[GrammarMatchOut] = Field(default_factory=list)
+
+
+class ProfileOptimizationSection(BaseModel):
+    section: str
+    score: int = Field(..., ge=0, le=100)
+    status: str
+    current: Optional[str] = None
+    suggestion: str
+    reason: str
+
+
+class ProfileOptimizationResponse(BaseModel):
+    overall_score: int = Field(..., ge=0, le=100)
+    summary: str
+    sections: List[ProfileOptimizationSection] = Field(default_factory=list)
+    strengths: List[str] = Field(default_factory=list)
+    recommended_improvements: List[str] = Field(default_factory=list)
+    existing_skills: List[str] = Field(default_factory=list)
+    suggested_skills_to_learn: List[str] = Field(default_factory=list)

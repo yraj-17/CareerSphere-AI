@@ -13,6 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from app.core.config import settings
+from app.services.embedding_service import embed_text, get_embedding_dimension
 
 _client: Optional[QdrantClient] = None
 
@@ -39,31 +40,48 @@ def ping_qdrant() -> bool:
         return False
 
 
-def _vector_params() -> qmodels.VectorParams:
+def get_vector_size() -> int:
+    return get_embedding_dimension()
+
+
+def _vector_params(vector_size: Optional[int] = None) -> qmodels.VectorParams:
     return qmodels.VectorParams(
-        size=settings.EMBEDDING_DIMENSION,
+        size=vector_size or get_vector_size(),
         distance=qmodels.Distance.COSINE,
     )
 
 
-def ensure_collection(collection_name: str) -> None:
+def collection_exists(collection_name: str) -> bool:
+    client = get_qdrant_client()
+    return client.collection_exists(collection_name=collection_name)
+
+
+def ensure_collection(collection_name: str, vector_size: Optional[int] = None) -> None:
     """Create a collection if it does not already exist."""
     client = get_qdrant_client()
-    existing = {c.name for c in client.get_collections().collections}
-    if collection_name in existing:
+    if collection_exists(collection_name):
         return
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=_vector_params(),
+        vectors_config=_vector_params(vector_size=vector_size),
     )
     print(f"[Qdrant] Created collection '{collection_name}'.")
 
 
 def ensure_default_collections() -> None:
     """Ensure profile + content collections exist for AI matching features."""
-    ensure_collection(settings.QDRANT_COLLECTION_PROFILES)
-    ensure_collection(settings.QDRANT_COLLECTION_CONTENT)
+    vector_size = get_vector_size()
+    ensure_collection(settings.QDRANT_COLLECTION_PROFILES, vector_size=vector_size)
+    ensure_collection(settings.QDRANT_COLLECTION_CONTENT, vector_size=vector_size)
     print("[Qdrant] Default collections ready.")
+
+
+def _validate_vector(vector: Sequence[float], vector_size: Optional[int] = None) -> list[float]:
+    expected = vector_size or get_vector_size()
+    values = [float(item) for item in vector]
+    if len(values) != expected:
+        raise ValueError(f"Expected embedding dimension {expected}, got {len(values)}")
+    return values
 
 
 def upsert_embedding(
@@ -71,20 +89,39 @@ def upsert_embedding(
     point_id: str,
     vector: Sequence[float],
     payload: Optional[Dict[str, Any]] = None,
+    vector_size: Optional[int] = None,
 ) -> None:
-    if len(vector) != settings.EMBEDDING_DIMENSION:
-        raise ValueError(
-            f"Expected embedding dimension {settings.EMBEDDING_DIMENSION}, got {len(vector)}"
-        )
-    get_qdrant_client().upsert(
+    upsert_vectors(
         collection_name=collection_name,
         points=[
-            qmodels.PointStruct(
-                id=point_id,
-                vector=list(vector),
-                payload=payload or {},
-            )
+            {
+                "id": point_id,
+                "vector": vector,
+                "payload": payload or {},
+            }
         ],
+        vector_size=vector_size,
+    )
+
+
+def upsert_vectors(
+    collection_name: str,
+    points: Sequence[Dict[str, Any]],
+    vector_size: Optional[int] = None,
+) -> None:
+    if not points:
+        return
+    structs = [
+        qmodels.PointStruct(
+            id=point["id"],
+            vector=_validate_vector(point["vector"], vector_size=vector_size),
+            payload=point.get("payload") or {},
+        )
+        for point in points
+    ]
+    get_qdrant_client().upsert(
+        collection_name=collection_name,
+        points=structs,
     )
 
 
@@ -94,17 +131,15 @@ def similarity_search(
     limit: int = 10,
     score_threshold: Optional[float] = None,
     query_filter: Optional[qmodels.Filter] = None,
+    vector_size: Optional[int] = None,
 ) -> List[qmodels.ScoredPoint]:
-    if len(query_vector) != settings.EMBEDDING_DIMENSION:
-        raise ValueError(
-            f"Expected embedding dimension {settings.EMBEDDING_DIMENSION}, got {len(query_vector)}"
-        )
+    vector = _validate_vector(query_vector, vector_size=vector_size)
     client = get_qdrant_client()
     # Prefer query_points (qdrant-client >= 1.14); fall back to search for older clients
     if hasattr(client, "query_points"):
         result = client.query_points(
             collection_name=collection_name,
-            query=list(query_vector),
+            query=vector,
             limit=limit,
             score_threshold=score_threshold,
             query_filter=query_filter,
@@ -112,10 +147,28 @@ def similarity_search(
         return list(result.points)
     return client.search(
         collection_name=collection_name,
-        query_vector=list(query_vector),
+        query_vector=vector,
         limit=limit,
         score_threshold=score_threshold,
         query_filter=query_filter,
+    )
+
+
+def semantic_search(
+    collection_name: str,
+    query_text: str,
+    limit: int = 10,
+    score_threshold: Optional[float] = None,
+    query_filter: Optional[qmodels.Filter] = None,
+) -> List[qmodels.ScoredPoint]:
+    query_vector = embed_text(query_text)
+    return similarity_search(
+        collection_name=collection_name,
+        query_vector=query_vector,
+        limit=limit,
+        score_threshold=score_threshold,
+        query_filter=query_filter,
+        vector_size=len(query_vector),
     )
 
 
@@ -137,3 +190,12 @@ def retrieve_points(collection_name: str, point_ids: List[str]) -> List[qmodels.
         with_payload=True,
         with_vectors=False,
     )
+
+
+def payload_for_text(source_type: str, source_id: str, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return {
+        "source_type": source_type,
+        "source_id": source_id,
+        "text": text,
+        "metadata": metadata or {},
+    }

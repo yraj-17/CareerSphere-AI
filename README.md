@@ -26,6 +26,41 @@ Optional: LanguageTool (:8010) via `docker compose --profile languagetool up -d 
 
 **SQLite is not used.** All relational data goes to PostgreSQL.
 
+### Embeddings and Qdrant foundation
+
+Embeddings convert text into numeric vectors so related career content can be found by meaning instead of exact keywords. CareerSphere uses Qdrant as the vector database for those embeddings. PostgreSQL remains the source of truth for users, profiles, conversations, and media metadata; Redis stores temporary cache/session-style data; Qdrant stores vectors plus small payloads that reference source records; Ollama/Qwen generates natural-language responses; the embedding model only performs text-to-vector conversion.
+
+Default embedding runtime:
+
+| Setting | Value |
+| :--- | :--- |
+| Provider | `ollama` |
+| Model | `nomic-embed-text` |
+| Dimension | Detected from the model at runtime unless `EMBEDDING_DIMENSION` is explicitly set |
+
+Install the local embedding model once:
+
+```bash
+docker compose --profile ai up -d ollama
+docker exec careersphere-ollama ollama pull nomic-embed-text
+```
+
+Initialize Qdrant collections with the actual embedding dimension:
+
+```bash
+cd backend
+python -c "from app.services.qdrant_service import ensure_default_collections; ensure_default_collections()"
+```
+
+Run the real semantic-search proof test when Qdrant and Ollama are running:
+
+```bash
+cd backend
+RUN_QDRANT_INTEGRATION=1 pytest tests/test_vector_foundation.py -m integration
+```
+
+That test embeds a small career-content dataset, upserts vectors into a temporary Qdrant collection, searches for `backend development using Python`, and verifies that backend/Python content is prioritized. Normal unit tests mock external services and do not require Qdrant or Ollama.
+
 ---
 
 ## Technology Stack
@@ -152,9 +187,12 @@ See `.env.example` / `backend/.env.example` for the full list.
 | `DATABASE_URL` | PostgreSQL URL (`postgresql+psycopg://...`) |
 | `REDIS_URL` | Redis URL (`redis://localhost:6379/0` from host) |
 | `QDRANT_URL` | Qdrant HTTP URL |
+| `QDRANT_API_KEY` | Optional Qdrant API key; blank for local Docker |
 | `QDRANT_COLLECTION_PROFILES` | Profile embedding collection |
 | `QDRANT_COLLECTION_CONTENT` | Content embedding collection |
-| `EMBEDDING_DIMENSION` | Vector size (default `768`) |
+| `EMBEDDING_PROVIDER` | Embedding runtime provider, default `ollama` |
+| `EMBEDDING_MODEL` | Text embedding model, default `nomic-embed-text` |
+| `EMBEDDING_DIMENSION` | Optional vector-size override; blank detects the actual model dimension |
 | `MINIO_ENDPOINT` | MinIO API host:port |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO credentials |
 | `MINIO_BUCKET` | Default bucket (`careersphere`) |
@@ -188,7 +226,7 @@ MinIO console: http://localhost:9001 (default `minioadmin` / `minioadmin`)
 | :--- | :--- |
 | **PostgreSQL** | `users`, `media_objects`, `conversations`, `chat_messages` |
 | **Redis** | OTP + email verification tokens; short-lived username/email availability cache |
-| **Qdrant** | `user_profiles`, `career_content` vector collections (ready for embeddings) |
+| **Qdrant** | `user_profiles`, `career_content` vector collections for embeddings and semantic search |
 | **MinIO** | Binary files (resumes, profile images, documents) |
 
 ---

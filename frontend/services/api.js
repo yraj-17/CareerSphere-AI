@@ -155,6 +155,7 @@ export const logoutUser = async () => {
 
 /** Local CPU inference can exceed the default 10s client timeout. */
 const AI_CHAT_TIMEOUT_MS = 240000;
+const AI_PROFILE_OPTIMIZATION_TIMEOUT_MS = 240000;
 const GRAMMAR_TIMEOUT_MS = 30000;
 
 /**
@@ -219,6 +220,15 @@ export const checkGrammar = async (text) => {
     '/api/ai/grammar-check',
     { text },
     { timeout: GRAMMAR_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const optimizeMyProfile = async () => {
+  const response = await apiClient.post(
+    '/api/ai/profile/optimize',
+    {},
+    { timeout: AI_PROFILE_OPTIMIZATION_TIMEOUT_MS }
   );
   return response.data;
 };

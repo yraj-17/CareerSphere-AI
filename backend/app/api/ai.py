@@ -11,10 +11,11 @@ from app.schemas.ai import (
     ConversationSummary,
     GrammarCheckRequest,
     GrammarCheckResponse,
+    ProfileOptimizationResponse,
     SendMessageRequest,
     SendMessageResponse,
 )
-from app.services import conversation_service, languagetool_service
+from app.services import conversation_service, languagetool_service, profile_optimizer_service
 from app.services import profile_context_service
 from app.services.languagetool_service import LanguageToolError
 from app.services.ollama_service import AIServiceError, generate_response
@@ -72,6 +73,22 @@ async def chat_with_ai(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI service unavailable.",
+        )
+
+
+@router.post("/profile/optimize", response_model=ProfileOptimizationResponse)
+async def optimize_my_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return await profile_optimizer_service.optimize_profile(db, current_user)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is currently unavailable. Please try again later.",
         )
 
 
