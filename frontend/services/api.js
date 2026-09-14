@@ -157,6 +157,9 @@ export const logoutUser = async () => {
 const AI_CHAT_TIMEOUT_MS = 240000;
 const AI_PROFILE_OPTIMIZATION_TIMEOUT_MS = 240000;
 const GRAMMAR_TIMEOUT_MS = 30000;
+/** Skill gap AI (Qwen) backend timeout is 360s; allow extra HTTP overhead. */
+const AI_SKILL_ANALYSIS_TIMEOUT_MS = 420000;
+
 
 /**
  * Send a career-related prompt to the FastAPI AI chat endpoint (one-shot, no history).
@@ -321,6 +324,23 @@ export const deleteCertification = async (id) => {
 
 export const updateCareerPreferences = async (payload) => {
   const response = await apiClient.patch('/api/profile/me/preferences', payload);
+  return response.data;
+};
+
+/**
+ * Fetch the authenticated user's skill analysis.
+ *
+ * When includeAI is true (default), the backend also calls Qwen to produce
+ * AI-powered priority gaps, learning order, and roadmap.  This can take up to
+ * ~360s on a local Ollama instance, so a longer client timeout is required.
+ *
+ * The backend derives the user from the JWT — do NOT send user_id or profile data.
+ */
+export const getSkillAnalysis = async (includeAI = true) => {
+  const response = await apiClient.get('/api/skill-analysis/me', {
+    params: { include_ai: includeAI },
+    timeout: AI_SKILL_ANALYSIS_TIMEOUT_MS,
+  });
   return response.data;
 };
 

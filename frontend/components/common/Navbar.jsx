@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, LayoutDashboard, Sparkles, UserRound } from 'lucide-react';
+import { LogOut, LayoutDashboard, Sparkles, UserRound, BarChart2 } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -48,6 +48,17 @@ export default function Navbar() {
               >
                 <Sparkles className="h-4 w-4" />
                 <span className="hidden sm:inline">AI Career Assistant</span>
+              </Link>
+
+              <Link
+                href="/dashboard/skill-analysis"
+                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${pathname === '/dashboard/skill-analysis'
+                    ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
+                    : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
+                  }`}
+              >
+                <BarChart2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Skill Analysis</span>
               </Link>
 
               <Link

@@ -14,6 +14,7 @@ import {
   Loader2,
   CheckCircle2,
   Layers,
+  BarChart2,
 } from 'lucide-react';
 import Dashboard3DVisual from '@/components/dashboard/Dashboard3DVisual';
 
@@ -185,18 +186,21 @@ export default function DashboardPage() {
             </span>
           </Link>
 
-          <div className="p-4 rounded-2xl bg-slate-950/40 border border-white/5 opacity-70">
-            <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-slate-500" /> AI Mock Interviewer
+          <Link
+            href="/dashboard/skill-analysis"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+          >
+            <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
+              <BarChart2 className="h-4 w-4 text-accent" /> Skill Analysis
             </h4>
-            <span className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-white/5 text-slate-400 border border-white/10">
-              Phase 3
+            <span className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+              Available Now
             </span>
-          </div>
+          </Link>
 
           <div className="p-4 rounded-2xl bg-slate-950/40 border border-white/5 opacity-70">
             <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-slate-500" /> Mentorship & Network
+              <ShieldCheck className="h-4 w-4 text-slate-500" /> Mentorship &amp; Network
             </h4>
             <span className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-white/5 text-slate-400 border border-white/10">
               Phase 4
