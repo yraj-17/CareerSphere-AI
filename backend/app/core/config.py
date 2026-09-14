@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     AI_CONTEXT_MESSAGES: int = 20
     AI_CONTEXT_CHARS: int = 16000
     OLLAMA_TIMEOUT_SECONDS: float = 240.0
+    OLLAMA_SKILL_GAP_TIMEOUT_SECONDS: float = 360.0
+
 
     # LanguageTool (grammar / writing assistant — not the AI model)
     LANGUAGETOOL_URL: str = "http://localhost:8010"
