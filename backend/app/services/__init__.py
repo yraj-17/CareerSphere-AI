@@ -2,8 +2,11 @@
 
 from app.services import (
     cache_service,
+    career_matching_service,
     career_indexing_service,
     embedding_service,
+    gemini_reranking_service,
+    opportunity_embedding_service,
     qdrant_service,
     skill_analysis_service,
     skill_gap_ai_service,
@@ -12,8 +15,11 @@ from app.services import (
 
 __all__ = [
     "cache_service",
+    "career_matching_service",
     "career_indexing_service",
     "embedding_service",
+    "gemini_reranking_service",
+    "opportunity_embedding_service",
     "qdrant_service",
     "skill_analysis_service",
     "skill_gap_ai_service",

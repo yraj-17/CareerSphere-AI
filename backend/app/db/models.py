@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -231,3 +231,70 @@ class CareerPreference(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     profile = relationship("Profile", back_populates="career_preferences")
+
+
+class Opportunity(Base):
+    """A career opportunity (job, internship, etc.) that can be matched to user profiles."""
+
+    __tablename__ = "opportunities"
+    __table_args__ = (
+        Index(
+            "uq_opportunity_source_external_id",
+            "source",
+            "external_id",
+            unique=True,
+            postgresql_where=Column("external_id") != None,  # noqa: E711
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    title = Column(String(200), nullable=False)
+    company = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    opportunity_type = Column(String(50), nullable=False, index=True)
+    target_role = Column(String(160), nullable=False, index=True)
+    location = Column(String(160), nullable=True, index=True)
+    is_remote = Column(Boolean, nullable=False, default=False, index=True)
+    experience_level = Column(String(80), nullable=True, index=True)
+    industry = Column(String(160), nullable=True)
+    salary_min = Column(BigInteger, nullable=True)
+    salary_max = Column(BigInteger, nullable=True)
+    application_url = Column(String(500), nullable=True)
+    source = Column(String(80), nullable=False, index=True)
+    external_id = Column(String(255), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    required_skills = relationship("OpportunityRequiredSkill", back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityRequiredSkill.name")
+    preferred_skills = relationship("OpportunityPreferredSkill", back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityPreferredSkill.name")
+
+    def __repr__(self):
+        return f"<Opportunity id={self.id} title={self.title} source={self.source}>"
+
+
+class OpportunityRequiredSkill(Base):
+    __tablename__ = "opportunity_required_skills"
+    __table_args__ = (UniqueConstraint("opportunity_id", "normalized_name", name="uq_opportunity_required_skill_name"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    opportunity_id = Column(String(36), ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    normalized_name = Column(String(80), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    opportunity = relationship("Opportunity", back_populates="required_skills")
+
+
+class OpportunityPreferredSkill(Base):
+    __tablename__ = "opportunity_preferred_skills"
+    __table_args__ = (UniqueConstraint("opportunity_id", "normalized_name", name="uq_opportunity_preferred_skill_name"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    opportunity_id = Column(String(36), ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    normalized_name = Column(String(80), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    opportunity = relationship("Opportunity", back_populates="preferred_skills")

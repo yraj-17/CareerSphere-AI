@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str = ""
     QDRANT_COLLECTION_PROFILES: str = "user_profiles"
     QDRANT_COLLECTION_CONTENT: str = "career_content"
+    QDRANT_COLLECTION_OPPORTUNITIES: str = "career_opportunities"
     EMBEDDING_PROVIDER: str = "ollama"
     EMBEDDING_MODEL: str = "nomic-embed-text"
     EMBEDDING_DIMENSION: Optional[int] = None
@@ -73,6 +74,10 @@ class Settings(BaseSettings):
     AI_CONTEXT_CHARS: int = 16000
     OLLAMA_TIMEOUT_SECONDS: float = 240.0
     OLLAMA_SKILL_GAP_TIMEOUT_SECONDS: float = 360.0
+    # Gemini (semantic reranking only; deterministic scores remain authoritative)
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_RERANK_TIMEOUT_SECONDS: float = 20.0
 
 
     # LanguageTool (grammar / writing assistant — not the AI model)
