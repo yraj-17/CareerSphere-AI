@@ -155,6 +155,11 @@ export const logoutUser = async () => {
 
 /** Local CPU inference can exceed the default 10s client timeout. */
 const AI_CHAT_TIMEOUT_MS = 240000;
+/**
+ * Career Matching may involve Qwen explanation generation which can be slow.
+ * Allow generous overhead beyond the backend Qwen timeout.
+ */
+const CAREER_MATCHING_TIMEOUT_MS = 480000;
 const AI_PROFILE_OPTIMIZATION_TIMEOUT_MS = 240000;
 const GRAMMAR_TIMEOUT_MS = 30000;
 /** Skill gap AI (Qwen) backend timeout is 360s; allow extra HTTP overhead. */
@@ -340,6 +345,27 @@ export const getSkillAnalysis = async (includeAI = true) => {
   const response = await apiClient.get('/api/skill-analysis/me', {
     params: { include_ai: includeAI },
     timeout: AI_SKILL_ANALYSIS_TIMEOUT_MS,
+  });
+  return response.data;
+};
+
+/**
+ * Fetch the authenticated user's personalised career matches.
+ *
+ * When includeAI is true (default), the backend runs Gemini reranking and
+ * Qwen explanation generation — both can be slow.  A generous client timeout
+ * is set so the request is not aborted mid-pipeline.
+ *
+ * The backend derives the current user from the JWT — do NOT send user_id,
+ * profile_id, or any profile data from the frontend.
+ *
+ * @param {boolean} includeAI - Include Gemini reranking and Qwen AI explanations.
+ * @returns {Promise<import('./api').CareerMatchingAPIResponse>}
+ */
+export const getCareerMatching = async (includeAI = true) => {
+  const response = await apiClient.get('/api/career-matching/me', {
+    params: { include_ai: includeAI },
+    timeout: CAREER_MATCHING_TIMEOUT_MS,
   });
   return response.data;
 };

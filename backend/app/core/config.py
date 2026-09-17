@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_RERANK_TIMEOUT_SECONDS: float = 20.0
+    CAREER_MATCHING_CACHE_TTL_SECONDS: int = 900
 
 
     # LanguageTool (grammar / writing assistant — not the AI model)

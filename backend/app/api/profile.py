@@ -40,6 +40,7 @@ from app.schemas.profile import (
     SkillResponse,
 )
 from app.services import storage_service
+from app.services.career_matching_cache_service import invalidate_career_matching_cache
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -89,6 +90,10 @@ def _commit(db: Session, message: str = "Failed to save profile data."):
     except Exception:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
+
+
+def _invalidate_matching_cache(user: User) -> None:
+    invalidate_career_matching_cache(user.id)
 
 
 def _text_from_list(values: list[str]) -> str:
@@ -179,6 +184,7 @@ def update_my_profile(body: ProfileUpdate, db: Session = Depends(get_db), curren
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a valid profile image first.")
         profile.profile_photo_media_id = media_id
     _commit(db)
+    _invalidate_matching_cache(current_user)
     return _profile_response(_get_or_create_profile(db, current_user))
 
 
@@ -193,6 +199,7 @@ def add_skill(body: SkillCreate, db: Session = Depends(get_db), current_user: Us
     skill = ProfileSkill(profile_id=profile.id, name=body.name, normalized_name=_normalize_name(body.name))
     db.add(skill)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(skill)
     return skill
 
@@ -202,6 +209,7 @@ def delete_skill(skill_id: str, db: Session = Depends(get_db), current_user: Use
     profile = _get_or_create_profile(db, current_user)
     db.delete(_get_item_or_404(db, ProfileSkill, profile, skill_id))
     _commit(db)
+    _invalidate_matching_cache(current_user)
 
 
 @router.get("/me/education", response_model=list[EducationResponse])
@@ -248,6 +256,7 @@ def add_experience(body: ExperienceCreate, db: Session = Depends(get_db), curren
     item = ProfileExperience(profile_id=profile.id, **body.model_dump())
     db.add(item)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(item)
     return item
 
@@ -259,6 +268,7 @@ def update_experience(item_id: str, body: ExperienceUpdate, db: Session = Depend
     for key, value in body.model_dump().items():
         setattr(item, key, value)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(item)
     return item
 
@@ -268,6 +278,7 @@ def delete_experience(item_id: str, db: Session = Depends(get_db), current_user:
     profile = _get_or_create_profile(db, current_user)
     db.delete(_get_item_or_404(db, ProfileExperience, profile, item_id))
     _commit(db)
+    _invalidate_matching_cache(current_user)
 
 
 def _sync_project_technologies(project: ProfileProject, technologies: list[str]):
@@ -290,6 +301,7 @@ def add_project(body: ProjectCreate, db: Session = Depends(get_db), current_user
     _sync_project_technologies(project, technologies)
     db.add(project)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(project)
     return _project_response(project)
 
@@ -306,6 +318,7 @@ def update_project(item_id: str, body: ProjectUpdate, db: Session = Depends(get_
         setattr(project, key, value)
     _sync_project_technologies(project, technologies)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(project)
     return _project_response(project)
 
@@ -315,6 +328,7 @@ def delete_project(item_id: str, db: Session = Depends(get_db), current_user: Us
     profile = _get_or_create_profile(db, current_user)
     db.delete(_get_item_or_404(db, ProfileProject, profile, item_id))
     _commit(db)
+    _invalidate_matching_cache(current_user)
 
 
 @router.get("/me/certifications", response_model=list[CertificationResponse])
@@ -373,5 +387,6 @@ def update_preferences(body: CareerPreferenceUpdate, db: Session = Depends(get_d
     pref.career_interests = _text_from_list(data["career_interests"])
     db.add(pref)
     _commit(db)
+    _invalidate_matching_cache(current_user)
     db.refresh(pref)
     return CareerPreferenceResponse.from_model(pref)

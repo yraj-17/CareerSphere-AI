@@ -12,6 +12,7 @@ from app.api.media import router as media_router
 from app.api.ai import router as ai_router
 from app.api.profile import router as profile_router
 from app.api.skill_analysis import router as skill_analysis_router
+from app.api.career_matching import router as career_matching_router
 from app.schemas.auth import HealthResponse
 from app.services.qdrant_service import ping_qdrant, ensure_default_collections
 from app.services.storage_service import ping_minio, ensure_bucket
@@ -107,6 +108,7 @@ app.include_router(media_router, prefix=settings.API_V1_STR)
 app.include_router(ai_router, prefix=settings.API_V1_STR)
 app.include_router(profile_router, prefix=settings.API_V1_STR)
 app.include_router(skill_analysis_router, prefix=settings.API_V1_STR)
+app.include_router(career_matching_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":
