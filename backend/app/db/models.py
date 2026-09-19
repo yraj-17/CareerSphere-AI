@@ -1,5 +1,6 @@
+import enum
 import uuid
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, BigInteger, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -298,3 +299,98 @@ class OpportunityPreferredSkill(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     opportunity = relationship("Opportunity", back_populates="preferred_skills")
+
+
+# ---------------------------------------------------------------------------
+# Networking — Connections
+# ---------------------------------------------------------------------------
+
+
+class ConnectionStatus(str, enum.Enum):
+    """Lifecycle states for a professional connection request."""
+
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    cancelled = "cancelled"
+
+
+class Connection(Base):
+    """
+    A directed connection request between two users.
+
+    Business rules (enforced at the DB layer via constraints):
+    - A user cannot connect to themselves (CHECK requester_id != receiver_id).
+    - Only one active relationship may exist between any ordered pair of users.
+      The canonical form stores the lexicographically smaller user ID as
+      ``canonical_a`` and the larger as ``canonical_b``; a unique constraint on
+      (canonical_a, canonical_b) prevents both A→B and B→A from coexisting.
+
+    The ``requester_id`` / ``receiver_id`` columns record the *actual* direction
+    of the request; ``canonical_a`` / ``canonical_b`` are derived ordering columns
+    used purely for the uniqueness constraint.
+    """
+
+    __tablename__ = "connections"
+    __table_args__ = (
+        # Prevent A→B and B→A from coexisting regardless of direction.
+        UniqueConstraint("canonical_a", "canonical_b", name="uq_connection_pair"),
+        # Convenience composite index for looking up all connections of a user
+        # in either direction by a single scan.
+        Index("ix_connections_requester_receiver", "requester_id", "receiver_id"),
+        Index("ix_connections_receiver_requester", "receiver_id", "requester_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    requester_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    receiver_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Canonical ordering — always min(requester, receiver) / max(requester, receiver).
+    # Populated by the application before insert; never changed after creation.
+    canonical_a = Column(String(36), nullable=False)
+    canonical_b = Column(String(36), nullable=False)
+
+    status = Column(
+        Enum(ConnectionStatus, name="connectionstatus", create_constraint=True),
+        nullable=False,
+        default=ConnectionStatus.pending,
+        index=True,
+    )
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    requester = relationship("User", foreign_keys=[requester_id])
+    receiver = relationship("User", foreign_keys=[receiver_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<Connection id={self.id} "
+            f"requester={self.requester_id} receiver={self.receiver_id} "
+            f"status={self.status}>"
+        )
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def canonical_pair(user_a: str, user_b: str) -> tuple[str, str]:
+        """Return (min_id, max_id) — the canonical ordering for the pair."""
+        return (min(user_a, user_b), max(user_a, user_b))
