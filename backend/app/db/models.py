@@ -302,6 +302,186 @@ class OpportunityPreferredSkill(Base):
 
 
 # ---------------------------------------------------------------------------
+# Phase 5.8 — Direct Messaging
+#
+# Table names use the "direct_" prefix to avoid collision with the existing
+# AI-chat "conversations" / "chat_messages" tables.
+#
+# Schema:
+#   direct_conversations        — one row per two-party messaging thread
+#   direct_conversation_participants — which two users are in the thread
+#   direct_messages             — individual messages inside a thread
+#
+# The "canonical_a / canonical_b" pattern (identical to Connection) stores
+# the lexicographically ordered (min, max) pair of participant IDs.  A unique
+# constraint on (canonical_a, canonical_b) prevents duplicate conversations
+# between the same two users at the database level, complementing the
+# service-layer enforcement introduced in Phase 5.8.2.
+#
+# Delivery / read tracking uses nullable timestamps rather than an enum, which
+# avoids a new PostgreSQL type and keeps the schema minimal.
+# ---------------------------------------------------------------------------
+
+
+class DirectConversation(Base):
+    """
+    A one-to-one messaging thread between exactly two users.
+
+    The canonical_a / canonical_b columns hold the lexicographically ordered
+    participant IDs (min, max) so that a unique constraint can prevent a
+    second conversation from being opened for the same pair.
+
+    Connection-eligibility (both users must share an ACCEPTED connection) is
+    enforced by the service layer in Phase 5.8.2, not here.
+    """
+
+    __tablename__ = "direct_conversations"
+    __table_args__ = (
+        # One thread per user pair regardless of who initiated it.
+        UniqueConstraint("canonical_a", "canonical_b", name="uq_direct_conversation_pair"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    # Canonical ordering — always (min(user_a, user_b), max(user_a, user_b)).
+    # Set by the application before insert; never changed.
+    canonical_a = Column(String(36), nullable=False)
+    canonical_b = Column(String(36), nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    participants = relationship(
+        "DirectConversationParticipant",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+    messages = relationship(
+        "DirectMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="DirectMessage.created_at",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DirectConversation id={self.id} "
+            f"pair=({self.canonical_a[:8]}…, {self.canonical_b[:8]}…)>"
+        )
+
+    @staticmethod
+    def canonical_pair(user_a: str, user_b: str) -> tuple[str, str]:
+        """Return (min_id, max_id) — consistent canonical ordering for the pair."""
+        return (min(user_a, user_b), max(user_a, user_b))
+
+
+class DirectConversationParticipant(Base):
+    """
+    Maps users to the direct_conversations they belong to.
+
+    Each conversation has exactly two rows in this table.
+    The composite primary key (conversation_id, user_id) guarantees that
+    the same user cannot be added twice to the same thread.
+    """
+
+    __tablename__ = "direct_conversation_participants"
+    __table_args__ = (
+        # Composite PK doubles as the uniqueness constraint.
+        # Declared explicitly so the index naming follows project conventions.
+        Index(
+            "ix_direct_conv_participants_conversation_id",
+            "conversation_id",
+        ),
+        Index(
+            "ix_direct_conv_participants_user_id",
+            "user_id",
+        ),
+    )
+
+    conversation_id = Column(
+        String(36),
+        ForeignKey("direct_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    joined_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    conversation = relationship("DirectConversation", back_populates="participants")
+    user = relationship("User")
+
+    def __repr__(self) -> str:
+        return (
+            f"<DirectConversationParticipant "
+            f"conv={self.conversation_id} user={self.user_id}>"
+        )
+
+
+class DirectMessage(Base):
+    """
+    A single message sent within a direct_conversations thread.
+
+    delivered_at and read_at are nullable timestamps; NULL means the event
+    has not occurred yet.  They are set by the service / WebSocket layer in
+    Phase 5.8.2+.  No typing or online state is stored here.
+    """
+
+    __tablename__ = "direct_messages"
+    __table_args__ = (
+        # Primary lookup: all messages in a conversation ordered by time.
+        Index("ix_direct_messages_conversation_created", "conversation_id", "created_at"),
+        # Secondary: messages sent by a particular user.
+        Index("ix_direct_messages_sender_id", "sender_id"),
+        # Unread query support: messages in a conversation where read_at is NULL.
+        Index("ix_direct_messages_conversation_read_at", "conversation_id", "read_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    conversation_id = Column(
+        String(36),
+        ForeignKey("direct_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sender_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    content = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Nullable delivery / read tracking timestamps.
+    # NULL  → event has not occurred.
+    # Non-NULL → UTC timestamp of when the event occurred.
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    conversation = relationship("DirectConversation", back_populates="messages")
+    sender = relationship("User", foreign_keys=[sender_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<DirectMessage id={self.id} "
+            f"conv={self.conversation_id} sender={self.sender_id}>"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Networking — Connections
 # ---------------------------------------------------------------------------
 
