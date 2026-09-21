@@ -519,3 +519,19 @@ export const getMyNetworkOutgoing = async () => {
   const response = await apiClient.get('/api/networking/my-network/requests/outgoing');
   return response.data;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public Profile View — Phase 5.6
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch another user's public professional profile.
+ * The viewer's identity comes from the JWT — never from the frontend.
+ *
+ * @param {string} userId  — ID of the user whose profile to view
+ * @returns {Promise<PublicProfileResponse>}
+ */
+export const getPublicProfile = async (userId) => {
+  const response = await apiClient.get(`/api/networking/users/${userId}/profile`);
+  return response.data;
+};

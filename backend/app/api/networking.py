@@ -12,10 +12,10 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_user, get_db
-from app.db.models import Connection, Profile, User
+from app.db.models import Connection, Profile, ProfileProject, User
 from app.schemas.networking import (
     ConnectionResponse,
     ConnectionStatusResponse,
@@ -23,6 +23,13 @@ from app.schemas.networking import (
     ConnectionUserSummary,
     NetworkingUserResponse,
     PaginatedUsersResponse,
+    PublicProfileResponse,
+    PublicUserSummary,
+    PublicSkillResponse,
+    PublicEducationResponse,
+    PublicExperienceResponse,
+    PublicProjectResponse,
+    PublicCertificationResponse,
 )
 from app.services import connection_service as svc
 from app.services.storage_service import presigned_get_url
@@ -548,3 +555,141 @@ def get_my_network_outgoing(
         _build_other_user_summary(r, current_user.id, db)
         for r in requests
     ]
+
+# ---------------------------------------------------------------------------
+# GET /networking/users/{user_id}/profile
+# Public professional profile view
+# ---------------------------------------------------------------------------
+
+
+def _public_project_response(project: ProfileProject) -> PublicProjectResponse:
+    return PublicProjectResponse(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        technologies=[t.name for t in project.technologies],
+        github_url=str(project.github_url) if project.github_url else None,
+        live_url=str(project.live_url) if project.live_url else None,
+        start_date=project.start_date.isoformat() if project.start_date else None,
+        end_date=project.end_date.isoformat() if project.end_date else None,
+    )
+
+
+def _public_profile_response(user: User, profile: Optional[Profile]) -> PublicProfileResponse:
+    """
+    Build a PublicProfileResponse from user + optional profile.
+
+    Intentionally omits: email, password_hash, career_preferences,
+    completeness, profile_photo_media_id, and any auth/session fields.
+    """
+    public_user = PublicUserSummary(
+        id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+    )
+
+    if profile is None:
+        return PublicProfileResponse(user=public_user)
+
+    photo_url = _profile_photo_url(profile)
+
+    skills = [
+        PublicSkillResponse(id=s.id, name=s.name)
+        for s in (profile.skills or [])
+    ]
+    education = [
+        PublicEducationResponse(
+            id=e.id,
+            institution=e.institution,
+            degree=e.degree,
+            field_of_study=e.field_of_study,
+            start_date=e.start_date.isoformat() if e.start_date else None,
+            end_date=e.end_date.isoformat() if e.end_date else None,
+            description=e.description,
+        )
+        for e in (profile.education or [])
+    ]
+    experience = [
+        PublicExperienceResponse(
+            id=ex.id,
+            company=ex.company,
+            job_title=ex.job_title,
+            employment_type=ex.employment_type,
+            location=ex.location,
+            start_date=ex.start_date.isoformat() if ex.start_date else None,
+            end_date=ex.end_date.isoformat() if ex.end_date else None,
+            currently_working=ex.currently_working,
+            description=ex.description,
+        )
+        for ex in (profile.experience or [])
+    ]
+    projects = [_public_project_response(p) for p in (profile.projects or [])]
+    certifications = [
+        PublicCertificationResponse(
+            id=c.id,
+            name=c.name,
+            issuing_organization=c.issuing_organization,
+            issue_date=c.issue_date.isoformat() if c.issue_date else None,
+            expiration_date=c.expiration_date.isoformat() if c.expiration_date else None,
+            credential_url=str(c.credential_url) if c.credential_url else None,
+        )
+        for c in (profile.certifications or [])
+    ]
+
+    return PublicProfileResponse(
+        user=public_user,
+        headline=profile.headline,
+        location=profile.location,
+        about=profile.about,
+        profile_photo_url=photo_url,
+        skills=skills,
+        experience=experience,
+        education=education,
+        projects=projects,
+        certifications=certifications,
+    )
+
+
+@router.get(
+    "/users/{user_id}/profile",
+    response_model=PublicProfileResponse,
+    summary="View another user's public professional profile",
+)
+def get_user_public_profile(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PublicProfileResponse:
+    """
+    Return the public professional profile of the user identified by ``user_id``.
+
+    - Requires authentication (JWT). The viewer's identity comes from the token.
+    - Returns 404 if the user does not exist.
+    - If the user exists but has no profile, returns the user basics with empty sections.
+    - Never exposes email, password_hash, career_preferences, or internal fields.
+    """
+    # Resolve the target user
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # Load profile with all relationships eagerly — returns None if no profile yet
+    profile = (
+        db.query(Profile)
+        .options(
+            selectinload(Profile.profile_photo),
+            selectinload(Profile.skills),
+            selectinload(Profile.education),
+            selectinload(Profile.experience),
+            selectinload(Profile.projects).selectinload(ProfileProject.technologies),
+            selectinload(Profile.certifications),
+        )
+        .filter(Profile.user_id == user_id)
+        .first()
+    )
+
+    return _public_profile_response(target_user, profile)

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, LayoutDashboard, Sparkles, UserRound, BarChart2, Briefcase, Users, Search, Network, ChevronDown } from 'lucide-react';
+import { LogOut, LayoutDashboard, Sparkles, UserRound, BarChart2, Briefcase, Users, Search, UsersRound, ChevronDown } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -129,7 +129,7 @@ export default function Navbar() {
                           : 'text-slate-200 hover:bg-white/5 hover:text-white'
                       }`}
                     >
-                      <Network className="h-4 w-4 flex-shrink-0" />
+                      <UsersRound className="h-4 w-4 flex-shrink-0" />
                       My Network
                     </Link>
                   </div>

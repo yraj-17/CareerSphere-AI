@@ -145,3 +145,99 @@ class EnrichedConnectionResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     other_user: ConnectionUserSummary
+
+
+# ---------------------------------------------------------------------------
+# Public profile view — GET /networking/users/{user_id}/profile
+# ---------------------------------------------------------------------------
+
+
+class PublicUserSummary(BaseModel):
+    """Safe public user identity — no email, no auth fields."""
+
+    id: str
+    username: str
+    first_name: str
+    last_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class PublicSkillResponse(BaseModel):
+    id: str
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class PublicEducationResponse(BaseModel):
+    id: str
+    institution: str
+    degree: str
+    field_of_study: Optional[str] = None
+    start_date: Optional[str] = None   # ISO date string
+    end_date: Optional[str] = None
+    description: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PublicExperienceResponse(BaseModel):
+    id: str
+    company: str
+    job_title: str
+    employment_type: Optional[str] = None
+    location: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    currently_working: bool = False
+    description: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PublicProjectResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    technologies: list[str] = []
+    github_url: Optional[str] = None
+    live_url: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PublicCertificationResponse(BaseModel):
+    id: str
+    name: str
+    issuing_organization: str
+    issue_date: Optional[str] = None
+    expiration_date: Optional[str] = None
+    credential_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PublicProfileResponse(BaseModel):
+    """
+    Safe public professional profile.
+
+    Intentionally excludes:
+      - email / password_hash / any auth fields
+      - career_preferences (private intent data)
+      - completeness metrics (internal)
+      - profile_photo_media_id (internal FK)
+    """
+
+    user: PublicUserSummary
+    headline: Optional[str] = None
+    location: Optional[str] = None
+    about: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    skills: list[PublicSkillResponse] = []
+    experience: list[PublicExperienceResponse] = []
+    education: list[PublicEducationResponse] = []
+    projects: list[PublicProjectResponse] = []
+    certifications: list[PublicCertificationResponse] = []
