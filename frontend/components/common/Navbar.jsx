@@ -1,14 +1,29 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, LayoutDashboard, Sparkles, UserRound, BarChart2, Briefcase, Users } from 'lucide-react';
+import { LogOut, LayoutDashboard, Sparkles, UserRound, BarChart2, Briefcase, Users, Search, Network, ChevronDown } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
+  const [netOpen, setNetOpen] = useState(false);
+  const netRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (netRef.current && !netRef.current.contains(e.target)) {
+        setNetOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const isNetworkingActive = pathname.startsWith('/dashboard/networking');
 
   return (
     <header className="sticky top-0 z-50 w-full px-4 py-3 md:px-8">
@@ -72,16 +87,54 @@ export default function Navbar() {
                 <span className="hidden sm:inline">Career Matching</span>
               </Link>
 
-              <Link
-                href="/dashboard/networking"
-                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${pathname === '/dashboard/networking' || pathname.startsWith('/dashboard/networking/')
-                    ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
-                    : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
+              {/* Networking dropdown */}
+              <div className="relative" ref={netRef}>
+                <button
+                  type="button"
+                  onClick={() => setNetOpen((v) => !v)}
+                  aria-haspopup="true"
+                  aria-expanded={netOpen}
+                  aria-label="Networking menu"
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                    isNetworkingActive
+                      ? 'bg-accent text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)]'
+                      : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
                   }`}
-              >
-                <Users className="h-4 w-4" />
-                <span className="hidden sm:inline">Networking</span>
-              </Link>
+                >
+                  <Users className="h-4 w-4" />
+                  <span className="hidden sm:inline">Networking</span>
+                  <ChevronDown className={`h-3.5 w-3.5 hidden sm:block transition-transform duration-150 ${netOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {netOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-52 rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-[0_16px_40px_rgba(0,0,0,0.5)] overflow-hidden z-50">
+                    <Link
+                      href="/dashboard/networking"
+                      onClick={() => setNetOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+                        pathname === '/dashboard/networking'
+                          ? 'bg-accent/10 text-accent font-medium'
+                          : 'text-slate-200 hover:bg-white/5 hover:text-white'
+                      }`}
+                    >
+                      <Search className="h-4 w-4 flex-shrink-0" />
+                      Discover People
+                    </Link>
+                    <Link
+                      href="/dashboard/networking/my-network"
+                      onClick={() => setNetOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+                        pathname === '/dashboard/networking/my-network'
+                          ? 'bg-accent/10 text-accent font-medium'
+                          : 'text-slate-200 hover:bg-white/5 hover:text-white'
+                      }`}
+                    >
+                      <Network className="h-4 w-4 flex-shrink-0" />
+                      My Network
+                    </Link>
+                  </div>
+                )}
+              </div>
 
               <Link
                 href="/dashboard/profile"

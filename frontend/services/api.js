@@ -484,3 +484,38 @@ export const cancelConnectionRequest = async (connectionId) => {
 export const removeConnection = async (connectionId) => {
   await apiClient.delete(`/api/networking/connections/${connectionId}`);
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// My Network — Phase 5.5 (enriched endpoints with user details)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get accepted connections enriched with the other user's public profile details.
+ * Used by the My Network page to avoid per-user secondary fetches.
+ *
+ * @returns {Promise<Array<EnrichedConnectionResponse>>}
+ */
+export const getMyNetworkConnections = async () => {
+  const response = await apiClient.get('/api/networking/my-network/connections');
+  return response.data;
+};
+
+/**
+ * Get incoming pending requests enriched with the requester's public profile.
+ *
+ * @returns {Promise<Array<EnrichedConnectionResponse>>}
+ */
+export const getMyNetworkIncoming = async () => {
+  const response = await apiClient.get('/api/networking/my-network/requests/incoming');
+  return response.data;
+};
+
+/**
+ * Get outgoing pending requests enriched with the receiver's public profile.
+ *
+ * @returns {Promise<Array<EnrichedConnectionResponse>>}
+ */
+export const getMyNetworkOutgoing = async () => {
+  const response = await apiClient.get('/api/networking/my-network/requests/outgoing');
+  return response.data;
+};

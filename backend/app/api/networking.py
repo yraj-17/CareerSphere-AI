@@ -19,6 +19,8 @@ from app.db.models import Connection, Profile, User
 from app.schemas.networking import (
     ConnectionResponse,
     ConnectionStatusResponse,
+    EnrichedConnectionResponse,
+    ConnectionUserSummary,
     NetworkingUserResponse,
     PaginatedUsersResponse,
 )
@@ -426,3 +428,123 @@ def discover_users(
         offset=offset,
         users=result_users,
     )
+
+
+# ---------------------------------------------------------------------------
+# Enrichment helper — builds EnrichedConnectionResponse
+# ---------------------------------------------------------------------------
+
+
+def _build_other_user_summary(
+    conn: Connection,
+    current_user_id: str,
+    db: Session,
+) -> EnrichedConnectionResponse:
+    """
+    Determine the 'other' user for a connection row (the one who is NOT
+    the current user), load their profile, and return the enriched schema.
+    """
+    other_id = conn.receiver_id if conn.requester_id == current_user_id else conn.requester_id
+    other_user = db.query(User).filter(User.id == other_id).first()
+
+    if other_user is None:
+        # Defensive: user deleted after connection was formed
+        summary = ConnectionUserSummary(
+            id=other_id,
+            username="unknown",
+            first_name="Deleted",
+            last_name="User",
+        )
+    else:
+        profile = other_user.profile
+        summary = ConnectionUserSummary(
+            id=other_user.id,
+            username=other_user.username,
+            first_name=other_user.first_name,
+            last_name=other_user.last_name,
+            headline=profile.headline if profile else None,
+            location=profile.location if profile else None,
+            profile_photo_url=_profile_photo_url(profile) if profile else None,
+        )
+
+    return EnrichedConnectionResponse(
+        id=conn.id,
+        requester_id=conn.requester_id,
+        receiver_id=conn.receiver_id,
+        status=conn.status.value,
+        created_at=conn.created_at,
+        updated_at=conn.updated_at,
+        other_user=summary,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /networking/my-network/connections
+# Enriched accepted connections (My Network page)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/my-network/connections",
+    response_model=list[EnrichedConnectionResponse],
+    summary="Get accepted connections with user details (My Network page)",
+)
+def get_my_network_connections(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EnrichedConnectionResponse]:
+    """
+    Returns accepted connections enriched with the other user's public profile
+    details so the My Network page can render cards without extra requests.
+    """
+    connections = svc.get_accepted_connections(db, current_user)
+    return [
+        _build_other_user_summary(c, current_user.id, db)
+        for c in connections
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /networking/my-network/requests/incoming
+# Enriched incoming pending requests (My Network page)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/my-network/requests/incoming",
+    response_model=list[EnrichedConnectionResponse],
+    summary="Get incoming pending requests with user details (My Network page)",
+)
+def get_my_network_incoming(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EnrichedConnectionResponse]:
+    """Returns incoming pending requests enriched with the requester's profile details."""
+    requests = svc.get_pending_requests_for_user(db, current_user)
+    return [
+        _build_other_user_summary(r, current_user.id, db)
+        for r in requests
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /networking/my-network/requests/outgoing
+# Enriched outgoing pending requests (My Network page)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/my-network/requests/outgoing",
+    response_model=list[EnrichedConnectionResponse],
+    summary="Get outgoing pending requests with user details (My Network page)",
+)
+def get_my_network_outgoing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EnrichedConnectionResponse]:
+    """Returns outgoing pending requests enriched with the receiver's profile details."""
+    requests = svc.get_sent_pending_requests(db, current_user)
+    return [
+        _build_other_user_summary(r, current_user.id, db)
+        for r in requests
+    ]

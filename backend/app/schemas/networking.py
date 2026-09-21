@@ -109,3 +109,39 @@ class PaginatedUsersResponse(BaseModel):
     limit: int
     offset: int
     users: list[NetworkingUserResponse]
+
+
+# ---------------------------------------------------------------------------
+# Enriched connection response — includes user details for My Network page
+# ---------------------------------------------------------------------------
+
+
+class ConnectionUserSummary(BaseModel):
+    """Public user details embedded in an enriched connection response."""
+
+    id: str
+    username: str
+    first_name: str
+    last_name: str
+    headline: Optional[str] = None
+    location: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class EnrichedConnectionResponse(BaseModel):
+    """
+    Connection row enriched with public details of the *other* user.
+
+    Used by the My Network page so the frontend doesn't need per-user
+    secondary requests to display names, headlines, and avatars.
+    """
+
+    id: str
+    requester_id: str
+    receiver_id: str
+    status: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    other_user: ConnectionUserSummary
