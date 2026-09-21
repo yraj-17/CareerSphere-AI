@@ -371,3 +371,116 @@ export const getCareerMatching = async (includeAI = true) => {
 };
 
 export default apiClient;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Networking — Phase 5.3 / 5.4
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Discover other users (people search).
+ *
+ * @param {{ q?: string, limit?: number, offset?: number }} params
+ * @returns {Promise<{ total: number, limit: number, offset: number, users: Array }>}
+ */
+export const getNetworkingUsers = async ({ q = '', limit = 20, offset = 0 } = {}) => {
+  const params = { limit, offset };
+  if (q && q.trim()) params.q = q.trim();
+  const response = await apiClient.get('/api/networking/users', { params });
+  return response.data;
+};
+
+/**
+ * Check the connection status between the authenticated user and another user.
+ *
+ * @param {string} userId  — target user's ID
+ * @returns {Promise<{ status: string, connection_id?: string, requester_id?: string, receiver_id?: string }>}
+ */
+export const getNetworkingUserConnection = async (userId) => {
+  const response = await apiClient.get(`/api/networking/users/${userId}/connection`);
+  return response.data;
+};
+
+/**
+ * Send a connection request to another user.
+ * The authenticated user is automatically the requester (derived from JWT).
+ *
+ * @param {string} userId  — target user's ID
+ * @returns {Promise<{ id: string, requester_id: string, receiver_id: string, status: string }>}
+ */
+export const sendConnectionRequest = async (userId) => {
+  const response = await apiClient.post(`/api/networking/connections/${userId}`);
+  return response.data;
+};
+
+/**
+ * Get the authenticated user's accepted connections.
+ *
+ * @returns {Promise<Array>}
+ */
+export const getMyConnections = async () => {
+  const response = await apiClient.get('/api/networking/connections');
+  return response.data;
+};
+
+/**
+ * Get incoming pending connection requests for the authenticated user.
+ *
+ * @returns {Promise<Array>}
+ */
+export const getIncomingRequests = async () => {
+  const response = await apiClient.get('/api/networking/requests/incoming');
+  return response.data;
+};
+
+/**
+ * Get outgoing pending connection requests sent by the authenticated user.
+ *
+ * @returns {Promise<Array>}
+ */
+export const getOutgoingRequests = async () => {
+  const response = await apiClient.get('/api/networking/requests/outgoing');
+  return response.data;
+};
+
+/**
+ * Accept a pending connection request.
+ *
+ * @param {string} connectionId
+ * @returns {Promise<Object>}
+ */
+export const acceptConnectionRequest = async (connectionId) => {
+  const response = await apiClient.post(`/api/networking/requests/${connectionId}/accept`);
+  return response.data;
+};
+
+/**
+ * Reject a pending connection request.
+ *
+ * @param {string} connectionId
+ * @returns {Promise<Object>}
+ */
+export const rejectConnectionRequest = async (connectionId) => {
+  const response = await apiClient.post(`/api/networking/requests/${connectionId}/reject`);
+  return response.data;
+};
+
+/**
+ * Cancel an outgoing pending connection request.
+ *
+ * @param {string} connectionId
+ * @returns {Promise<Object>}
+ */
+export const cancelConnectionRequest = async (connectionId) => {
+  const response = await apiClient.post(`/api/networking/requests/${connectionId}/cancel`);
+  return response.data;
+};
+
+/**
+ * Remove an accepted connection (either party may call this).
+ *
+ * @param {string} connectionId
+ * @returns {Promise<void>}
+ */
+export const removeConnection = async (connectionId) => {
+  await apiClient.delete(`/api/networking/connections/${connectionId}`);
+};
