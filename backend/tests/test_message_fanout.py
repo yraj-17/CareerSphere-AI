@@ -51,7 +51,7 @@ from app.db.models import Connection, DirectMessage, User
 from app.db.redis_client import redis_client
 from app.db.session import Base, SessionLocal, engine
 from app.services.messaging_fanout import (
-    MESSAGING_GLOBAL_CHANNEL,
+    MESSAGING_PATTERN,
     handle_fanout_event,
     publish_new_message,
     start_fanout_listener,
@@ -168,7 +168,7 @@ def test_05_correct_recipient_id():
     assert evt.payload["recipient_id"] == "user-recipient"
 
 
-# 6. Event published on the correct channel
+# 6. Event published on the correct per-conversation channel
 def test_06_correct_channel():
     channels_used = []
 
@@ -182,8 +182,8 @@ def test_06_correct_channel():
             await publish_new_message("msg-1", "conv-1", "s1", "r1", "Hello", "")
 
     _run(_test())
-    assert channels_used[0] == MESSAGING_GLOBAL_CHANNEL
-    assert channels_used[0] == Channels.custom("messaging:global")
+    # Each message must be published to its specific per-conversation channel.
+    assert channels_used[0] == Channels.messaging("conv-1")
 
 
 # 7. Pub/Sub publish failure does NOT raise — returns False
@@ -210,7 +210,7 @@ def test_08_handler_skips_own_instance_events():
         event = _make_new_message_event(source=_INSTANCE_ID)
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+            await handle_fanout_event(Channels.messaging("conv-1"), event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -232,7 +232,7 @@ def test_09_handler_delivers_to_local_recipient():
         )
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+            await handle_fanout_event(Channels.messaging("conv-1"), event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -254,7 +254,7 @@ def test_10_non_recipient_not_delivered():
         )
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+            await handle_fanout_event(Channels.messaging("conv-1"), event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -272,7 +272,7 @@ def test_11_handler_ignores_other_event_types():
         other_event = PubSubEvent("user_online", {"user_id": "x"}, source="other-instance")
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, other_event)
+            await handle_fanout_event(Channels.messaging("conv-1"), other_event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -294,7 +294,7 @@ def test_12_missing_recipient_id_skipped():
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
             # Should not raise
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, bad_event)
+            await handle_fanout_event(Channels.messaging("conv-1"), bad_event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -316,7 +316,7 @@ def test_13_non_dict_payload_skipped():
         object.__setattr__(bad_event, "payload", "not a dict")
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, bad_event)
+            await handle_fanout_event(Channels.messaging("conv-1"), bad_event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -336,7 +336,7 @@ def test_14_handler_exception_isolated():
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
             # Must not raise — the pub/sub manager isolates handler exceptions
             try:
-                await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+                await handle_fanout_event(Channels.messaging("conv-1"), event)
             except RuntimeError:
                 return "RAISED"
         return "OK"
@@ -367,7 +367,7 @@ def test_15_no_republish_from_handler():
         with patch("app.services.messaging_fanout.pubsub_manager") as mock_pm:
             mock_pm.publish = fake_publish
             with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-                await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+                await handle_fanout_event(Channels.messaging("conv-1"), event)
 
         return len(publish_calls)
 
@@ -390,7 +390,7 @@ def test_16_sender_no_duplicate_from_pubsub():
         event = _make_new_message_event(source=_INSTANCE_ID)
 
         with patch("app.services.messaging_fanout.ws_manager", mock_ws_mgr):
-            await handle_fanout_event(MESSAGING_GLOBAL_CHANNEL, event)
+            await handle_fanout_event(Channels.messaging("conv-1"), event)
 
         return mock_ws_mgr.send_to_user.call_count
 
@@ -424,8 +424,8 @@ def test_17_multiple_messages_separate_events():
     assert "conv-2" in conv_ids
 
 
-# 18. Multiple conversations use the same global channel
-def test_18_multiple_conversations_same_channel():
+# 18. Multiple conversations each use their own per-conversation channel
+def test_18_multiple_conversations_use_per_conversation_channels():
     channels_used = []
 
     async def fake_publish(channel, event):
@@ -440,29 +440,62 @@ def test_18_multiple_conversations_same_channel():
             await publish_new_message("m3", "conv-C", "s1", "r1", "Msg", "")
 
     _run(_test())
-    # All use the same global channel
-    assert all(ch == MESSAGING_GLOBAL_CHANNEL for ch in channels_used)
-    assert len(set(channels_used)) == 1
+    # Each conversation must use its own dedicated per-conversation channel.
+    assert channels_used[0] == Channels.messaging("conv-A")
+    assert channels_used[1] == Channels.messaging("conv-B")
+    assert channels_used[2] == Channels.messaging("conv-C")
+    # Three distinct channels — one per conversation.
+    assert len(set(channels_used)) == 3
 
 
-# 19. start_fanout_listener returns True on success (mocked)
+# 19. start_fanout_listener returns True when Redis probe succeeds (mocked)
 def test_19_start_fanout_listener_success():
+    import app.services.messaging_fanout as fanout_mod
+
     async def _test():
-        with patch("app.services.messaging_fanout.pubsub_manager") as mock_pm:
-            mock_pm.start_listener = AsyncMock(return_value=True)
-            result = await start_fanout_listener()
-        return result
+        # Reset module state so we can call start_fanout_listener cleanly.
+        original_running = fanout_mod._listener_running
+        original_task = fanout_mod._listener_task
+        fanout_mod._listener_running = False
+        fanout_mod._listener_task = None
+        try:
+            with patch("app.services.messaging_fanout.pubsub_manager") as mock_pm:
+                # The probe publish must succeed for start to return True.
+                mock_pm.publish = AsyncMock(return_value=True)
+                result = await start_fanout_listener()
+            return result
+        finally:
+            # Clean up the background task created by start_fanout_listener.
+            if fanout_mod._listener_task and not fanout_mod._listener_task.done():
+                fanout_mod._listener_task.cancel()
+                try:
+                    await fanout_mod._listener_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            fanout_mod._listener_running = original_running
+            fanout_mod._listener_task = original_task
 
     assert _run(_test()) is True
 
 
-# 20. start_fanout_listener returns False on Redis failure (mocked)
+# 20. start_fanout_listener returns False when Redis probe fails (mocked)
 def test_20_start_fanout_listener_failure():
+    import app.services.messaging_fanout as fanout_mod
+
     async def _test():
-        with patch("app.services.messaging_fanout.pubsub_manager") as mock_pm:
-            mock_pm.start_listener = AsyncMock(return_value=False)
-            result = await start_fanout_listener()
-        return result
+        original_running = fanout_mod._listener_running
+        original_task = fanout_mod._listener_task
+        fanout_mod._listener_running = False
+        fanout_mod._listener_task = None
+        try:
+            with patch("app.services.messaging_fanout.pubsub_manager") as mock_pm:
+                # The probe publish fails — start must return False.
+                mock_pm.publish = AsyncMock(return_value=False)
+                result = await start_fanout_listener()
+            return result
+        finally:
+            fanout_mod._listener_running = original_running
+            fanout_mod._listener_task = original_task
 
     assert _run(_test()) is False
 
@@ -573,7 +606,11 @@ def test_22_multi_instance_routing():
         handler_b = await _make_handler("B", INSTANCE_B, cm_b)
         handler_c = await _make_handler("C", INSTANCE_C, cm_c)
 
-        channel = MESSAGING_GLOBAL_CHANNEL
+        # Use the same specific per-conversation channel for publish and subscribe.
+        # In production, the pattern listener (PSUBSCRIBE) covers all conversation
+        # channels.  In this multi-instance unit simulation we use a single fixed
+        # channel so both publisher and subscribers share the same channel.
+        channel = Channels.messaging("conv-integration-test")
 
         # Start listeners for B and C (A only publishes)
         await mgr_b.start_listener([channel], handler_b)
@@ -595,7 +632,7 @@ def test_22_multi_instance_routing():
             },
             source=INSTANCE_A,
         )
-        await mgr_a.publish(channel, event)
+        await mgr_a.publish(Channels.messaging("conv-integration-test"), event)
 
         # Wait for delivery
         for _ in range(30):

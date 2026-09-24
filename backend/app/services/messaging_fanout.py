@@ -90,6 +90,10 @@ logger = logging.getLogger(__name__)
 #: in a single subscription, without per-connection lifecycle management.
 _MESSAGING_PATTERN: str = f"{_CHANNEL_NS}:messaging:*"
 
+#: Public alias for the PSUBSCRIBE pattern used by the fanout listener.
+#: Exported so tests can verify subscription channel behaviour.
+MESSAGING_PATTERN: str = _MESSAGING_PATTERN
+
 _listener_task: Optional[asyncio.Task] = None
 _listener_running: bool = False
 
