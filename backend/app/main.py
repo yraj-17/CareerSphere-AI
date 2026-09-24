@@ -15,9 +15,13 @@ from app.api.skill_analysis import router as skill_analysis_router
 from app.api.career_matching import router as career_matching_router
 from app.api.networking import router as networking_router
 from app.api.messaging import router as messaging_router
+from app.api.messaging_ws import router as messaging_ws_router
 from app.schemas.auth import HealthResponse
 from app.services.qdrant_service import ping_qdrant, ensure_default_collections
 from app.services.storage_service import ping_minio, ensure_bucket
+from app.services.redis_pubsub_manager import pubsub_manager
+from app.services.messaging_fanout import start_fanout_listener, stop_fanout_listener
+from app.services.presence_fanout import start_presence_listener, stop_presence_listener
 
 
 @asynccontextmanager
@@ -49,8 +53,37 @@ async def lifespan(app: FastAPI):
     else:
         print("[Startup] WARNING: MinIO is not reachable. File uploads will not work.")
 
+    # Phase 5.8.3 — Redis Pub/Sub Manager
+    # Phase 5.8.4 — Cross-Instance Message Fanout listener started here.
+    # Phase 5.8.5 — Distributed Presence listener started here.
+    # Phase 5.8.6 — Listeners started concurrently (M6: parallel probes).
+    import asyncio as _asyncio
+    print(
+        f"[Startup] Redis Pub/Sub manager ready. "
+        f"instance_id={pubsub_manager.instance_id}"
+    )
+    fanout_ok, presence_ok = await _asyncio.gather(
+        start_fanout_listener(),
+        start_presence_listener(),
+    )
+    if fanout_ok:
+        print("[Startup] Messaging fanout listener started.")
+    else:
+        print("[Startup] WARNING: Messaging fanout listener failed to start — cross-instance delivery disabled.")
+
+    if presence_ok:
+        print("[Startup] Distributed presence listener started.")
+    else:
+        print("[Startup] WARNING: Distributed presence listener failed to start — cross-instance presence disabled.")
+
     yield
     # --- Shutdown ---
+    # Stop the fanout pattern listener.
+    await stop_fanout_listener()
+    # Stop the distributed presence listener.
+    await stop_presence_listener()
+    # Stop the Pub/Sub listener if it was started by a later phase.
+    await pubsub_manager.stop_listener()
 
 
 app = FastAPI(
@@ -113,6 +146,7 @@ app.include_router(skill_analysis_router, prefix=settings.API_V1_STR)
 app.include_router(career_matching_router, prefix=settings.API_V1_STR)
 app.include_router(networking_router, prefix=settings.API_V1_STR)
 app.include_router(messaging_router, prefix=settings.API_V1_STR)
+app.include_router(messaging_ws_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":

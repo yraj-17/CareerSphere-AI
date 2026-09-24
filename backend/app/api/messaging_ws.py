@@ -85,6 +85,7 @@ Server → Client:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -92,6 +93,7 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
+from app.core.config import settings
 from app.core.security import decode_access_token
 from app.db.models import DirectConversationParticipant, User
 from app.db.session import SessionLocal
@@ -161,8 +163,47 @@ def _get_other_participant_id(conversation_id: str, current_user_id: str) -> Opt
 
 
 # ---------------------------------------------------------------------------
-# Error / event helpers
+# M3 — Session refresh helper (Phase 5.8.6)
 # ---------------------------------------------------------------------------
+
+
+async def _session_refresh_loop(user_id: str, session_id: str) -> None:
+    """
+    Background task: periodically call ``presence.refresh_session()`` to
+    extend the Redis TTL for an active WebSocket session.
+
+    Runs for the lifetime of the WebSocket connection.  Cancelled by the
+    finally block of ``websocket_messaging()`` on disconnect.
+
+    The refresh interval is ``REDIS_PRESENCE_REFRESH_INTERVAL_SECONDS``
+    (default 30 s), which is well within the TTL of
+    ``REDIS_PRESENCE_TTL_SECONDS`` (default 90 s).
+
+    Redis failure during refresh is non-fatal: ``refresh_session()`` logs
+    a warning and returns ``False``; this loop simply continues and retries
+    on the next interval.  The session will expire if Redis is unreachable
+    for longer than the remaining TTL, which is the correct degraded-mode
+    behaviour (the user will re-register on their next message).
+
+    Security: ``user_id`` and ``session_id`` come entirely from server-side
+    context — never from client input.
+    """
+    interval = settings.REDIS_PRESENCE_REFRESH_INTERVAL_SECONDS
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            ok = presence.refresh_session(user_id, session_id)
+            if not ok:
+                logger.debug(
+                    "ws: session refresh returned False uid=%s sid=%s "
+                    "(Redis unavailable or session expired)",
+                    user_id, session_id,
+                )
+    except asyncio.CancelledError:
+        # Normal cancellation on disconnect — exit silently.
+        pass
+    except Exception as exc:
+        logger.warning("ws: unexpected error in session refresh loop: %s", exc)
 
 
 def _error_event(code: str, message: str) -> str:
@@ -253,14 +294,22 @@ async def _handle_message(
     # Publish AFTER PostgreSQL persistence and local delivery.
     # Other instances receive this and deliver to their local recipients.
     # This instance skips its own event (anti-loop check in fanout handler).
-    await publish_new_message(
-        message_id=msg.id,
-        conversation_id=conversation_id,
-        sender_id=current_user.id,
-        recipient_id=other_user_id,
-        content=msg.content,  # use the trimmed/persisted value from the service
-        created_at=msg.created_at.isoformat() if msg.created_at else "",
-    )
+    # M5: explicit try/except makes the no-raise contract visible to readers
+    # and guards against any future refactoring of publish_new_message().
+    try:
+        await publish_new_message(
+            message_id=msg.id,
+            conversation_id=conversation_id,
+            sender_id=current_user.id,
+            recipient_id=other_user_id,
+            content=msg.content,  # use the trimmed/persisted value from the service
+            created_at=msg.created_at.isoformat() if msg.created_at else "",
+        )
+    except Exception as exc:
+        # publish_new_message() guarantees no raise internally; this catch is
+        # a defensive layer.  The message is already persisted and delivered
+        # locally — a fanout failure is non-fatal.
+        logger.warning("ws: unexpected error from publish_new_message: %s", exc)
 
     # ── Step 5: Mark delivered if recipient is locally online ─────────────
     if manager.is_connected(other_user_id):
@@ -452,6 +501,19 @@ async def websocket_messaging(
     # Local socket registration — always succeeds.
     is_first_socket = manager.connect(current_user.id, websocket)
 
+    # ── Step 6d: Start background session-refresh task (M3) ──────────────
+    # Periodically extends the Redis TTL so the presence session does not
+    # expire while the WebSocket connection remains open.  Cancelled in the
+    # finally block below.
+    _refresh_task: Optional[asyncio.Task] = None
+    try:
+        _refresh_task = asyncio.create_task(
+            _session_refresh_loop(current_user.id, session_id),
+            name=f"session-refresh-{session_id[:8]}",
+        )
+    except Exception as exc:
+        logger.warning("ws: failed to start session refresh task: %s", exc)
+
     if is_first_socket:
         # Notify the conversation partner that this user came online (local).
         await manager.send_to_user(
@@ -537,8 +599,17 @@ async def websocket_messaging(
     except Exception as exc:
         logger.exception("Unexpected error in WebSocket message loop: %s", exc)
     finally:
-        # ── Cleanup: local disconnect → Redis removal ─────────────────────
+        # ── Cleanup: cancel refresh task → local disconnect → Redis removal ──
         #
+        # Cancel the session refresh task first so it does not attempt a
+        # refresh after the session has been removed.
+        if _refresh_task is not None and not _refresh_task.done():
+            _refresh_task.cancel()
+            try:
+                await _refresh_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         # Order is intentional:
         #   1. Remove from local ConnectionManager first so no new events
         #      are dispatched to a socket that is already closing.

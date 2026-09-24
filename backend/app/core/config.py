@@ -106,6 +106,25 @@ class Settings(BaseSettings):
     # Availability-check cache TTL (seconds)
     AVAILABILITY_CACHE_TTL: int = 60
 
+    # WebSocket presence session TTL (seconds).
+    # A session that has not been refreshed within this window will be
+    # automatically expired by Redis.  The WS layer calls refresh_session()
+    # on the interval below to keep active sessions alive.
+    # Default: 90 s — gives a comfortable window for 30 s refresh intervals.
+    REDIS_PRESENCE_TTL_SECONDS: int = 90
+
+    # How often (seconds) the WebSocket layer refreshes an active presence
+    # session.  Must be significantly less than REDIS_PRESENCE_TTL_SECONDS so
+    # that a single missed refresh does not expire a live session.
+    # Default: 30 s  (i.e. TTL/3 — three missed refreshes before expiry).
+    REDIS_PRESENCE_REFRESH_INTERVAL_SECONDS: int = 30
+
+    # Unique identifier for this FastAPI process/instance.
+    # Used in Pub/Sub event metadata so consumers can distinguish the originating
+    # instance.  Defaults to a stable random UUID generated at import time if
+    # not provided via the environment.  Do NOT set this to a user ID or JWT.
+    INSTANCE_ID: str = ""
+
     @model_validator(mode="after")
     def normalize_urls(self) -> "Settings":
         self.DATABASE_URL = normalize_database_url(self.DATABASE_URL)
