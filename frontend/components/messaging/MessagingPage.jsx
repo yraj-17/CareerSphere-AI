@@ -80,16 +80,31 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     try {
       const data = await listConversations({ limit: 50 });
       const list = Array.isArray(data) ? data : data.conversations ?? [];
-      setConversations(list);
+
+      // Normalize: backend returns { id, other_participant, latest_message, unread_count }
+      // Frontend uses: { conversation_id, other_user, latest_message_content, ... }
+      const normalized = list.map((c) => ({
+        conversation_id: c.id,
+        other_user: c.other_participant,
+        latest_message_content: c.latest_message?.content ?? null,
+        latest_message_at: c.latest_message?.created_at ?? c.updated_at,
+        latest_message_sender_id: c.latest_message?.sender_id ?? null,
+        unread_count: c.unread_count ?? 0,
+        updated_at: c.updated_at,
+        // keep raw id for getOrCreateConversation reference
+        _raw: c,
+      }));
+
+      setConversations(normalized);
 
       // Build initial unread map
       const map = {};
-      list.forEach((c) => { map[c.conversation_id] = c.unread_count ?? 0; });
+      normalized.forEach((c) => { map[c.conversation_id] = c.unread_count ?? 0; });
       setUnreadMap(map);
 
       // Pre-select from URL param
       if (initialConvId) {
-        const match = list.find((c) => c.conversation_id === initialConvId);
+        const match = normalized.find((c) => c.conversation_id === initialConvId);
         if (match) {
           setSelectedConv(match);
           setMobileShowChat(true);
@@ -188,7 +203,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       }
     }
 
-    // Update conversation list preview
+    // Update conversation list preview (normalize to local format)
     setConversations((prev) =>
       prev.map((c) => {
         if (c.conversation_id !== msg.conversation_id) return c;

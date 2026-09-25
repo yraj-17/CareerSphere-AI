@@ -202,23 +202,24 @@ def get_or_create_direct_conversation(
     # Participants are inserted via Core INSERT (not the ORM) to avoid a
     # psycopg3 + SQLAlchemy composite-PK RETURNING bug that emits only
     # (user_id) in the INSERT column list, leaving conversation_id NULL.
+        # Create new conversation + two participants.
     conv = DirectConversation(canonical_a=ca, canonical_b=cb)
     db.add(conv)
-    db.flush()  # persist conv so conv.id is available for participant rows
-
-    now = datetime.now(timezone.utc)
-    db.execute(
-        sa_insert(DirectConversationParticipant),
-        [
-            {"conversation_id": conv.id, "user_id": current_user.id, "joined_at": now},
-            {"conversation_id": conv.id, "user_id": other_user_id,   "joined_at": now},
-        ],
-    )
 
     try:
+        db.flush()  # persist conv so conv.id is available for participant rows
+
+        now = datetime.now(timezone.utc)
+        db.execute(
+            sa_insert(DirectConversationParticipant),
+            [
+                {"conversation_id": conv.id, "user_id": current_user.id, "joined_at": now},
+                {"conversation_id": conv.id, "user_id": other_user_id,   "joined_at": now},
+            ],
+        )
+
         db.commit()
     except IntegrityError:
-        # Concurrent request created the same conversation first.
         db.rollback()
         existing = (
             db.query(DirectConversation)
@@ -234,6 +235,7 @@ def get_or_create_direct_conversation(
 
     db.refresh(conv)
     return conv
+    
 
 
 # ---------------------------------------------------------------------------

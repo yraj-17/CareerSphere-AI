@@ -521,7 +521,11 @@ async def websocket_messaging(
             "user_online",
             {"user_id": current_user.id},
         )
-
+    # NEW — tell the newly-connected client the CURRENT status of the other
+    # participant, since they missed whatever earlier user_online event fired.
+    if manager.is_connected(other_user_id):
+        await websocket.send_text(_event("user_online", {"user_id": other_user_id}))
+        
     # ── Step 6c: Distributed presence — user came online ─────────────────
     # Publish user_online ONLY if this is the user's first global session
     # (first_session=True from Redis presence).  Intermediate sessions must
