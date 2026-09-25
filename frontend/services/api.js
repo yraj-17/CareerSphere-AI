@@ -535,3 +535,109 @@ export const getPublicProfile = async (userId) => {
   const response = await apiClient.get(`/api/networking/users/${userId}/profile`);
   return response.data;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct Messaging — Phase 5.8.6
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get or create a direct conversation with another user.
+ * Requires an accepted connection. Returns the conversation object.
+ *
+ * @param {string} otherUserId
+ * @returns {Promise<{ id: string, canonical_a: string, canonical_b: string, updated_at: string }>}
+ */
+export const getOrCreateConversation = async (otherUserId) => {
+  const response = await apiClient.post(`/api/messaging/conversations/${otherUserId}`);
+  return response.data;
+};
+
+/**
+ * List all direct conversations for the current user (most recent first).
+ *
+ * @param {{ limit?: number, offset?: number }} params
+ * @returns {Promise<Array>}
+ */
+export const listConversations = async ({ limit = 20, offset = 0 } = {}) => {
+  const response = await apiClient.get('/api/messaging/conversations', {
+    params: { limit, offset },
+  });
+  return response.data;
+};
+
+/**
+ * Get a single conversation (must be a participant).
+ *
+ * @param {string} conversationId
+ * @returns {Promise<Object>}
+ */
+export const getConversationById = async (conversationId) => {
+  const response = await apiClient.get(`/api/messaging/conversations/${conversationId}`);
+  return response.data;
+};
+
+/**
+ * List messages for a conversation (chronological, oldest first).
+ *
+ * @param {string} conversationId
+ * @param {{ limit?: number, offset?: number }} params
+ * @returns {Promise<{ messages: Array, total: number, limit: number, offset: number }>}
+ */
+export const listMessages = async (conversationId, { limit = 50, offset = 0 } = {}) => {
+  const response = await apiClient.get(
+    `/api/messaging/conversations/${conversationId}/messages`,
+    { params: { limit, offset } }
+  );
+  return response.data;
+};
+
+/**
+ * Send a message via REST (fallback; primary path is WebSocket).
+ *
+ * @param {string} conversationId
+ * @param {string} content
+ * @returns {Promise<Object>}
+ */
+export const sendMessage = async (conversationId, content) => {
+  const response = await apiClient.post(
+    `/api/messaging/conversations/${conversationId}/messages`,
+    { content }
+  );
+  return response.data;
+};
+
+/**
+ * Mark all incoming messages in a conversation as delivered.
+ *
+ * @param {string} conversationId
+ * @returns {Promise<{ updated: number }>}
+ */
+export const markMessagesDelivered = async (conversationId) => {
+  const response = await apiClient.post(
+    `/api/messaging/conversations/${conversationId}/delivered`
+  );
+  return response.data;
+};
+
+/**
+ * Mark all incoming messages in a conversation as read.
+ *
+ * @param {string} conversationId
+ * @returns {Promise<{ updated: number }>}
+ */
+export const markMessagesRead = async (conversationId) => {
+  const response = await apiClient.post(
+    `/api/messaging/conversations/${conversationId}/read`
+  );
+  return response.data;
+};
+
+/**
+ * Get total unread message count across all conversations.
+ *
+ * @returns {Promise<{ unread_count: number }>}
+ */
+export const getUnreadCount = async () => {
+  const response = await apiClient.get('/api/messaging/unread-count');
+  return response.data;
+};

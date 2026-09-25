@@ -31,6 +31,7 @@ import {
   XCircle,
   ArrowUpRight,
   User,
+  MessageSquare,
 } from 'lucide-react';
 
 // ─── Shared Avatar fallback ───────────────────────────────────────────────────
@@ -138,6 +139,16 @@ export default function ConnectionCard({
                 <User className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>View Profile</span>
                 <ArrowUpRight className="h-3 w-3 opacity-60" aria-hidden="true" />
+              </Link>
+
+              <Link
+                href={`/dashboard/messaging?with=${u.id}`}
+                aria-label={`Message ${u.first_name} ${u.last_name}`}
+                data-testid="message-btn"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs border border-accent/30 text-accent hover:bg-accent/10 hover:border-accent/50 transition-all"
+              >
+                <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Message</span>
               </Link>
 
               <button
