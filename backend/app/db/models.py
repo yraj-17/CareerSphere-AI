@@ -434,6 +434,16 @@ class DirectMessage(Base):
     delivered_at and read_at are nullable timestamps; NULL means the event
     has not occurred yet.  They are set by the service / WebSocket layer in
     Phase 5.8.2+.  No typing or online state is stored here.
+
+    Phase 5.8 additions
+    ────────────────────
+    reply_to_message_id     — nullable FK to another DirectMessage in the
+                              same conversation (enforced by service layer).
+    deleted_for_everyone_at — when non-NULL the message is soft-deleted for
+                              ALL participants; content is hidden from APIs.
+    pinned_at / pinned_by_user_id — conversation-level pin state.
+    forwarded_from_message_id    — provenance FK when this is a forwarded
+                              copy; the FK points to the original message.
     """
 
     __tablename__ = "direct_messages"
@@ -444,6 +454,8 @@ class DirectMessage(Base):
         Index("ix_direct_messages_sender_id", "sender_id"),
         # Unread query support: messages in a conversation where read_at is NULL.
         Index("ix_direct_messages_conversation_read_at", "conversation_id", "read_at"),
+        # Pinned-message lookup per conversation.
+        Index("ix_direct_messages_conversation_pinned_at", "conversation_id", "pinned_at"),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
@@ -458,7 +470,6 @@ class DirectMessage(Base):
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
 
     content = Column(Text, nullable=False)
@@ -471,14 +482,137 @@ class DirectMessage(Base):
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
 
+    # ── Phase 5.8 additions ───────────────────────────────────────────────
+
+    # Reply relationship — nullable FK to another message in the same conversation.
+    # ondelete=SET NULL preserves the reply message even if the original is
+    # later deleted from the database (physical deletion is not used).
+    reply_to_message_id = Column(
+        String(36),
+        ForeignKey("direct_messages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Soft delete for everyone — when non-NULL the message is hidden to all.
+    deleted_for_everyone_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Conversation-level pin state.
+    pinned_at = Column(DateTime(timezone=True), nullable=True)
+    pinned_by_user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Forward provenance — FK to the original source message.
+    forwarded_from_message_id = Column(
+        String(36),
+        ForeignKey("direct_messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────
     conversation = relationship("DirectConversation", back_populates="messages")
     sender = relationship("User", foreign_keys=[sender_id])
+    pinned_by = relationship("User", foreign_keys=[pinned_by_user_id])
+    # Self-referential: the message being replied to.
+    reply_to = relationship(
+        "DirectMessage",
+        foreign_keys=[reply_to_message_id],
+        remote_side="DirectMessage.id",
+        uselist=False,
+    )
+    stars = relationship("MessageStar", back_populates="message", cascade="all, delete-orphan")
+    user_deletions = relationship(
+        "MessageUserDeletion", back_populates="message", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return (
             f"<DirectMessage id={self.id} "
             f"conv={self.conversation_id} sender={self.sender_id}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.8 — Message Management Side Tables
+# ---------------------------------------------------------------------------
+
+
+class MessageStar(Base):
+    """
+    Per-user star/save for a direct message.
+
+    Starring is PRIVATE to the requesting user — User A starring a message
+    has no effect on User B's view.  The unique constraint on (message_id,
+    user_id) makes the operation idempotent at the database level.
+    """
+
+    __tablename__ = "message_stars"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_star_user"),
+    )
+
+    message_id = Column(
+        String(36),
+        ForeignKey("direct_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+        index=True,
+    )
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    message = relationship("DirectMessage", back_populates="stars")
+    user = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<MessageStar msg={self.message_id} user={self.user_id}>"
+
+
+class MessageUserDeletion(Base):
+    """
+    Per-user soft deletion for a direct message ('Delete for me').
+
+    When a row exists for (message_id, user_id), that message is excluded
+    from all API responses for that user.  The underlying message row is
+    never physically deleted.  The unique constraint makes the operation
+    idempotent.
+    """
+
+    __tablename__ = "message_user_deletions"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_user_deletion"),
+    )
+
+    message_id = Column(
+        String(36),
+        ForeignKey("direct_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+        index=True,
+    )
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+        index=True,
+    )
+    deleted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    message = relationship("DirectMessage", back_populates="user_deletions")
+    user = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<MessageUserDeletion msg={self.message_id} user={self.user_id}>"
 
 
 # ---------------------------------------------------------------------------

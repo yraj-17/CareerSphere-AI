@@ -102,6 +102,8 @@ from app.services import presence_service as presence
 from app.services.websocket_manager import manager
 from app.services.messaging_fanout import (
     publish_new_message,
+    publish_message_deleted,
+    publish_message_pinned,
     subscribe_conversation,
     unsubscribe_conversation,
 )
@@ -214,8 +216,13 @@ def _event(event_type: str, data: dict) -> str:
     return json.dumps({"type": event_type, "data": data})
 
 
-def _message_data(msg) -> dict:
+def _message_data(msg, current_user_id: str = None, db=None) -> dict:
     """Serialize a DirectMessage ORM object to a safe dict for wire transport."""
+    from app.services.message_management_service import serialize_message as _serialize
+    # If we have DB session and user_id, use the full serializer
+    if db is not None and current_user_id is not None:
+        return _serialize(db, msg, current_user_id)
+    # Minimal fallback (no DB)
     return {
         "id": msg.id,
         "conversation_id": msg.conversation_id,
@@ -224,6 +231,14 @@ def _message_data(msg) -> dict:
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
         "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
         "read_at": msg.read_at.isoformat() if msg.read_at else None,
+        "reply_to_message_id": getattr(msg, "reply_to_message_id", None),
+        "reply_to_message": None,
+        "is_deleted_for_everyone": getattr(msg, "deleted_for_everyone_at", None) is not None,
+        "is_pinned": getattr(msg, "pinned_at", None) is not None,
+        "is_forwarded": getattr(msg, "forwarded_from_message_id", None) is not None,
+        "forwarded_from_message_id": getattr(msg, "forwarded_from_message_id", None),
+        "is_starred": False,
+        "is_deleted_for_me": False,
     }
 
 
@@ -260,17 +275,28 @@ async def _handle_message(
         return
 
     # ── Step 2: Persist (PostgreSQL first) ───────────────────────────────
+    reply_to_message_id = data.get("reply_to_message_id") or None
+
     db = SessionLocal()
     try:
-        msg = svc.send_direct_message(db, conversation_id, current_user, content)
+        from app.services.message_management_service import (
+            send_direct_message_extended,
+            serialize_message,
+        )
+        if reply_to_message_id:
+            msg = send_direct_message_extended(
+                db, conversation_id, current_user, content,
+                reply_to_message_id=reply_to_message_id,
+            )
+        else:
+            msg = svc.send_direct_message(db, conversation_id, current_user, content)
+        msg_payload = serialize_message(db, msg, current_user.id)
     except Exception as exc:
         detail = getattr(exc, "detail", str(exc))
         await ws.send_text(_error_event("message_failed", str(detail)))
         return
     finally:
         db.close()
-
-    msg_payload = _message_data(msg)
 
     # ── Step 3: Local delivery to both participants ───────────────────────
     # Deliver to sender (always on this instance — their socket is here).
@@ -286,29 +312,27 @@ async def _handle_message(
             "notification_type": "new_message",
             "conversation_id": conversation_id,
             "sender_id": current_user.id,
-            "message_id": msg.id,
+            "message_id": msg_payload["id"],
         },
     )
 
     # ── Step 4: Cross-instance fanout via Redis ───────────────────────────
-    # Publish AFTER PostgreSQL persistence and local delivery.
-    # Other instances receive this and deliver to their local recipients.
-    # This instance skips its own event (anti-loop check in fanout handler).
-    # M5: explicit try/except makes the no-raise contract visible to readers
-    # and guards against any future refactoring of publish_new_message().
     try:
+        reply_preview = msg_payload.get("reply_to_message") or {}
         await publish_new_message(
-            message_id=msg.id,
+            message_id=msg_payload["id"],
             conversation_id=conversation_id,
             sender_id=current_user.id,
             recipient_id=other_user_id,
-            content=msg.content,  # use the trimmed/persisted value from the service
-            created_at=msg.created_at.isoformat() if msg.created_at else "",
+            content=msg_payload["content"],
+            created_at=msg_payload.get("created_at") or "",
+            reply_to_message_id=msg_payload.get("reply_to_message_id"),
+            reply_to_content=reply_preview.get("content") if reply_preview else None,
+            reply_to_sender_id=reply_preview.get("sender_id") if reply_preview else None,
+            is_forwarded=msg_payload.get("is_forwarded", False),
+            forwarded_from_message_id=msg_payload.get("forwarded_from_message_id"),
         )
     except Exception as exc:
-        # publish_new_message() guarantees no raise internally; this catch is
-        # a defensive layer.  The message is already persisted and delivered
-        # locally — a fanout failure is non-fatal.
         logger.warning("ws: unexpected error from publish_new_message: %s", exc)
 
     # ── Step 5: Mark delivered if recipient is locally online ─────────────

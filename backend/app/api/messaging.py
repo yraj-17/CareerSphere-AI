@@ -1,10 +1,11 @@
 """
 Phase 5.8.3 — Direct Messaging REST API.
+Phase 5.8   — Extended with message management endpoints.
 
 Architecture:
     JWT → current_user (via get_current_user dep)
         → this router (thin HTTP layer, zero business logic)
-            → messaging_service (authoritative)
+            → messaging_service / message_management_service (authoritative)
                 → PostgreSQL
 
 Security contract
@@ -12,10 +13,11 @@ Security contract
 - Every endpoint requires JWT authentication (get_current_user).
 - sender_id / current_user_id is NEVER accepted from the request body
   or query params.  Identity always comes from the authenticated token.
-- The messaging_service performs all authorization checks:
+- The messaging_service / message_management_service perform ALL authorization:
     - accepted-connection enforcement
     - participant membership
-    - self-messaging rejection
+    - sender-only delete-for-everyone
+    - cross-conversation reference prevention
 - No business logic is duplicated here.
 
 Naming note
@@ -37,7 +39,9 @@ from app.schemas.messaging import (
     ConversationListResponse,
     ConversationResponse,
     DirectMessageResponse,
+    ForwardMessageRequest,
     LatestMessageSummary,
+    MessageActionResponse,
     MessageListResponse,
     MessageParticipantSummary,
     MessageStateUpdateResponse,
@@ -45,6 +49,7 @@ from app.schemas.messaging import (
     UnreadCountResponse,
 )
 from app.services import messaging_service as svc
+from app.services import message_management_service as mgmt
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
 
@@ -209,7 +214,7 @@ def list_conversations(
 
 
 # ---------------------------------------------------------------------------
-# Endpoint 3 — SEND MESSAGE
+# Endpoint 3 — SEND MESSAGE  (extended with reply_to support)
 # POST /messaging/conversations/{conversation_id}/messages
 # ---------------------------------------------------------------------------
 
@@ -234,15 +239,31 @@ def send_message(
     - Requires the two participants to still share an **accepted** connection.
     - Empty or whitespace-only content returns **400**.
     - Content is trimmed of surrounding whitespace before persistence.
+    - ``reply_to_message_id`` is optional; if provided it must reference a
+      message in the same conversation.
     - ``delivered_at`` and ``read_at`` are ``null`` at creation; they are
       set later by the WebSocket delivery layer.
     """
-    msg = svc.send_direct_message(db, conversation_id, current_user, body.content)
-    return DirectMessageResponse.model_validate(msg)
+    if body.reply_to_message_id:
+        # Use the extended service that handles reply validation
+        msg = mgmt.send_direct_message_extended(
+            db,
+            conversation_id,
+            current_user,
+            body.content,
+            reply_to_message_id=body.reply_to_message_id,
+        )
+        d = mgmt.serialize_message(db, msg, current_user.id)
+        return DirectMessageResponse.from_dict(d)
+    else:
+        # Use the original service for plain messages (preserves existing behavior)
+        msg = svc.send_direct_message(db, conversation_id, current_user, body.content)
+        d = mgmt.serialize_message(db, msg, current_user.id)
+        return DirectMessageResponse.from_dict(d)
 
 
 # ---------------------------------------------------------------------------
-# Endpoint 4 — MESSAGE HISTORY
+# Endpoint 4 — MESSAGE HISTORY  (extended with per-user fields)
 # GET /messaging/conversations/{conversation_id}/messages
 # ---------------------------------------------------------------------------
 
@@ -266,12 +287,15 @@ def list_messages(
     - Only accessible to conversation participants.
     - Non-participants receive **403**.
     - Messages are ordered by ``created_at ASC, id ASC`` for stable pagination.
+    - Messages deleted-for-me are excluded.
+    - Messages deleted-for-everyone are included with sanitised content.
+    - Per-user fields (is_starred, is_pinned, etc.) are computed for the caller.
     """
-    msgs = svc.list_direct_messages(
+    dicts = mgmt.list_messages_for_user(
         db, conversation_id, current_user, limit=limit, offset=offset
     )
     return MessageListResponse(
-        messages=[DirectMessageResponse.model_validate(m) for m in msgs],
+        messages=[DirectMessageResponse.from_dict(d) for d in dicts],
         limit=limit,
         offset=offset,
     )
@@ -359,3 +383,249 @@ def mark_read(
     """
     updated = svc.mark_messages_read(db, conversation_id, current_user)
     return MessageStateUpdateResponse(updated_count=updated)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.8 — Message Management Endpoints
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 8 — STAR
+# POST /messaging/messages/{message_id}/star
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/messages/{message_id}/star",
+    response_model=MessageActionResponse,
+    summary="Star a message (per-user save)",
+)
+def star_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Star/save a message for the current user.
+
+    - Star state is **per-user**: User A starring has no effect on User B.
+    - Idempotent: starring an already-starred message is a no-op.
+    - Message must not be deleted-for-everyone.
+    - Current user must be a conversation participant.
+    """
+    mgmt.star_message(db, message_id, current_user)
+    return MessageActionResponse(success=True)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 9 — UNSTAR
+# DELETE /messaging/messages/{message_id}/star
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/messages/{message_id}/star",
+    response_model=MessageActionResponse,
+    summary="Unstar a message",
+)
+def unstar_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Remove the star for the current user.
+
+    Idempotent: if the message is not starred, returns success with no change.
+    """
+    mgmt.unstar_message(db, message_id, current_user)
+    return MessageActionResponse(success=True)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 10 — PIN
+# POST /messaging/messages/{message_id}/pin
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/messages/{message_id}/pin",
+    response_model=MessageActionResponse,
+    summary="Pin a message in the conversation",
+)
+def pin_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Pin a message at the conversation level.
+
+    - Any participant may pin any accessible message.
+    - Only one message may be pinned per conversation; the previous pin is
+      cleared when a new one is set.
+    - Pinning a deleted-for-everyone message is rejected (404).
+    """
+    msg = mgmt.pin_message(db, message_id, current_user)
+    d = mgmt.serialize_message(db, msg, current_user.id)
+    return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 11 — UNPIN
+# DELETE /messaging/messages/{message_id}/pin
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/messages/{message_id}/pin",
+    response_model=MessageActionResponse,
+    summary="Unpin a message",
+)
+def unpin_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Remove the pin from a message.
+
+    Idempotent: if the message is not pinned, returns success with no change.
+    """
+    msg = mgmt.unpin_message(db, message_id, current_user)
+    d = mgmt.serialize_message(db, msg, current_user.id)
+    return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 12 — DELETE FOR ME
+# POST /messaging/messages/{message_id}/delete-for-me
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/messages/{message_id}/delete-for-me",
+    response_model=MessageActionResponse,
+    summary="Delete a message for the current user only",
+)
+def delete_for_me(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Hide a message from the current user's view only.
+
+    - The other participant is **not** affected.
+    - The message row is **not** physically deleted.
+    - Idempotent.
+    - Current user must be a conversation participant.
+    """
+    mgmt.delete_message_for_me(db, message_id, current_user)
+    return MessageActionResponse(success=True)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 13 — DELETE FOR EVERYONE
+# POST /messaging/messages/{message_id}/delete-for-everyone
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/messages/{message_id}/delete-for-everyone",
+    response_model=MessageActionResponse,
+    summary="Delete a message for all participants (sender only)",
+)
+def delete_for_everyone(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Soft-delete a message so it is hidden for **all** participants.
+
+    - **Only the message sender** may call this endpoint.
+    - Attempting to delete another user's message returns **403**.
+    - The message row is **not** physically deleted; content is preserved
+      in the database but NEVER returned to any client after this call.
+    - Idempotent: calling again on an already-deleted message returns success.
+    - Callers should broadcast the ``message_deleted`` WebSocket event after
+      this REST call succeeds.
+
+    Security: Authorization is enforced server-side.  The frontend must not
+    rely on hiding this option — the backend enforces sender identity.
+    """
+    msg = mgmt.delete_message_for_everyone(db, message_id, current_user)
+    d = mgmt.serialize_message(db, msg, current_user.id)
+    return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 14 — FORWARD
+# POST /messaging/messages/{message_id}/forward
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/messages/{message_id}/forward",
+    response_model=DirectMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Forward a message to another conversation",
+)
+def forward_message(
+    message_id: str,
+    body: ForwardMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DirectMessageResponse:
+    """
+    Forward a message to a different 1-to-1 conversation.
+
+    - The forwarded message is a **new** message row in the destination
+      conversation.  It has its own ID, timestamps, and delivery state.
+    - The original source message ID is recorded as provenance.
+    - The current user must have access to the source message (participant,
+      not deleted-for-everyone, not deleted-for-me).
+    - The current user must be a participant in the destination conversation.
+    - The accepted-connection check is enforced for the destination.
+    - Forwarding a deleted-for-everyone message is rejected (404).
+    """
+    msg = mgmt.forward_message(
+        db,
+        source_message_id=message_id,
+        destination_conversation_id=body.destination_conversation_id,
+        current_user=current_user,
+    )
+    d = mgmt.serialize_message(db, msg, current_user.id)
+    return DirectMessageResponse.from_dict(d)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 15 — GET PINNED MESSAGE
+# GET /messaging/conversations/{conversation_id}/pinned
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/conversations/{conversation_id}/pinned",
+    response_model=MessageActionResponse,
+    summary="Get the currently pinned message in a conversation",
+)
+def get_pinned_message(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageActionResponse:
+    """
+    Return the currently pinned message in the conversation, or success=True
+    with message=None if no message is pinned.
+
+    - Current user must be a participant.
+    """
+    d = mgmt.get_pinned_message(db, conversation_id, current_user)
+    if d is None:
+        return MessageActionResponse(success=True, message=None)
+    return MessageActionResponse(
+        success=True, message=DirectMessageResponse.from_dict(d)
+    )
