@@ -110,6 +110,11 @@ async def publish_new_message(
     recipient_id: str,
     content: str,
     created_at: str,
+    reply_to_message_id: Optional[str] = None,
+    reply_to_content: Optional[str] = None,
+    reply_to_sender_id: Optional[str] = None,
+    is_forwarded: bool = False,
+    forwarded_from_message_id: Optional[str] = None,
 ) -> bool:
     """
     Publish a ``new_message`` event to the per-conversation Redis channel
@@ -133,16 +138,25 @@ async def publish_new_message(
         - No JWT, password, or secret is included.
     """
     channel = Channels.messaging(conversation_id)
+    payload = {
+        "message_id":      message_id,
+        "conversation_id": conversation_id,
+        "sender_id":       sender_id,
+        "recipient_id":    recipient_id,
+        "content":         content,
+        "created_at":      created_at,
+        "is_forwarded":    is_forwarded,
+    }
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
+        payload["reply_to_content"] = reply_to_content
+        payload["reply_to_sender_id"] = reply_to_sender_id
+    if forwarded_from_message_id:
+        payload["forwarded_from_message_id"] = forwarded_from_message_id
+
     event = PubSubEvent(
         event_type="new_message",
-        payload={
-            "message_id":      message_id,
-            "conversation_id": conversation_id,
-            "sender_id":       sender_id,
-            "recipient_id":    recipient_id,
-            "content":         content,
-            "created_at":      created_at,
-        },
+        payload=payload,
     )
 
     ok = await pubsub_manager.publish(channel, event)
@@ -150,6 +164,69 @@ async def publish_new_message(
         logger.warning(
             "fanout: publish failed for message_id=%s conversation_id=%s",
             message_id, conversation_id,
+        )
+    return ok
+
+
+async def publish_message_deleted(
+    message_id: str,
+    conversation_id: str,
+    sender_id: str,
+    recipient_id: str,
+) -> bool:
+    """
+    Publish a ``message_deleted`` event after a delete-for-everyone operation.
+
+    The payload intentionally does NOT include the original message content.
+    Only the IDs needed to update the UI are included.
+    """
+    channel = Channels.messaging(conversation_id)
+    event = PubSubEvent(
+        event_type="message_deleted",
+        payload={
+            "message_id":      message_id,
+            "conversation_id": conversation_id,
+            "sender_id":       sender_id,
+            "recipient_id":    recipient_id,
+        },
+    )
+    ok = await pubsub_manager.publish(channel, event)
+    if not ok:
+        logger.warning(
+            "fanout: publish_message_deleted failed message_id=%s",
+            message_id,
+        )
+    return ok
+
+
+async def publish_message_pinned(
+    message_id: str,
+    conversation_id: str,
+    pinned_by_user_id: str,
+    recipient_id: str,
+    pinned: bool,
+) -> bool:
+    """
+    Publish a ``message_pinned`` or ``message_unpinned`` event.
+
+    Both participants need to update their UI when pin state changes.
+    """
+    event_type = "message_pinned" if pinned else "message_unpinned"
+    channel = Channels.messaging(conversation_id)
+    event = PubSubEvent(
+        event_type=event_type,
+        payload={
+            "message_id":       message_id,
+            "conversation_id":  conversation_id,
+            "pinned_by_user_id": pinned_by_user_id,
+            "recipient_id":     recipient_id,
+        },
+    )
+    ok = await pubsub_manager.publish(channel, event)
+    if not ok:
+        logger.warning(
+            "fanout: publish_message_pinned failed message_id=%s pinned=%s",
+            message_id, pinned,
         )
     return ok
 
@@ -204,66 +281,115 @@ async def handle_fanout_event(channel: str, event: PubSubEvent) -> None:
     Called by the pattern listener for every event on any
     ``careersphere:pubsub:messaging:<conversation_id>`` channel.
 
-    Logic:
-    1. Accept only ``new_message`` events; ignore others (future-proof).
-    2. Skip events originating from THIS instance — local delivery already
-       happened synchronously in ``_handle_message()``.
-    3. Extract ``recipient_id`` from the payload.
-    4. If the recipient has active sockets on this instance, deliver the
-       ``new_message`` event through the local ConnectionManager.
-    5. Never re-publish the event (anti-loop guarantee).
-    6. Never write to PostgreSQL (message is already persisted).
-    """
-    if event.event_type != "new_message":
-        return
+    Supported events:
+      - new_message      (original)
+      - message_deleted  (Phase 5.8 — delete for everyone)
+      - message_pinned   (Phase 5.8 — pin)
+      - message_unpinned (Phase 5.8 — unpin)
 
+    Logic:
+    1. Skip events originating from THIS instance — local delivery already
+       happened synchronously.
+    2. Route to the appropriate handler based on event_type.
+    3. Deliver to locally connected recipient via ConnectionManager.
+    4. Never re-publish (anti-loop guarantee).
+    5. Never write to PostgreSQL.
+    """
     payload = event.payload
     if not isinstance(payload, dict):
-        logger.warning("fanout: received new_message event with non-dict payload; skipping.")
+        logger.warning("fanout: received event with non-dict payload; skipping.")
         return
 
     # ── Anti-loop: skip events we published ourselves ──────────────────────
     if event.source == _INSTANCE_ID:
         return
 
-    # ── Extract required fields ────────────────────────────────────────────
     recipient_id = payload.get("recipient_id")
     if not recipient_id:
         logger.warning(
-            "fanout: new_message event missing recipient_id; skipping event_id=%s",
-            event.event_id,
+            "fanout: event missing recipient_id; skipping event_id=%s type=%s",
+            event.event_id, event.event_type,
         )
         return
 
-    ws_data = {
-        "id":              payload.get("message_id", ""),
-        "conversation_id": payload.get("conversation_id", ""),
-        "sender_id":       payload.get("sender_id", ""),
-        "content":         payload.get("content", ""),
-        "created_at":      payload.get("created_at"),
-        "delivered_at":    None,
-        "read_at":         None,
-    }
-
-    # ── Deliver to locally connected recipient ─────────────────────────────
-    if ws_manager.is_connected(recipient_id):
-        delivered = await ws_manager.send_to_user(recipient_id, "new_message", ws_data)
-
-        if delivered:
-            await ws_manager.send_to_user(
-                recipient_id,
-                "notification",
+    if event.event_type == "new_message":
+        ws_data = {
+            "id":                      payload.get("message_id", ""),
+            "conversation_id":         payload.get("conversation_id", ""),
+            "sender_id":               payload.get("sender_id", ""),
+            "content":                 payload.get("content", ""),
+            "created_at":              payload.get("created_at"),
+            "delivered_at":            None,
+            "read_at":                 None,
+            "reply_to_message_id":     payload.get("reply_to_message_id"),
+            "reply_to_message":        (
                 {
-                    "notification_type": "new_message",
-                    "conversation_id":   payload.get("conversation_id", ""),
-                    "sender_id":         payload.get("sender_id", ""),
-                    "message_id":        payload.get("message_id", ""),
-                },
-            )
+                    "id":    payload.get("reply_to_message_id"),
+                    "sender_id": payload.get("reply_to_sender_id"),
+                    "content":   payload.get("reply_to_content"),
+                    "is_deleted_for_everyone": False,
+                }
+                if payload.get("reply_to_message_id")
+                else None
+            ),
+            "is_forwarded":            payload.get("is_forwarded", False),
+            "forwarded_from_message_id": payload.get("forwarded_from_message_id"),
+            "is_pinned":               False,
+            "is_starred":              False,
+            "is_deleted_for_everyone": False,
+            "is_deleted_for_me":       False,
+        }
+
+        if ws_manager.is_connected(recipient_id):
+            delivered = await ws_manager.send_to_user(recipient_id, "new_message", ws_data)
+            if delivered:
+                await ws_manager.send_to_user(
+                    recipient_id,
+                    "notification",
+                    {
+                        "notification_type": "new_message",
+                        "conversation_id":   payload.get("conversation_id", ""),
+                        "sender_id":         payload.get("sender_id", ""),
+                        "message_id":        payload.get("message_id", ""),
+                    },
+                )
+                logger.debug(
+                    "fanout: delivered new_message to recipient=%s event_id=%s",
+                    recipient_id, event.event_id,
+                )
+
+    elif event.event_type == "message_deleted":
+        ws_data = {
+            "message_id":      payload.get("message_id", ""),
+            "conversation_id": payload.get("conversation_id", ""),
+        }
+        if ws_manager.is_connected(recipient_id):
+            await ws_manager.send_to_user(recipient_id, "message_deleted", ws_data)
             logger.debug(
-                "fanout: delivered new_message to recipient=%s event_id=%s",
+                "fanout: delivered message_deleted to recipient=%s event_id=%s",
                 recipient_id, event.event_id,
             )
+
+    elif event.event_type in ("message_pinned", "message_unpinned"):
+        ws_data = {
+            "message_id":       payload.get("message_id", ""),
+            "conversation_id":  payload.get("conversation_id", ""),
+            "pinned_by_user_id": payload.get("pinned_by_user_id", ""),
+            "pinned":           event.event_type == "message_pinned",
+        }
+        if ws_manager.is_connected(recipient_id):
+            await ws_manager.send_to_user(recipient_id, event.event_type, ws_data)
+            logger.debug(
+                "fanout: delivered %s to recipient=%s event_id=%s",
+                event.event_type, recipient_id, event.event_id,
+            )
+
+    else:
+        # Unknown event type — ignore (future-proof)
+        logger.debug(
+            "fanout: ignoring unknown event_type=%s event_id=%s",
+            event.event_type, event.event_id,
+        )
 
 
 # ---------------------------------------------------------------------------
