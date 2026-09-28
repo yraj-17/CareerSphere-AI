@@ -3,6 +3,13 @@
 /**
  * ChatWindow — the right panel: header + message history + input.
  *
+ * Phase 5.8 additions:
+ *   - Reply bar above the input (shows when replying to a message)
+ *   - Pinned message banner below the header
+ *   - Delete-for-everyone confirmation dialog
+ *   - All message action handlers passed down to MessageBubble
+ *   - Scroll-to anchors for reply navigation
+ *
  * Props:
  *   conversation  {object|null}   — selected conversation summary
  *   currentUser   {object}        — { id, first_name, last_name }
@@ -13,10 +20,17 @@
  *   loadingHistory {boolean}
  *   hasMore       {boolean}       — more pages available
  *   onLoadMore    () => void
- *   onSend        (content) => boolean  — returns false if WS not ready
- *   onTyping      () => void       — called on keystroke (debounced internally)
+ *   onSend        (content, replyToId?) => boolean
+ *   onTyping      () => void
  *   onStopTyping  () => void
- *   onBack        () => void       — mobile back navigation
+ *   onBack        () => void
+ *   pinnedMessage {object|null}   — currently pinned message
+ *   onReply       (message) => void
+ *   onStar        (message) => void
+ *   onPin         (message) => void
+ *   onForward     (message) => void
+ *   onDeleteForMe (message) => void
+ *   onDeleteForEveryone (message) => void
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -30,6 +44,10 @@ import {
   WifiOff,
   ExternalLink,
   User,
+  Pin,
+  X,
+  Reply,
+  Trash2,
 } from 'lucide-react';
 import MessageBubble from '@/components/messaging/MessageBubble';
 import TypingIndicator from '@/components/messaging/TypingIndicator';
@@ -37,11 +55,13 @@ import { WS_STATE } from '@/hooks/useMessagingWebSocket';
 
 const DM_MAX_CHARS = 4000;
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function AvatarInitials({ user, size = 'md' }) {
   const initials = `${user?.first_name?.[0] ?? ''}${user?.last_name?.[0] ?? ''}`.toUpperCase() || '?';
   const sz = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
   return (
-    <div className={`${sz} rounded-full bg-gradient-to-br from-accent/30 via-accent/10 to-violet/20 border border-accent/20 flex items-center justify-center font-bold text-white flex-shrink-0`}>
+    <div className={`${sz} rounded-full bg-gradient-to-br from-accent/30 via-accent/10 to-violet-500/20 border border-accent/20 flex items-center justify-center font-bold text-white flex-shrink-0`}>
       {initials}
     </div>
   );
@@ -82,6 +102,98 @@ function ConnectionStatusBanner({ wsState }) {
   );
 }
 
+function PinnedMessageBanner({ pinnedMessage, onScrollTo, onUnpin }) {
+  if (!pinnedMessage) return null;
+  const preview = pinnedMessage.is_deleted_for_everyone
+    ? '🚫 This message was deleted'
+    : (pinnedMessage.content || '').slice(0, 60) + ((pinnedMessage.content?.length ?? 0) > 60 ? '…' : '');
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
+      <Pin className="h-3 w-3 text-amber-400 flex-shrink-0" />
+      <button
+        onClick={() => onScrollTo?.(pinnedMessage.id)}
+        className="flex-1 text-left min-w-0"
+      >
+        <p className="text-[10px] text-amber-400/70 mb-0.5">Pinned message</p>
+        <p className="text-xs text-slate-300 truncate">{preview}</p>
+      </button>
+      {onUnpin && (
+        <button
+          onClick={onUnpin}
+          aria-label="Unpin message"
+          className="h-5 w-5 rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ReplyBar({ replyingTo, isMine, onCancel }) {
+  if (!replyingTo) return null;
+  const preview = replyingTo.is_deleted_for_everyone
+    ? '🚫 This message was deleted'
+    : (replyingTo.content || '').slice(0, 80) + ((replyingTo.content?.length ?? 0) > 80 ? '…' : '');
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10 bg-slate-950/60 backdrop-blur-sm">
+      <Reply className="h-3.5 w-3.5 text-accent flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] text-accent/70 mb-0.5">Replying to</p>
+        <p className="text-xs text-slate-400 truncate">{preview}</p>
+      </div>
+      <button
+        onClick={onCancel}
+        aria-label="Cancel reply"
+        className="h-5 w-5 rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function DeleteConfirmDialog({ message, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div
+        className="relative w-full max-w-xs bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+        data-testid="delete-confirm-dialog"
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <div className="h-8 w-8 rounded-full bg-rose-500/15 flex items-center justify-center">
+            <Trash2 className="h-4 w-4 text-rose-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-white">Delete for Everyone?</h3>
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed mb-4">
+          This message will be permanently hidden for all participants and cannot be undone.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            data-testid="confirm-delete-btn"
+            className="flex-1 py-2 px-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-sm text-rose-300 hover:bg-rose-500/30 transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function ChatWindow({
   conversation,
   currentUser,
@@ -96,16 +208,28 @@ export default function ChatWindow({
   onTyping,
   onStopTyping,
   onBack,
+  pinnedMessage = null,
+  onReply,
+  onStar,
+  onPin,
+  onUnpin,
+  onForward,
+  onDeleteForMe,
+  onDeleteForEveryone,
 }) {
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // message to delete-for-everyone
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const prevLenRef = useRef(0);
+  // Ref bag for scroll-to by message ID
+  const msgScrollRefs = useRef({});
 
   const other = conversation?.other_user;
 
-  // Auto-scroll to bottom when new messages arrive (but not when loading more above)
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (messages.length > prevLenRef.current) {
       endRef.current?.scrollIntoView?.({ behavior: 'smooth' });
@@ -121,21 +245,33 @@ export default function ChatWindow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingHistory]);
 
+  // Scroll to a specific message by ID (for reply navigation)
+  const scrollToMessage = useCallback((msgId) => {
+    const el = msgScrollRefs.current?.[msgId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Highlight briefly
+      el.classList.add('ring-1', 'ring-accent/40');
+      setTimeout(() => el.classList.remove('ring-1', 'ring-accent/40'), 1200);
+    }
+  }, []);
+
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed) return;
     if (trimmed.length > DM_MAX_CHARS) return;
 
     setSendError(null);
-    const ok = onSend?.(trimmed);
+    const ok = onSend?.(trimmed, replyingTo?.id ?? null);
     if (ok === false) {
-      setSendError('Message couldn\'t be sent — connection unavailable.');
+      setSendError("Message couldn't be sent — connection unavailable.");
       return;
     }
     setText('');
+    setReplyingTo(null);
     onStopTyping?.();
     inputRef.current?.focus();
-  }, [text, onSend, onStopTyping]);
+  }, [text, onSend, replyingTo, onStopTyping]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -153,6 +289,30 @@ export default function ChatWindow({
       onStopTyping?.();
     }
   }, [onTyping, onStopTyping]);
+
+  // Reply handler — set reply state, focus input
+  const handleReply = useCallback((message) => {
+    setReplyingTo(message);
+    inputRef.current?.focus();
+    onReply?.(message);
+  }, [onReply]);
+
+  // Delete-for-everyone — show confirm dialog first
+  const handleDeleteForEveryoneClick = useCallback((message) => {
+    setDeleteConfirm(message);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(() => {
+    if (deleteConfirm) {
+      onDeleteForEveryone?.(deleteConfirm);
+      setDeleteConfirm(null);
+    }
+  }, [deleteConfirm, onDeleteForEveryone]);
+
+  // Scroll to pinned message
+  const handleScrollToPinned = useCallback(() => {
+    if (pinnedMessage?.id) scrollToMessage(pinnedMessage.id);
+  }, [pinnedMessage, scrollToMessage]);
 
   // Empty / no selection state
   if (!conversation) {
@@ -174,7 +334,7 @@ export default function ChatWindow({
 
   return (
     <div className="flex flex-col h-full">
-      {/* ── Header ────────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-slate-950/40 backdrop-blur-sm flex-shrink-0">
         {/* Mobile back button */}
         <button
@@ -224,10 +384,17 @@ export default function ChatWindow({
         )}
       </div>
 
-      {/* ── WS connection status ───────────────────────────────────────── */}
+      {/* ── WS status ──────────────────────────────────────────────────────── */}
       <ConnectionStatusBanner wsState={wsState} />
 
-      {/* ── Message area ──────────────────────────────────────────────── */}
+      {/* ── Pinned message banner ───────────────────────────────────────────── */}
+      <PinnedMessageBanner
+        pinnedMessage={pinnedMessage}
+        onScrollTo={scrollToMessage}
+        onUnpin={pinnedMessage ? () => onUnpin?.(pinnedMessage) : null}
+      />
+
+      {/* ── Message area ─────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto chat-scroll flex flex-col py-4 gap-2 min-h-0">
         {/* Load more */}
         {hasMore && (
@@ -268,6 +435,13 @@ export default function ChatWindow({
             key={msg.id}
             message={msg}
             isMine={msg.sender_id === currentUser?.id}
+            scrollRef={msgScrollRefs}
+            onReply={handleReply}
+            onStar={() => onStar?.(msg)}
+            onPin={() => onPin?.(msg)}
+            onForward={() => onForward?.(msg)}
+            onDeleteForMe={() => onDeleteForMe?.(msg)}
+            onDeleteForEveryone={() => handleDeleteForEveryoneClick(msg)}
           />
         ))}
 
@@ -280,7 +454,16 @@ export default function ChatWindow({
         <div ref={endRef} />
       </div>
 
-      {/* ── Input bar ─────────────────────────────────────────────────── */}
+      {/* ── Reply bar ─────────────────────────────────────────────────────── */}
+      {replyingTo && (
+        <ReplyBar
+          replyingTo={replyingTo}
+          isMine={replyingTo.sender_id === currentUser?.id}
+          onCancel={() => setReplyingTo(null)}
+        />
+      )}
+
+      {/* ── Input bar ─────────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-t border-white/10 bg-slate-950/40 backdrop-blur-sm px-4 py-3">
         {/* Send error */}
         {sendError && (
@@ -298,7 +481,7 @@ export default function ChatWindow({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
+            placeholder={replyingTo ? 'Reply…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
             disabled={wsState !== WS_STATE.CONNECTED}
             className="flex-1 resize-none bg-white/[0.06] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed max-h-32 overflow-y-auto chat-scroll leading-relaxed"
             style={{ minHeight: '42px' }}
@@ -326,6 +509,15 @@ export default function ChatWindow({
           </button>
         </div>
       </div>
+
+      {/* ── Delete for Everyone confirmation ─────────────────────────────── */}
+      {deleteConfirm && (
+        <DeleteConfirmDialog
+          message={deleteConfirm}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
     </div>
   );
 }
