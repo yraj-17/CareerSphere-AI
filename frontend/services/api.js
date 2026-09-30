@@ -641,3 +641,104 @@ export const getUnreadCount = async () => {
   const response = await apiClient.get('/api/messaging/unread-count');
   return response.data;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message Management — Phase 5.8
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Star a message (private per-user). Idempotent.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean }>}
+ */
+export const starMessage = async (messageId) => {
+  const response = await apiClient.post(`/api/messaging/messages/${messageId}/star`);
+  return response.data;
+};
+
+/**
+ * Remove a star from a message. Idempotent.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean }>}
+ */
+export const unstarMessage = async (messageId) => {
+  const response = await apiClient.delete(`/api/messaging/messages/${messageId}/star`);
+  return response.data;
+};
+
+/**
+ * Pin a message in its conversation (conversation-level, visible to both).
+ * Clears the previous pin automatically.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean, message: object }>}
+ */
+export const pinMessage = async (messageId) => {
+  const response = await apiClient.post(`/api/messaging/messages/${messageId}/pin`);
+  return response.data;
+};
+
+/**
+ * Unpin a message. Idempotent.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean, message: object }>}
+ */
+export const unpinMessage = async (messageId) => {
+  const response = await apiClient.delete(`/api/messaging/messages/${messageId}/pin`);
+  return response.data;
+};
+
+/**
+ * Delete a message for the current user only (no effect on other participant).
+ * Idempotent.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean }>}
+ */
+export const deleteMessageForMe = async (messageId) => {
+  const response = await apiClient.post(`/api/messaging/messages/${messageId}/delete-for-me`);
+  return response.data;
+};
+
+/**
+ * Delete a message for ALL participants (sender only).
+ * Replaces content with a placeholder for everyone.
+ * Backend enforces sender-only authorization.
+ *
+ * @param {string} messageId
+ * @returns {Promise<{ success: boolean, message: object }>}
+ */
+export const deleteMessageForEveryone = async (messageId) => {
+  const response = await apiClient.post(`/api/messaging/messages/${messageId}/delete-for-everyone`);
+  return response.data;
+};
+
+/**
+ * Forward a message to another conversation.
+ * Creates a new message in the destination conversation.
+ *
+ * @param {string} messageId  — source message ID
+ * @param {string} destinationConversationId — target conversation ID
+ * @returns {Promise<object>} — the new forwarded DirectMessage
+ */
+export const forwardMessage = async (messageId, destinationConversationId) => {
+  const response = await apiClient.post(`/api/messaging/messages/${messageId}/forward`, {
+    destination_conversation_id: destinationConversationId,
+  });
+  return response.data;
+};
+
+/**
+ * Get the currently pinned message in a conversation (null if none).
+ *
+ * @param {string} conversationId
+ * @returns {Promise<{ success: boolean, message: object|null }>}
+ */
+export const getPinnedMessage = async (conversationId) => {
+  const response = await apiClient.get(`/api/messaging/conversations/${conversationId}/pinned`);
+  return response.data;
+};
+

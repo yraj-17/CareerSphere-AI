@@ -19,13 +19,16 @@ export const WS_STATE = {
  *
  * @param {string|null} conversationId - Active conversation ID (null = not connected)
  * @param {object}      handlers       - Event callbacks:
- *   onNewMessage(event)       — new_message / notification
- *   onMessageDelivered(event) — message_delivered
- *   onMessageRead(event)      — message_read
- *   onTyping(event)           — typing_start / typing_stop
- *   onUserOnline(userId)      — user_online
- *   onUserOffline(userId)     — user_offline
- *   onError(event)            — error events from server
+ *   onNewMessage(event)         — new_message / notification
+ *   onMessageDelivered(event)   — message_delivered
+ *   onMessageRead(event)        — message_read
+ *   onTyping(event)             — typing_start / typing_stop
+ *   onUserOnline(userId)        — user_online
+ *   onUserOffline(userId)       — user_offline
+ *   onError(event)              — error events from server
+ *   onMessageDeleted(event)     — message_deleted (Phase 5.8)
+ *   onMessagePinned(event)      — message_pinned (Phase 5.8)
+ *   onMessageUnpinned(event)    — message_unpinned (Phase 5.8)
  *
  * @returns {object} { wsState, sendMessage, sendTypingStart, sendTypingStop, sendMessageRead }
  */
@@ -44,7 +47,6 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
 
   const closeSocket = useCallback(() => {
     if (socketRef.current) {
-      // Prevent onclose from firing reconnect logic after intentional close
       socketRef.current._intentionalClose = true;
       socketRef.current.close(1000, 'conversation changed');
       socketRef.current = null;
@@ -59,7 +61,6 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
       return;
     }
 
-    // Already connected to this conversation — skip
     if (activeConvRef.current === conversationId && socketRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -102,7 +103,6 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
           h.onNewMessage?.(payload);
           break;
         case 'notification':
-          // notification is a secondary event; forward to same handler
           h.onNewMessage?.(payload, 'notification');
           break;
         case 'message_delivered':
@@ -126,6 +126,16 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
         case 'error':
           h.onError?.(payload);
           break;
+        // ── Phase 5.8 management events ─────────────────────────────────
+        case 'message_deleted':
+          h.onMessageDeleted?.(payload);
+          break;
+        case 'message_pinned':
+          h.onMessagePinned?.(payload);
+          break;
+        case 'message_unpinned':
+          h.onMessageUnpinned?.(payload);
+          break;
         default:
           break;
       }
@@ -137,7 +147,7 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
       }
     };
 
-    ws.onclose = (e) => {
+    ws.onclose = () => {
       if (socketRef.current !== ws) return;
       if (ws._intentionalClose) return;
       setWsState(WS_STATE.DISCONNECTED);
@@ -152,7 +162,7 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
     };
   }, [conversationId, closeSocket]);
 
-  // ── Sending helpers ─────────────────────────────────────────────────────────
+  // ── Sending helpers ──────────────────────────────────────────────────────────
 
   const _send = useCallback((payload) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -162,9 +172,15 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
     return false;
   }, []);
 
-  /** Send a chat message. Backend persists and delivers. */
-  const sendMessage = useCallback((content) => {
-    return _send({ type: 'message', data: { content } });
+  /**
+   * Send a chat message.
+   * @param {string} content
+   * @param {string|null} replyToMessageId — optional reply-to message ID
+   */
+  const sendMessage = useCallback((content, replyToMessageId = null) => {
+    const data = { content };
+    if (replyToMessageId) data.reply_to_message_id = replyToMessageId;
+    return _send({ type: 'message', data });
   }, [_send]);
 
   /** Notify backend that the current user started typing (debounced at call site). */
@@ -173,7 +189,6 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
       isTypingRef.current = true;
       _send({ type: 'typing_start', data: {} });
     }
-    // Auto stop typing after 3 s of no new start signals
     clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       isTypingRef.current = false;
@@ -195,7 +210,6 @@ export function useMessagingWebSocket(conversationId, handlers = {}) {
     _send({ type: 'message_read', data: {} });
   }, [_send]);
 
-  // Cleanup timers on unmount
   useEffect(() => () => clearTimeout(typingTimerRef.current), []);
 
   return { wsState, sendMessage, sendTypingStart, sendTypingStop, sendMessageRead };

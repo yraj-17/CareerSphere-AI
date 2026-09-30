@@ -3,23 +3,16 @@
 /**
  * MessagingPage — top-level orchestrator for the messaging UI.
  *
+ * Phase 5.8 additions:
+ *   - Message management actions (star, pin, unpin, delete-for-me,
+ *     delete-for-everyone, forward)
+ *   - Pinned message state per conversation
+ *   - Real-time message_deleted / message_pinned / message_unpinned WS events
+ *   - ForwardModal for destination conversation picking
+ *
  * Layout:
  *   Desktop: [ConversationList | ChatWindow]  (side by side)
  *   Mobile:  [ConversationList] → tap → [ChatWindow] (single panel)
- *
- * Responsibilities:
- *   - Load conversation list from REST
- *   - Load message history for the selected conversation
- *   - Manage WebSocket for active conversation
- *   - Handle all WS events: new_message, delivered, read, typing, online/offline
- *   - Track online presence per user
- *   - Deduplicate messages using message ID
- *   - Mark messages read when conversation is open
- *   - Expose loading/error/empty states
- *
- * Props:
- *   currentUser  {object}         — from AuthContext
- *   initialConvId {string|null}   — pre-selected conversation from URL
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
@@ -27,12 +20,21 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare } from 'lucide-react';
 import ConversationList from '@/components/messaging/ConversationList';
 import ChatWindow from '@/components/messaging/ChatWindow';
+import ForwardModal from '@/components/messaging/ForwardModal';
 import { useMessagingWebSocket, WS_STATE } from '@/hooks/useMessagingWebSocket';
 import {
   listConversations,
   listMessages,
   markMessagesRead,
   extractErrorMessage,
+  starMessage,
+  unstarMessage,
+  pinMessage,
+  unpinMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone,
+  forwardMessage,
+  getPinnedMessage,
 } from '@/services/api';
 
 const PAGE_SIZE = 50;
@@ -53,7 +55,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   const [convError, setConvError] = useState(null);
 
   // ── Selected conversation ──────────────────────────────────────────────────
-  const [selectedConv, setSelectedConv] = useState(null); // full conv summary
+  const [selectedConv, setSelectedConv] = useState(null);
   const activeConvId = selectedConv?.conversation_id ?? null;
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -61,6 +63,9 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgOffset, setMsgOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+
+  // ── Pinned message ─────────────────────────────────────────────────────────
+  const [pinnedMessage, setPinnedMessage] = useState(null);
 
   // ── Presence ───────────────────────────────────────────────────────────────
   const [onlineUsers, setOnlineUsers] = useState(new Set());
@@ -73,6 +78,9 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   // ── Mobile panel state ─────────────────────────────────────────────────────
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
+  // ── Forward modal ──────────────────────────────────────────────────────────
+  const [forwardSource, setForwardSource] = useState(null);  // message being forwarded
+
   // ── Load conversations ─────────────────────────────────────────────────────
   const loadConversations = useCallback(async () => {
     setConvLoading(true);
@@ -81,8 +89,6 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       const data = await listConversations({ limit: 50 });
       const list = Array.isArray(data) ? data : data.conversations ?? [];
 
-      // Normalize: backend returns { id, other_participant, latest_message, unread_count }
-      // Frontend uses: { conversation_id, other_user, latest_message_content, ... }
       const normalized = list.map((c) => ({
         conversation_id: c.id,
         other_user: c.other_participant,
@@ -91,18 +97,15 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
         latest_message_sender_id: c.latest_message?.sender_id ?? null,
         unread_count: c.unread_count ?? 0,
         updated_at: c.updated_at,
-        // keep raw id for getOrCreateConversation reference
         _raw: c,
       }));
 
       setConversations(normalized);
 
-      // Build initial unread map
       const map = {};
       normalized.forEach((c) => { map[c.conversation_id] = c.unread_count ?? 0; });
       setUnreadMap(map);
 
-      // Pre-select from URL param
       if (initialConvId) {
         const match = normalized.find((c) => c.conversation_id === initialConvId);
         if (match) {
@@ -142,35 +145,45 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     }
   }, []);
 
-  // When conversation changes, reset and load
+  // Load pinned message when conversation changes
+  const loadPinnedMessage = useCallback(async (convId) => {
+    try {
+      const result = await getPinnedMessage(convId);
+      setPinnedMessage(result?.message ?? null);
+    } catch {
+      setPinnedMessage(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!activeConvId) {
       setMessages([]);
       setMsgOffset(0);
       setHasMore(false);
       setIsOtherTyping(false);
+      setPinnedMessage(null);
       return;
     }
     setMessages([]);
     setMsgOffset(0);
     setHasMore(false);
     setIsOtherTyping(false);
+    setPinnedMessage(null);
     loadMessages(activeConvId, 0, false);
-  }, [activeConvId, loadMessages]);
+    loadPinnedMessage(activeConvId);
+  }, [activeConvId, loadMessages, loadPinnedMessage]);
 
   // Mark messages read when conversation opens / messages change
   useEffect(() => {
     if (!activeConvId) return;
     markMessagesRead(activeConvId).catch(() => {});
-    // Clear local unread count for this conv
     setUnreadMap((prev) => ({ ...prev, [activeConvId]: 0 }));
   }, [activeConvId, messages.length]);
 
   // ── WebSocket event handlers ───────────────────────────────────────────────
+
   const handleNewMessage = useCallback((payload, eventType) => {
     if (!payload) return;
-
-    // notification events are secondary — only process if we don't already have the message
     if (eventType === 'notification') return;
 
     const msg = {
@@ -181,20 +194,26 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       created_at: payload.created_at,
       delivered_at: payload.delivered_at ?? null,
       read_at: payload.read_at ?? null,
+      // Phase 5.8 fields
+      reply_to_message_id: payload.reply_to_message_id ?? null,
+      reply_to_message: payload.reply_to_message ?? null,
+      is_deleted_for_everyone: payload.is_deleted_for_everyone ?? false,
+      is_pinned: payload.is_pinned ?? false,
+      is_forwarded: payload.is_forwarded ?? false,
+      forwarded_from_message_id: payload.forwarded_from_message_id ?? null,
+      is_starred: payload.is_starred ?? false,
+      is_deleted_for_me: payload.is_deleted_for_me ?? false,
     };
 
     if (!msg.id || !msg.conversation_id) return;
 
-    // Only add to messages if it's for the active conversation
     if (msg.conversation_id === activeConvId) {
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
-      // Mark as read immediately since user is viewing
       markMessagesRead(msg.conversation_id).catch(() => {});
     } else {
-      // Increment unread count for other conversations
       if (msg.sender_id !== currentUser?.id) {
         setUnreadMap((prev) => ({
           ...prev,
@@ -203,7 +222,6 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       }
     }
 
-    // Update conversation list preview (normalize to local format)
     setConversations((prev) =>
       prev.map((c) => {
         if (c.conversation_id !== msg.conversation_id) return c;
@@ -228,7 +246,6 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   }, []);
 
   const handleMessageRead = useCallback((payload) => {
-    // Backend sends message_read on the conversation level — mark all as read
     setMessages((prev) =>
       prev.map((m) =>
         m.sender_id === currentUser?.id && !m.read_at
@@ -242,7 +259,6 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     const userId = payload?.user_id;
     if (!userId || userId === currentUser?.id) return;
     setIsOtherTyping(payload.isTyping);
-    // Auto-clear after 4 s in case stop event is lost
     if (payload.isTyping) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = setTimeout(() => setIsOtherTyping(false), 4000);
@@ -265,7 +281,54 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     });
   }, []);
 
-  const handleWsError = useCallback(() => {}, []); // silent
+  // ── Phase 5.8 — WS management event handlers ──────────────────────────────
+
+  const handleMessageDeleted = useCallback((payload) => {
+    if (!payload?.message_id) return;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === payload.message_id
+          ? {
+              ...m,
+              is_deleted_for_everyone: true,
+              content: '🚫 This message was deleted',
+              is_pinned: false,
+            }
+          : m
+      )
+    );
+    // If the deleted message was pinned, clear pin state
+    setPinnedMessage((prev) =>
+      prev?.id === payload.message_id ? null : prev
+    );
+  }, []);
+
+  const handleMessagePinned = useCallback((payload) => {
+    if (!payload?.message_id || !payload?.conversation_id) return;
+    if (payload.conversation_id !== activeConvId) return;
+    // Reload pinned message from backend for full data
+    loadPinnedMessage(payload.conversation_id);
+    // Update pin state in messages
+    setMessages((prev) =>
+      prev.map((m) => ({
+        ...m,
+        is_pinned: m.id === payload.message_id,
+      }))
+    );
+  }, [activeConvId, loadPinnedMessage]);
+
+  const handleMessageUnpinned = useCallback((payload) => {
+    if (!payload?.message_id || !payload?.conversation_id) return;
+    if (payload.conversation_id !== activeConvId) return;
+    setPinnedMessage(null);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === payload.message_id ? { ...m, is_pinned: false } : m
+      )
+    );
+  }, [activeConvId]);
+
+  const handleWsError = useCallback(() => {}, []);
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
   const { wsState, sendMessage, sendTypingStart, sendTypingStop, sendMessageRead } =
@@ -277,19 +340,20 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       onUserOnline: handleUserOnline,
       onUserOffline: handleUserOffline,
       onError: handleWsError,
+      onMessageDeleted: handleMessageDeleted,
+      onMessagePinned: handleMessagePinned,
+      onMessageUnpinned: handleMessageUnpinned,
     });
 
-  // Send read event when WS connects for active conversation
   useEffect(() => {
     if (wsState === WS_STATE.CONNECTED && activeConvId) {
       sendMessageRead();
     }
   }, [wsState, activeConvId, sendMessageRead]);
 
-  // Cleanup typing timer on unmount
   useEffect(() => () => clearTimeout(typingTimerRef.current), []);
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Navigation handlers ────────────────────────────────────────────────────
   const handleSelectConv = useCallback((conv) => {
     setSelectedConv(conv);
     setMobileShowChat(true);
@@ -300,8 +364,8 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     setSelectedConv(null);
   }, []);
 
-  const handleSend = useCallback((content) => {
-    return sendMessage(content);
+  const handleSend = useCallback((content, replyToMessageId = null) => {
+    return sendMessage(content, replyToMessageId);
   }, [sendMessage]);
 
   const handleLoadMore = useCallback(() => {
@@ -309,6 +373,116 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     loadMessages(activeConvId, msgOffset, true);
   }, [activeConvId, msgLoading, loadMessages, msgOffset]);
 
+  // ── Phase 5.8 — Message action handlers ───────────────────────────────────
+
+  const handleStar = useCallback(async (message) => {
+    const wasStarred = message.is_starred;
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((m) => m.id === message.id ? { ...m, is_starred: !wasStarred } : m)
+    );
+    try {
+      if (wasStarred) {
+        await unstarMessage(message.id);
+      } else {
+        await starMessage(message.id);
+      }
+    } catch {
+      // Revert on failure
+      setMessages((prev) =>
+        prev.map((m) => m.id === message.id ? { ...m, is_starred: wasStarred } : m)
+      );
+    }
+  }, []);
+
+  const handlePin = useCallback(async (message) => {
+    if (message.is_pinned) {
+      // Unpin
+      try {
+        await unpinMessage(message.id);
+        setPinnedMessage(null);
+        setMessages((prev) =>
+          prev.map((m) => m.id === message.id ? { ...m, is_pinned: false } : m)
+        );
+      } catch {
+        // silent
+      }
+    } else {
+      // Pin
+      try {
+        const result = await pinMessage(message.id);
+        // Clear all pins, set this one
+        setMessages((prev) =>
+          prev.map((m) => ({ ...m, is_pinned: m.id === message.id }))
+        );
+        setPinnedMessage(result?.message ?? { ...message, is_pinned: true });
+      } catch {
+        // silent
+      }
+    }
+  }, []);
+
+  const handleUnpin = useCallback(async (message) => {
+    if (!message) return;
+    try {
+      await unpinMessage(message.id);
+      setPinnedMessage(null);
+      setMessages((prev) =>
+        prev.map((m) => m.id === message.id ? { ...m, is_pinned: false } : m)
+      );
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const handleDeleteForMe = useCallback(async (message) => {
+    // Optimistic: remove from local state
+    setMessages((prev) => prev.filter((m) => m.id !== message.id));
+    try {
+      await deleteMessageForMe(message.id);
+    } catch {
+      // If it fails, re-fetch messages to restore state
+      if (activeConvId) loadMessages(activeConvId, 0, false);
+    }
+  }, [activeConvId, loadMessages]);
+
+  const handleDeleteForEveryone = useCallback(async (message) => {
+    // Optimistic: mark as deleted
+    const placeholder = '🚫 This message was deleted';
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === message.id
+          ? { ...m, is_deleted_for_everyone: true, content: placeholder, is_pinned: false }
+          : m
+      )
+    );
+    // Clear pin if this was pinned
+    if (pinnedMessage?.id === message.id) setPinnedMessage(null);
+
+    try {
+      await deleteMessageForEveryone(message.id);
+    } catch {
+      // Revert on failure
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === message.id
+            ? { ...m, is_deleted_for_everyone: false, content: message.content, is_pinned: message.is_pinned }
+            : m
+        )
+      );
+    }
+  }, [pinnedMessage]);
+
+  const handleForward = useCallback((message) => {
+    setForwardSource(message);
+  }, []);
+
+  const handleForwardConfirm = useCallback(async (destinationConvId) => {
+    if (!forwardSource) return;
+    await forwardMessage(forwardSource.id, destinationConvId);
+  }, [forwardSource]);
+
+  // ── Derived state ──────────────────────────────────────────────────────────
   const otherUser = selectedConv?.other_user;
   const isOtherOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : false;
 
@@ -370,9 +544,26 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
             onTyping={sendTypingStart}
             onStopTyping={sendTypingStop}
             onBack={handleBack}
+            pinnedMessage={pinnedMessage}
+            onStar={handleStar}
+            onPin={handlePin}
+            onUnpin={handleUnpin}
+            onForward={handleForward}
+            onDeleteForMe={handleDeleteForMe}
+            onDeleteForEveryone={handleDeleteForEveryone}
           />
         </motion.div>
       </AnimatePresence>
+
+      {/* ── Forward modal ─────────────────────────────────────────────── */}
+      <ForwardModal
+        isOpen={Boolean(forwardSource)}
+        conversations={conversations}
+        currentUser={currentUser}
+        onClose={() => setForwardSource(null)}
+        onForward={handleForwardConfirm}
+        sourceMessage={forwardSource}
+      />
     </div>
   );
 }
