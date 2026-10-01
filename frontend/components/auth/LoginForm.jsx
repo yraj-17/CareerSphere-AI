@@ -188,7 +188,7 @@ export default function LoginForm() {
         {/* Footer */}
         <div className="mt-6 pt-6 border-t border-white/10 text-center">
           <p className="text-sm text-slate-400">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link
               href="/signup"
               className="font-medium text-accent hover:text-accentSoft hover:underline transition-colors"

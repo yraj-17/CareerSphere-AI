@@ -565,7 +565,7 @@ def test_17_no_pubsub_in_ws_endpoint():
 
 
 # ===========================================================================
-# 18. No database migration introduced
+# 18. Session tracking introduced no migration beyond message management
 # ===========================================================================
 
 
@@ -576,15 +576,15 @@ def test_18_no_new_migration():
         f for f in os.listdir(migration_dir)
         if f.endswith(".py") and not f.startswith("_")
     ]
-    # The last migration is 007_messaging; no new migration should exist.
-    assert "007_messaging.py" in files
-    # No file beyond 007 should exist.
+    # Phase 5.8 message management legitimately added migration 008. Session
+    # tracking itself must not introduce another schema migration.
+    assert "008_message_management.py" in files
     ids = sorted(
         int(f.split("_")[0])
         for f in files
         if f.split("_")[0].isdigit()
     )
-    assert max(ids) == 7
+    assert max(ids) == 8
 
 
 # ===========================================================================

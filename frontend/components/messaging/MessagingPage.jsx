@@ -92,6 +92,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       const normalized = list.map((c) => ({
         conversation_id: c.id,
         other_user: c.other_participant,
+        latest_message_id: c.latest_message?.id ?? null,
         latest_message_content: c.latest_message?.content ?? null,
         latest_message_at: c.latest_message?.created_at ?? c.updated_at,
         latest_message_sender_id: c.latest_message?.sender_id ?? null,
@@ -227,6 +228,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
         if (c.conversation_id !== msg.conversation_id) return c;
         return {
           ...c,
+          latest_message_id: msg.id,
           latest_message_content: msg.content,
           latest_message_at: msg.created_at,
           latest_message_sender_id: msg.sender_id,
@@ -301,6 +303,16 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     setPinnedMessage((prev) =>
       prev?.id === payload.message_id ? null : prev
     );
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.latest_message_id === payload.message_id
+          ? {
+              ...conversation,
+              latest_message_content: '🚫 This message was deleted',
+            }
+          : conversation
+      )
+    );
   }, []);
 
   const handleMessagePinned = useCallback((payload) => {
@@ -349,7 +361,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     if (wsState === WS_STATE.CONNECTED && activeConvId) {
       sendMessageRead();
     }
-  }, [wsState, activeConvId, sendMessageRead]);
+  }, [wsState, activeConvId, messages.length, sendMessageRead]);
 
   useEffect(() => () => clearTimeout(typingTimerRef.current), []);
 
@@ -456,6 +468,13 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
           : m
       )
     );
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.latest_message_id === message.id
+          ? { ...conversation, latest_message_content: placeholder }
+          : conversation
+      )
+    );
     // Clear pin if this was pinned
     if (pinnedMessage?.id === message.id) setPinnedMessage(null);
 
@@ -468,6 +487,13 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
           m.id === message.id
             ? { ...m, is_deleted_for_everyone: false, content: message.content, is_pinned: message.is_pinned }
             : m
+        )
+      );
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.latest_message_id === message.id
+            ? { ...conversation, latest_message_content: message.content }
+            : conversation
         )
       );
     }

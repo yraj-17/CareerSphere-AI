@@ -65,6 +65,7 @@ from app.db.models import (
     User,
 )
 from app.services.messaging_service import (
+    DELETED_FOR_EVERYONE_PLACEHOLDER,
     DM_MAX_CONTENT_CHARS,
     _get_other_participant_id,
     _require_accepted_connection,
@@ -75,9 +76,6 @@ from app.services.messaging_service import (
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-#: Placeholder shown to all participants when a message is deleted for everyone.
-DELETED_FOR_EVERYONE_PLACEHOLDER: str = "🚫 This message was deleted"
 
 #: Placeholder shown when a replied-to message has been deleted for everyone.
 DELETED_REPLY_PLACEHOLDER: str = "This message was deleted"

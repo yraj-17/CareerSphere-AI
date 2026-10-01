@@ -847,6 +847,11 @@ def test_26_no_sensitive_data_in_event(open_conversation):
         recipient_id: str,
         content: str,
         created_at: str,
+        reply_to_message_id=None,
+        reply_to_content=None,
+        reply_to_sender_id=None,
+        is_forwarded=False,
+        forwarded_from_message_id=None,
     ) -> bool:
         event = PubSubEvent(
             event_type="new_message",
@@ -857,6 +862,11 @@ def test_26_no_sensitive_data_in_event(open_conversation):
                 "recipient_id":    recipient_id,
                 "content":         content,
                 "created_at":      created_at,
+                "reply_to_message_id": reply_to_message_id,
+                "reply_to_content": reply_to_content,
+                "reply_to_sender_id": reply_to_sender_id,
+                "is_forwarded": is_forwarded,
+                "forwarded_from_message_id": forwarded_from_message_id,
             },
         )
         captured_events.append(event)

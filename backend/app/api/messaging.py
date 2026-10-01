@@ -27,6 +27,7 @@ This router uses prefix /messaging to avoid any route conflict.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, status
@@ -50,8 +51,15 @@ from app.schemas.messaging import (
 )
 from app.services import messaging_service as svc
 from app.services import message_management_service as mgmt
+from app.services.messaging_fanout import (
+    publish_message_deleted,
+    publish_message_pinned,
+    publish_new_message,
+)
+from app.services.websocket_manager import manager as ws_manager
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +106,77 @@ def _conversation_response(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
     )
+
+
+async def _deliver_new_message(
+    payload: dict,
+    sender_id: str,
+    recipient_id: str,
+) -> None:
+    """Best-effort local and cross-instance delivery after DB persistence."""
+    await ws_manager.send_to_user(sender_id, "new_message", payload)
+    await ws_manager.send_to_user(recipient_id, "new_message", payload)
+    await ws_manager.send_to_user(
+        recipient_id,
+        "notification",
+        {
+            "notification_type": "new_message",
+            "conversation_id": payload["conversation_id"],
+            "sender_id": sender_id,
+            "message_id": payload["id"],
+        },
+    )
+    try:
+        reply = payload.get("reply_to_message") or {}
+        await publish_new_message(
+            message_id=payload["id"],
+            conversation_id=payload["conversation_id"],
+            sender_id=sender_id,
+            recipient_id=recipient_id,
+            content=payload["content"],
+            created_at=payload.get("created_at") or "",
+            reply_to_message_id=payload.get("reply_to_message_id"),
+            reply_to_content=reply.get("content"),
+            reply_to_sender_id=reply.get("sender_id"),
+            is_forwarded=payload.get("is_forwarded", False),
+            forwarded_from_message_id=payload.get("forwarded_from_message_id"),
+        )
+    except Exception as exc:
+        logger.warning("REST message fanout failed after persistence: %s", exc)
+
+
+async def _deliver_management_event(
+    event_type: str,
+    message_id: str,
+    conversation_id: str,
+    actor_id: str,
+    recipient_id: str,
+) -> None:
+    """Deliver pin/delete state locally and publish it for remote instances."""
+    data = {"message_id": message_id, "conversation_id": conversation_id}
+    if event_type in ("message_pinned", "message_unpinned"):
+        data.update(
+            {
+                "pinned_by_user_id": actor_id,
+                "pinned": event_type == "message_pinned",
+            }
+        )
+    await ws_manager.send_to_user(recipient_id, event_type, data)
+    try:
+        if event_type == "message_deleted":
+            await publish_message_deleted(
+                message_id, conversation_id, actor_id, recipient_id
+            )
+        else:
+            await publish_message_pinned(
+                message_id,
+                conversation_id,
+                actor_id,
+                recipient_id,
+                event_type == "message_pinned",
+            )
+    except Exception as exc:
+        logger.warning("REST management fanout failed after persistence: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +304,7 @@ def list_conversations(
     status_code=status.HTTP_201_CREATED,
     summary="Send a direct message in a conversation",
 )
-def send_message(
+async def send_message(
     conversation_id: str,
     body: SendMessageRequest,
     db: Session = Depends(get_db),
@@ -254,12 +333,16 @@ def send_message(
             reply_to_message_id=body.reply_to_message_id,
         )
         d = mgmt.serialize_message(db, msg, current_user.id)
-        return DirectMessageResponse.from_dict(d)
+        response = DirectMessageResponse.from_dict(d)
     else:
         # Use the original service for plain messages (preserves existing behavior)
         msg = svc.send_direct_message(db, conversation_id, current_user, body.content)
         d = mgmt.serialize_message(db, msg, current_user.id)
-        return DirectMessageResponse.from_dict(d)
+        response = DirectMessageResponse.from_dict(d)
+
+    recipient_id = svc._get_other_participant_id(db, conversation_id, current_user.id)
+    await _deliver_new_message(d, current_user.id, recipient_id)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +537,7 @@ def unstar_message(
     response_model=MessageActionResponse,
     summary="Pin a message in the conversation",
 )
-def pin_message(
+async def pin_message(
     message_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -469,6 +552,10 @@ def pin_message(
     """
     msg = mgmt.pin_message(db, message_id, current_user)
     d = mgmt.serialize_message(db, msg, current_user.id)
+    recipient_id = svc._get_other_participant_id(db, msg.conversation_id, current_user.id)
+    await _deliver_management_event(
+        "message_pinned", msg.id, msg.conversation_id, current_user.id, recipient_id
+    )
     return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
 
 
@@ -483,7 +570,7 @@ def pin_message(
     response_model=MessageActionResponse,
     summary="Unpin a message",
 )
-def unpin_message(
+async def unpin_message(
     message_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -495,6 +582,10 @@ def unpin_message(
     """
     msg = mgmt.unpin_message(db, message_id, current_user)
     d = mgmt.serialize_message(db, msg, current_user.id)
+    recipient_id = svc._get_other_participant_id(db, msg.conversation_id, current_user.id)
+    await _deliver_management_event(
+        "message_unpinned", msg.id, msg.conversation_id, current_user.id, recipient_id
+    )
     return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
 
 
@@ -537,7 +628,7 @@ def delete_for_me(
     response_model=MessageActionResponse,
     summary="Delete a message for all participants (sender only)",
 )
-def delete_for_everyone(
+async def delete_for_everyone(
     message_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -558,6 +649,10 @@ def delete_for_everyone(
     """
     msg = mgmt.delete_message_for_everyone(db, message_id, current_user)
     d = mgmt.serialize_message(db, msg, current_user.id)
+    recipient_id = svc._get_other_participant_id(db, msg.conversation_id, current_user.id)
+    await _deliver_management_event(
+        "message_deleted", msg.id, msg.conversation_id, current_user.id, recipient_id
+    )
     return MessageActionResponse(success=True, message=DirectMessageResponse.from_dict(d))
 
 
@@ -573,7 +668,7 @@ def delete_for_everyone(
     status_code=status.HTTP_201_CREATED,
     summary="Forward a message to another conversation",
 )
-def forward_message(
+async def forward_message(
     message_id: str,
     body: ForwardMessageRequest,
     db: Session = Depends(get_db),
@@ -598,6 +693,8 @@ def forward_message(
         current_user=current_user,
     )
     d = mgmt.serialize_message(db, msg, current_user.id)
+    recipient_id = svc._get_other_participant_id(db, msg.conversation_id, current_user.id)
+    await _deliver_new_message(d, current_user.id, recipient_id)
     return DirectMessageResponse.from_dict(d)
 
 

@@ -8,6 +8,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+const mockSendMessageRead = jest.fn();
+
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 jest.mock('@/services/api', () => ({
@@ -16,6 +18,8 @@ jest.mock('@/services/api', () => ({
   markMessagesRead: jest.fn(),
   markMessagesDelivered: jest.fn(),
   getOrCreateConversation: jest.fn(),
+  getPinnedMessage: jest.fn(),
+  deleteMessageForEveryone: jest.fn(),
   extractErrorMessage: jest.fn((e) => e?.message || 'Error'),
 }));
 
@@ -36,7 +40,7 @@ jest.mock('@/hooks/useMessagingWebSocket', () => ({
     sendMessage: jest.fn(() => true),
     sendTypingStart: jest.fn(),
     sendTypingStop: jest.fn(),
-    sendMessageRead: jest.fn(),
+    sendMessageRead: mockSendMessageRead,
   })),
 }));
 
@@ -71,7 +75,17 @@ import MessageBubble from '@/components/messaging/MessageBubble';
 import TypingIndicator from '@/components/messaging/TypingIndicator';
 import MessagingPage from '@/components/messaging/MessagingPage';
 import { WS_STATE, useMessagingWebSocket } from '@/hooks/useMessagingWebSocket';
-import { listConversations, listMessages, markMessagesRead } from '@/services/api';
+import {
+  deleteMessageForEveryone,
+  getPinnedMessage,
+  listConversations,
+  listMessages,
+  markMessagesRead,
+} from '@/services/api';
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -213,7 +227,22 @@ test('6. Send button enables when text entered and WS connected', async () => {
 // 7. New message event updates UI (via MessagingPage)
 // ─────────────────────────────────────────────────────────────────────────────
 test('7. MessagingPage calls listMessages when a conversation is selected', async () => {
-  listConversations.mockResolvedValue([CONV]);
+  listConversations.mockResolvedValue({
+    conversations: [{
+      id: CONV.conversation_id,
+      other_participant: CONV.other_user,
+      latest_message: {
+        id: MESSAGE_FROM_OTHER.id,
+        sender_id: MESSAGE_FROM_OTHER.sender_id,
+        content: MESSAGE_FROM_OTHER.content,
+        created_at: MESSAGE_FROM_OTHER.created_at,
+      },
+      unread_count: CONV.unread_count,
+      updated_at: CONV.updated_at,
+    }],
+    limit: 50,
+    offset: 0,
+  });
   listMessages.mockResolvedValue({ messages: [MESSAGE_FROM_OTHER], total: 1 });
   markMessagesRead.mockResolvedValue({ updated: 1 });
 
@@ -221,6 +250,9 @@ test('7. MessagingPage calls listMessages when a conversation is selected', asyn
 
   await waitFor(() => {
     expect(listMessages).toHaveBeenCalledWith('conv-1', expect.objectContaining({ limit: 50 }));
+  });
+  await waitFor(() => {
+    expect(mockSendMessageRead.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -352,4 +384,53 @@ test('15. Send button disabled when message exceeds 4000 characters', async () =
   // 4001 chars — exceeds limit, button must be disabled
   fireEvent.change(input, { target: { value: 'a'.repeat(4001) } });
   expect(screen.getByTestId('send-button')).toBeDisabled();
+});
+
+test('16. Copy action writes only message content and shows feedback', async () => {
+  const writeText = jest.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+
+  render(<MessageBubble message={MESSAGE_FROM_SELF} isMine={true} />);
+  fireEvent.click(screen.getByLabelText('Message actions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Text' }));
+
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('Hey there'));
+  expect(screen.getByRole('status')).toHaveTextContent('Copied');
+});
+
+test('17. Delete for everyone immediately sanitizes the sender conversation preview', async () => {
+  listConversations.mockResolvedValue({
+    conversations: [{
+      id: CONV.conversation_id,
+      other_participant: CONV.other_user,
+      latest_message: {
+        id: MESSAGE_FROM_SELF.id,
+        sender_id: MESSAGE_FROM_SELF.sender_id,
+        content: MESSAGE_FROM_SELF.content,
+        created_at: MESSAGE_FROM_SELF.created_at,
+      },
+      unread_count: 0,
+      updated_at: CONV.updated_at,
+    }],
+  });
+  listMessages.mockResolvedValue({ messages: [MESSAGE_FROM_SELF], total: 1 });
+  markMessagesRead.mockResolvedValue({ updated: 0 });
+  getPinnedMessage.mockResolvedValue({ success: true, message: null });
+  deleteMessageForEveryone.mockResolvedValue({ success: true });
+
+  render(<MessagingPage currentUser={CURRENT_USER} initialConvId="conv-1" />);
+  await screen.findByText(MESSAGE_FROM_SELF.content, { exact: true });
+
+  fireEvent.click(screen.getByLabelText('Message actions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete for Everyone' }));
+  fireEvent.click(screen.getByTestId('confirm-delete-btn'));
+
+  await waitFor(() => {
+    expect(screen.queryByText(MESSAGE_FROM_SELF.content, { exact: true })).not.toBeInTheDocument();
+  });
+  expect(screen.getByText('🚫 This message was deleted')).toBeInTheDocument();
+  expect(deleteMessageForEveryone).toHaveBeenCalledWith(MESSAGE_FROM_SELF.id);
 });

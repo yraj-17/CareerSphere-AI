@@ -617,6 +617,18 @@ def test_41_latest_message_returned_correctly(db, conversation):
     assert summaries[0].latest_message_content == "Latest"
 
 
+def test_41a_deleted_latest_message_is_sanitized_in_conversation_summary(db, conversation):
+    conv, u1, _u2 = conversation
+    message = svc.send_direct_message(db, conv.id, u1, "Sensitive content")
+    message.deleted_for_everyone_at = datetime.now(timezone.utc)
+    db.commit()
+
+    summaries = svc.list_direct_conversations(db, u1)
+
+    assert summaries[0].latest_message_content == svc.DELETED_FOR_EVERYONE_PLACEHOLDER
+    assert "Sensitive content" not in summaries[0].latest_message_content
+
+
 def test_42_other_participant_returned_correctly(db, conversation):
     conv, u1, u2 = conversation
     summaries = svc.list_direct_conversations(db, u1)

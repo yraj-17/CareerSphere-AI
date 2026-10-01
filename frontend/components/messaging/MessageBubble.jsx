@@ -16,7 +16,7 @@
  *   scrollRef   {React.RefObject}  — ref bag for scroll-to (keyed by msg.id)
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CheckCheck, Check, Star, Pin, Share2, Reply } from 'lucide-react';
 import MessageActionMenu from '@/components/messaging/MessageActionMenu';
 
@@ -110,7 +110,9 @@ export default function MessageBubble({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState('bottom');
+  const [copied, setCopied] = useState(false);
   const bubbleRef = useRef(null);
+  const copiedTimerRef = useRef(null);
 
   const isDeleted = message?.is_deleted_for_everyone;
   const isPinned = message?.is_pinned;
@@ -146,7 +148,12 @@ export default function MessageBubble({
       document.execCommand('copy');
       document.body.removeChild(el);
     }
+    setCopied(true);
+    clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 1600);
   }, [message?.content, isDeleted]);
+
+  useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
 
   const handleScrollTo = useCallback((msgId) => {
     const el = scrollRef?.current?.[msgId];
@@ -234,6 +241,9 @@ export default function MessageBubble({
         <div className={`flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
           <span>{formatTime(message.created_at)}</span>
           {isMine && showStatus && !isDeleted && <DeliveryStatus message={message} />}
+          {copied && !isDeleted && (
+            <span role="status" className="text-emerald-400">Copied</span>
+          )}
         </div>
 
         {/* Action menu */}

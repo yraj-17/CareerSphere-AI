@@ -67,6 +67,7 @@ from app.services.connection_service import get_connection_between_users
 #: Maximum character length for a single direct message.
 #: Deliberately below AI_MAX_PROMPT_CHARS (8 000) to stay in conversational range.
 DM_MAX_CONTENT_CHARS: int = 4_000
+DELETED_FOR_EVERYONE_PLACEHOLDER: str = "🚫 This message was deleted"
 
 # ---------------------------------------------------------------------------
 # Service-level result dataclasses
@@ -623,7 +624,11 @@ def list_direct_conversations(
                 updated_at=conv.updated_at,
                 other_user_id=other_user_map.get(conv.id, ""),
                 latest_message_id=lm.id if lm else None,
-                latest_message_content=lm.content if lm else None,
+                latest_message_content=(
+                    DELETED_FOR_EVERYONE_PLACEHOLDER
+                    if lm and lm.deleted_for_everyone_at is not None
+                    else lm.content if lm else None
+                ),
                 latest_message_at=lm.created_at if lm else None,
                 latest_message_sender_id=lm.sender_id if lm else None,
                 unread_count=unread_map.get(conv.id, 0),

@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import MessagingPage from '@/components/messaging/MessagingPage';
 import { getOrCreateConversation } from '@/services/api';
 
-export default function MessagingRoute() {
+function MessagingRouteContent() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,5 +56,22 @@ export default function MessagingRoute() {
     >
       <MessagingPage currentUser={user} initialConvId={resolvedConvId} />
     </div>
+  );
+}
+
+function MessagingRouteFallback() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh]">
+      <Loader2 className="h-8 w-8 text-accent animate-spin mb-3" />
+      <p className="text-sm text-slate-400">Opening messages...</p>
+    </div>
+  );
+}
+
+export default function MessagingRoute() {
+  return (
+    <Suspense fallback={<MessagingRouteFallback />}>
+      <MessagingRouteContent />
+    </Suspense>
   );
 }
