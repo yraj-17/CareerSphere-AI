@@ -6,6 +6,27 @@ import { COMMUNITY_CATEGORIES } from '@/components/communities/communityConstant
 
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 500;
+const MAX_TAGS = 8;
+
+const normalizeTagKey = (tag) => tag.trim().toLowerCase();
+
+const uniqueTags = (rawTags) => {
+  const seen = new Set();
+  const nextTags = [];
+
+  rawTags.forEach((rawTag) => {
+    const tag = rawTag.trim();
+    if (!tag) return;
+
+    const tagKey = normalizeTagKey(tag);
+    if (seen.has(tagKey)) return;
+
+    seen.add(tagKey);
+    nextTags.push(tag);
+  });
+
+  return nextTags.slice(0, MAX_TAGS);
+};
 
 export default function CreateCommunityModal({ open, onClose, onSubmit }) {
   const [form, setForm] = useState({
@@ -37,13 +58,10 @@ export default function CreateCommunityModal({ open, onClose, onSubmit }) {
 
   const tags = useMemo(
     () =>
-      form.tagsText
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .slice(0, 8),
+      uniqueTags(form.tagsText.split(',')),
     [form.tagsText]
   );
+  const renderedTags = useMemo(() => uniqueTags(tags), [tags]);
 
   if (!open) return null;
 
@@ -176,10 +194,10 @@ export default function CreateCommunityModal({ open, onClose, onSubmit }) {
               className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-all placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25"
               placeholder="Python, AI, RAG"
             />
-            {tags.length > 0 && (
+            {renderedTags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {tags.map((tag) => (
-                  <span key={tag} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs text-slate-300">
+                {renderedTags.map((tag) => (
+                  <span key={normalizeTagKey(tag)} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs text-slate-300">
                     <Plus className="h-3 w-3" />
                     {tag}
                   </span>

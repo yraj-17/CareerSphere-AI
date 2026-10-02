@@ -14,6 +14,7 @@ from app.api.profile import router as profile_router
 from app.api.skill_analysis import router as skill_analysis_router
 from app.api.career_matching import router as career_matching_router
 from app.api.networking import router as networking_router
+from app.api.communities import router as communities_router
 from app.api.messaging import router as messaging_router
 from app.api.messaging_ws import router as messaging_ws_router
 from app.schemas.auth import HealthResponse
@@ -145,6 +146,7 @@ app.include_router(profile_router, prefix=settings.API_V1_STR)
 app.include_router(skill_analysis_router, prefix=settings.API_V1_STR)
 app.include_router(career_matching_router, prefix=settings.API_V1_STR)
 app.include_router(networking_router, prefix=settings.API_V1_STR)
+app.include_router(communities_router, prefix=settings.API_V1_STR)
 app.include_router(messaging_router, prefix=settings.API_V1_STR)
 app.include_router(messaging_ws_router, prefix=settings.API_V1_STR)
 

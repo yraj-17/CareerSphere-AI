@@ -19,6 +19,10 @@ jest.mock('@/services/api', () => ({
   leaveCommunity: jest.fn(),
   listCommunityPosts: jest.fn(),
   createCommunityPost: jest.fn(),
+  setCommunityPostReaction: jest.fn(),
+  listCommunityPostComments: jest.fn(),
+  createCommunityPostComment: jest.fn(),
+  deleteCommunityPost: jest.fn(),
   listCommunityMembers: jest.fn(),
   extractErrorMessage: jest.fn((err) => err?.message || 'Request failed.'),
 }));
@@ -26,12 +30,16 @@ jest.mock('@/services/api', () => ({
 import {
   createCommunity,
   createCommunityPost,
+  createCommunityPostComment,
+  deleteCommunityPost,
   getCommunity,
   joinCommunity,
   leaveCommunity,
+  listCommunityPostComments,
   listCommunities,
   listCommunityMembers,
   listCommunityPosts,
+  setCommunityPostReaction,
 } from '@/services/api';
 import CommunitiesPage from '@/components/communities/CommunitiesPage';
 import CommunityDetailPage from '@/components/communities/CommunityDetailPage';
@@ -66,14 +74,43 @@ beforeEach(() => {
     posts: [
       {
         id: 'post-1',
+        community_id: 'ai-ml',
         content: 'Has anyone worked with RAG using Qdrant?',
         author: { id: 'u1', first_name: 'Raj', last_name: 'Yadav' },
         like_count: 24,
+        reaction_counts: { LIKE: 24, LOVE: 0, CELEBRATE: 0, SUPPORT: 0, INSIGHTFUL: 0, FUNNY: 0 },
+        total_reactions: 24,
+        my_reaction: null,
         comment_count: 8,
+        can_delete: true,
         created_at: '2h ago',
       },
     ],
   });
+  setCommunityPostReaction.mockResolvedValue({
+    post_id: 'post-1',
+    my_reaction: 'LIKE',
+    counts: { LIKE: 25, LOVE: 0, CELEBRATE: 0, SUPPORT: 0, INSIGHTFUL: 0, FUNNY: 0 },
+    total: 25,
+  });
+  listCommunityPostComments.mockResolvedValue({
+    comments: [
+      {
+        id: 'comment-1',
+        post_id: 'post-1',
+        content: 'Good point.',
+        author: { id: 'u2', first_name: 'User', last_name: 'One' },
+      },
+    ],
+    total: 1,
+  });
+  createCommunityPostComment.mockResolvedValue({
+    id: 'comment-2',
+    post_id: 'post-1',
+    content: 'I agree.',
+    author: { id: 'u3', first_name: 'Test', last_name: 'User' },
+  });
+  deleteCommunityPost.mockResolvedValue({ success: true, post_id: 'post-1' });
   listCommunityMembers.mockResolvedValue({
     members: [
       { id: 'u1', first_name: 'Raj', last_name: 'Yadav', headline: 'Software Developer' },
@@ -167,6 +204,81 @@ describe('CommunityDetailPage', () => {
     expect(screen.getByRole('tab', { name: /posts/i })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByText(/has anyone worked with rag/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/write a post/i)).toBeInTheDocument();
+  });
+
+  test('reaction picker selects and removes reactions', async () => {
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /like 24/i }));
+    fireEvent.click(screen.getByRole('button', { name: /love/i }));
+
+    await waitFor(() => expect(setCommunityPostReaction).toHaveBeenCalledWith('post-1', 'LOVE'));
+  });
+
+  test('comments open, list existing comments, and submit a new comment', async () => {
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /^8$/i }));
+    expect(await screen.findByText(/good point/i)).toBeInTheDocument();
+    expect(listCommunityPostComments).toHaveBeenCalledWith('post-1');
+
+    fireEvent.change(screen.getByPlaceholderText(/write a comment/i), { target: { value: 'I agree.' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /^post$/i }).pop());
+
+    await waitFor(() => expect(createCommunityPostComment).toHaveBeenCalledWith('post-1', { content: 'I agree.' }));
+    expect(await screen.findByText(/test user/i)).toBeInTheDocument();
+  });
+
+  test('share copies a stable community post URL when Web Share is unavailable', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText }, share: undefined });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /share/i }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/dashboard/communities/ai-ml?post=post-1'));
+    });
+    expect(await screen.findByText(/link copied/i)).toBeInTheDocument();
+  });
+
+  test('delete option is visible for authorized users and removes the post after confirmation', async () => {
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /post options/i }));
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    expect(screen.getByRole('dialog', { name: /delete post/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(deleteCommunityPost).toHaveBeenCalledWith('post-1'));
+    await waitFor(() => expect(screen.queryByText(/has anyone worked with rag/i)).not.toBeInTheDocument());
+  });
+
+  test('delete option is hidden for unauthorized users', async () => {
+    listCommunityPosts.mockResolvedValueOnce({
+      posts: [
+        {
+          id: 'post-1',
+          community_id: 'ai-ml',
+          content: 'Has anyone worked with RAG using Qdrant?',
+          author: { id: 'u1', first_name: 'Raj', last_name: 'Yadav' },
+          total_reactions: 0,
+          comment_count: 0,
+          can_delete: false,
+          created_at: '2h ago',
+        },
+      ],
+    });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    expect(screen.queryByRole('button', { name: /post options/i })).not.toBeInTheDocument();
   });
 
   test('renders about and members tabs with profile links', async () => {

@@ -37,3 +37,10 @@ export const normalizeCommunityMembers = (payload) => {
   if (Array.isArray(payload?.items)) return payload.items;
   return [];
 };
+
+export const normalizeCommunityPostComments = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.comments)) return payload.comments;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+};

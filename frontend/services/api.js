@@ -581,6 +581,30 @@ export const createCommunityPost = async (communityId, payload) => {
   return response.data;
 };
 
+export const setCommunityPostReaction = async (postId, reactionType) => {
+  const response = await apiClient.post(`/api/communities/posts/${postId}/reaction`, {
+    reaction_type: reactionType,
+  });
+  return response.data;
+};
+
+export const listCommunityPostComments = async (postId, { limit = 20, offset = 0 } = {}) => {
+  const response = await apiClient.get(`/api/communities/posts/${postId}/comments`, {
+    params: { limit, offset },
+  });
+  return response.data;
+};
+
+export const createCommunityPostComment = async (postId, payload) => {
+  const response = await apiClient.post(`/api/communities/posts/${postId}/comments`, payload);
+  return response.data;
+};
+
+export const deleteCommunityPost = async (postId) => {
+  const response = await apiClient.delete(`/api/communities/posts/${postId}`);
+  return response.data;
+};
+
 export const listCommunityMembers = async (communityId) => {
   const response = await apiClient.get(`/api/communities/${communityId}/members`);
   return response.data;

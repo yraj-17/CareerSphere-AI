@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -378,6 +378,155 @@ class DirectConversation(Base):
     def canonical_pair(user_a: str, user_b: str) -> tuple[str, str]:
         """Return (min_id, max_id) — consistent canonical ordering for the pair."""
         return (min(user_a, user_b), max(user_a, user_b))
+
+
+# ---------------------------------------------------------------------------
+# Communities V1
+# ---------------------------------------------------------------------------
+
+
+class Community(Base):
+    """Professional interest community for knowledge sharing and networking."""
+
+    __tablename__ = "communities"
+    __table_args__ = (
+        Index("ix_communities_creator_id", "creator_id"),
+        Index("ix_communities_category", "category"),
+        Index("ix_communities_visibility", "visibility"),
+        Index("ix_communities_created_at", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    name = Column(String(80), nullable=False)
+    description = Column(Text, nullable=False)
+    category = Column(String(80), nullable=False)
+    tags = Column(JSON, nullable=False, default=list)
+    visibility = Column(String(20), nullable=False, default="public")
+    creator_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    creator = relationship("User")
+    memberships = relationship(
+        "CommunityMembership",
+        back_populates="community",
+        cascade="all, delete-orphan",
+    )
+    posts = relationship(
+        "CommunityPost",
+        back_populates="community",
+        cascade="all, delete-orphan",
+        order_by="CommunityPost.created_at.desc()",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Community id={self.id} name={self.name!r} visibility={self.visibility}>"
+
+
+class CommunityMembership(Base):
+    """Membership row joining a user to a community."""
+
+    __tablename__ = "community_memberships"
+    __table_args__ = (
+        UniqueConstraint("community_id", "user_id", name="uq_community_membership_user"),
+        Index("ix_community_memberships_community_id", "community_id"),
+        Index("ix_community_memberships_user_id", "user_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    community_id = Column(String(36), ForeignKey("communities.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False, default="member")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    community = relationship("Community", back_populates="memberships")
+    user = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<CommunityMembership community={self.community_id} user={self.user_id} role={self.role}>"
+
+
+class CommunityPost(Base):
+    """Text post inside a community."""
+
+    __tablename__ = "community_posts"
+    __table_args__ = (
+        Index("ix_community_posts_community_id", "community_id"),
+        Index("ix_community_posts_created_at", "created_at"),
+        Index("ix_community_posts_community_created", "community_id", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    community_id = Column(String(36), ForeignKey("communities.id", ondelete="CASCADE"), nullable=False)
+    author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    community = relationship("Community", back_populates="posts")
+    author = relationship("User")
+    reactions = relationship(
+        "CommunityPostReaction",
+        back_populates="post",
+        cascade="all, delete-orphan",
+    )
+    comments = relationship(
+        "CommunityPostComment",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        order_by="CommunityPostComment.created_at.asc()",
+    )
+
+    def __repr__(self) -> str:
+        return f"<CommunityPost id={self.id} community={self.community_id} author={self.author_id}>"
+
+
+class CommunityPostReaction(Base):
+    """One active reaction per user for a community post."""
+
+    __tablename__ = "community_post_reactions"
+    __table_args__ = (
+        UniqueConstraint("post_id", "user_id", name="uq_community_post_reaction_user"),
+        Index("ix_community_post_reactions_post_id", "post_id"),
+        Index("ix_community_post_reactions_user_id", "user_id"),
+        Index("ix_community_post_reactions_post_type", "post_id", "reaction_type"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("community_posts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    reaction_type = Column(String(20), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("CommunityPost", back_populates="reactions")
+    user = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<CommunityPostReaction post={self.post_id} user={self.user_id} type={self.reaction_type}>"
+
+
+class CommunityPostComment(Base):
+    """One-level comment on a community post."""
+
+    __tablename__ = "community_post_comments"
+    __table_args__ = (
+        Index("ix_community_post_comments_post_id", "post_id"),
+        Index("ix_community_post_comments_author_id", "author_id"),
+        Index("ix_community_post_comments_post_created", "post_id", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("community_posts.id", ondelete="CASCADE"), nullable=False)
+    author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    post = relationship("CommunityPost", back_populates="comments")
+    author = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<CommunityPostComment id={self.id} post={self.post_id} author={self.author_id}>"
 
 
 class DirectConversationParticipant(Base):
