@@ -8,6 +8,7 @@ import {
   Bell,
   Briefcase,
   ChevronDown,
+  Globe2,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -60,6 +61,12 @@ const networkingLinks = [
     href: '/dashboard/networking/my-network',
     icon: UsersRound,
     isActive: (pathname) => pathname === '/dashboard/networking/my-network',
+  },
+  {
+    label: 'Communities',
+    href: '/dashboard/communities',
+    icon: Globe2,
+    isActive: (pathname) => pathname.startsWith('/dashboard/communities'),
   },
 ];
 
@@ -143,7 +150,7 @@ export default function Navbar() {
 
   const userName = getUserName(user);
   const userInitial = getInitial(user);
-  const isNetworkingActive = pathname.startsWith('/dashboard/networking');
+  const isNetworkingActive = pathname.startsWith('/dashboard/networking') || pathname.startsWith('/dashboard/communities');
 
   useEffect(() => {
     const handlePointerDown = (event) => {

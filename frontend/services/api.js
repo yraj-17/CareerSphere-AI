@@ -537,6 +537,56 @@ export const getPublicProfile = async (userId) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Communities — V1 frontend integration points
+// Backend endpoints are intentionally isolated here so the UI can be wired to
+// the real service without changing component code in the next backend phase.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const listCommunities = async ({ q = '', category = 'all', membership = 'discover' } = {}) => {
+  const params = {};
+  if (q && q.trim()) params.q = q.trim();
+  if (category && category !== 'all') params.category = category;
+  if (membership === 'joined') params.membership = 'joined';
+  const response = await apiClient.get('/api/communities', { params });
+  return response.data;
+};
+
+export const getCommunity = async (communityId) => {
+  const response = await apiClient.get(`/api/communities/${communityId}`);
+  return response.data;
+};
+
+export const createCommunity = async (payload) => {
+  const response = await apiClient.post('/api/communities', payload);
+  return response.data;
+};
+
+export const joinCommunity = async (communityId) => {
+  const response = await apiClient.post(`/api/communities/${communityId}/join`);
+  return response.data;
+};
+
+export const leaveCommunity = async (communityId) => {
+  const response = await apiClient.post(`/api/communities/${communityId}/leave`);
+  return response.data;
+};
+
+export const listCommunityPosts = async (communityId) => {
+  const response = await apiClient.get(`/api/communities/${communityId}/posts`);
+  return response.data;
+};
+
+export const createCommunityPost = async (communityId, payload) => {
+  const response = await apiClient.post(`/api/communities/${communityId}/posts`, payload);
+  return response.data;
+};
+
+export const listCommunityMembers = async (communityId) => {
+  const response = await apiClient.get(`/api/communities/${communityId}/members`);
+  return response.data;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Direct Messaging — Phase 5.8.6
 // ─────────────────────────────────────────────────────────────────────────────
 

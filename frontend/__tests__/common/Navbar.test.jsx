@@ -69,6 +69,7 @@ describe('Navbar', () => {
 
     expect(screen.getByRole('menuitem', { name: /discover people/i })).toHaveAttribute('href', '/dashboard/networking');
     expect(screen.getByRole('menuitem', { name: /my network/i })).toHaveAttribute('href', '/dashboard/networking/my-network');
+    expect(screen.getByRole('menuitem', { name: /communities/i })).toHaveAttribute('href', '/dashboard/communities');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('menuitem', { name: /discover people/i })).not.toBeInTheDocument();
@@ -100,6 +101,7 @@ describe('Navbar', () => {
     fireEvent.click(screen.getByRole('button', { name: /open navigation menu/i }));
     expect(screen.getByRole('dialog', { name: /navigation menu/i })).toBeInTheDocument();
     expect(document.body.style.overflow).toBe('hidden');
+    expect(screen.getByRole('link', { name: /communities/i })).toHaveAttribute('href', '/dashboard/communities');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: /navigation menu/i })).not.toBeInTheDocument();
