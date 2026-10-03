@@ -15,7 +15,7 @@ from sqlalchemy import or_
 
 from app.main import app
 from app.db.session import SessionLocal, Base, engine
-from app.db.models import User, MediaObject, Conversation, ChatMessage
+from app.db.models import User, Profile, MediaObject, Conversation, ChatMessage
 from app.db.redis_client import redis_client
 from app.core.config import settings
 
@@ -198,6 +198,60 @@ def test_register_and_login_flow():
 
     logout_res = client.post("/api/auth/logout")
     assert logout_res.status_code == 200
+
+
+def test_auth_responses_include_profile_photo_url_without_sensitive_fields(monkeypatch):
+    monkeypatch.setattr("app.api.auth.presigned_get_url", lambda object_key: f"https://cdn.example.com/{object_key}")
+
+    email = "test_avatar@example.com"
+    username = "test_avatar_user"
+    verification_token = _seed_verified_email(email)
+
+    reg_res = client.post("/api/auth/register", json={
+        "first_name": "Raj",
+        "last_name": "Yadav",
+        "username": username,
+        "email": email,
+        "password": "Password123",
+        "email_verification_token": verification_token,
+    })
+    assert reg_res.status_code == 201, reg_res.text
+    user_id = reg_res.json()["id"]
+
+    db = SessionLocal()
+    try:
+        media = MediaObject(
+            user_id=user_id,
+            object_key="profiles/test-avatar.png",
+            filename="avatar.png",
+            content_type="image/png",
+            size_bytes=128,
+            purpose="profile_image",
+        )
+        db.add(media)
+        db.flush()
+        db.add(Profile(user_id=user_id, profile_photo_media_id=media.id))
+        db.commit()
+    finally:
+        db.close()
+
+    login_res = client.post("/api/auth/login", json={
+        "identifier": username,
+        "password": "Password123",
+    })
+    assert login_res.status_code == 200
+    login_user = login_res.json()["user"]
+    assert login_user["profile_photo_url"] == "https://cdn.example.com/profiles/test-avatar.png"
+    assert "password_hash" not in login_user
+    assert "profile_photo_media_id" not in login_user
+
+    token = login_res.json()["access_token"]
+    me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_res.status_code == 200
+    me_user = me_res.json()
+    assert me_user["profile_photo_url"] == "https://cdn.example.com/profiles/test-avatar.png"
+    assert "password_hash" not in me_user
+    assert "profile_photo_media_id" not in me_user
 
 
 def test_media_upload_requires_auth():

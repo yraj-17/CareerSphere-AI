@@ -11,12 +11,14 @@ import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_db, get_current_user
-from app.db.models import User
+from app.db.models import Profile, User
 from app.db.redis_client import get_redis
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token
+from app.services.storage_service import presigned_get_url
 from app.services.cache_service import (
     get_cached_availability,
     set_cached_availability,
@@ -38,6 +40,27 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 _OTP_TTL = settings.OTP_EXPIRE_MINUTES * 60   # seconds
+
+
+def _profile_photo_url(profile: Profile | None) -> str | None:
+    if not profile or not profile.profile_photo:
+        return None
+    try:
+        return presigned_get_url(profile.profile_photo.object_key)
+    except Exception:
+        return None
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        email=user.email,
+        profile_photo_url=_profile_photo_url(user.profile),
+        created_at=user.created_at,
+    )
 
 
 def _generate_otp() -> str:
@@ -345,9 +368,12 @@ def register(
 def login(credentials: UserLoginRequest, db: Session = Depends(get_db)):
     identifier = credentials.identifier.strip().lower()
 
-    user = db.query(User).filter(
-        or_(User.username == identifier, User.email == identifier)
-    ).first()
+    user = (
+        db.query(User)
+        .options(joinedload(User.profile).joinedload(Profile.profile_photo))
+        .filter(or_(User.username == identifier, User.email == identifier))
+        .first()
+    )
 
     if not user or not verify_password(credentials.password, user.password_hash):
         raise HTTPException(
@@ -359,13 +385,13 @@ def login(credentials: UserLoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(
         access_token=create_access_token(subject=user.id),
         token_type="bearer",
-        user=user,
+        user=_user_response(user),
     )
 
 
 @router.get("/me", response_model=UserResponse, summary="Get current authenticated user")
 def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return _user_response(current_user)
 
 
 @router.post("/logout", summary="Log out the current user")

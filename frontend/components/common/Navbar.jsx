@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import ProfileAvatar from '@/components/common/ProfileAvatar';
 
 const primaryNav = [
   {
@@ -93,6 +94,10 @@ function getInitial(user) {
   return (user?.first_name?.[0] || user?.username?.[0] || 'U').toUpperCase();
 }
 
+function getProfilePhotoUrl(user) {
+  return user?.profile_photo_url || user?.profile_photo?.url || null;
+}
+
 function Brand({ compact = false, href = '/dashboard' }) {
   return (
     <Link
@@ -150,6 +155,7 @@ export default function Navbar() {
 
   const userName = getUserName(user);
   const userInitial = getInitial(user);
+  const profilePhotoUrl = getProfilePhotoUrl(user);
   const isNetworkingActive = pathname.startsWith('/dashboard/networking') || pathname.startsWith('/dashboard/communities');
 
   useEffect(() => {
@@ -356,9 +362,14 @@ export default function Navbar() {
               aria-label="User profile menu"
               className="flex max-w-[220px] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-left transition-colors hover:border-white/20 hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent/35 bg-accent/15 text-xs font-bold uppercase text-accent">
-                {userInitial}
-              </span>
+              <ProfileAvatar
+                src={profilePhotoUrl}
+                name={userName}
+                username={user?.username}
+                alt={userName}
+                fallback={userInitial}
+                className="h-7 w-7"
+              />
               <span className="hidden min-w-0 text-sm font-medium text-slate-100 xl:block">
                 <span className="block truncate">{userName}</span>
               </span>
@@ -425,7 +436,15 @@ export default function Navbar() {
             aria-label="Profile"
             className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-xs font-bold uppercase text-accent transition-colors hover:bg-accent/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
           >
-            {userInitial}
+            <ProfileAvatar
+              src={profilePhotoUrl}
+              name={userName}
+              username={user?.username}
+              alt={userName}
+              fallback={userInitial}
+              className="h-7 w-7"
+              fallbackClassName="bg-transparent text-xs font-bold uppercase text-accent"
+            />
           </Link>
         </div>
       </div>
@@ -493,9 +512,14 @@ export default function Navbar() {
 
             <div className="border-t border-white/10 pt-4">
               <div className="mb-3 flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-accent/35 bg-accent/15 text-xs font-bold uppercase text-accent">
-                  {userInitial}
-                </span>
+                <ProfileAvatar
+                  src={profilePhotoUrl}
+                  name={userName}
+                  username={user?.username}
+                  alt={userName}
+                  fallback={userInitial}
+                  className="h-8 w-8"
+                />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-white">{userName}</div>
                   <div className="text-xs text-slate-500">Signed in</div>

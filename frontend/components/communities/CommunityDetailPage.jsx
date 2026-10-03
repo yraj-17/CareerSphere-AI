@@ -39,6 +39,7 @@ import {
   normalizeCommunityMembers,
   normalizeCommunityPosts,
 } from '@/components/communities/communityConstants';
+import ProfileAvatar from '@/components/common/ProfileAvatar';
 
 const REACTIONS = [
   { type: 'LIKE', label: 'Like', emoji: '👍' },
@@ -99,6 +100,30 @@ function EmptyPanel({ title, description }) {
 
 // ── Post image grid ─────────────────────────────────────────────────────────
 
+function ImageWithFallback({ src, alt, className }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="flex min-h-32 w-full items-center justify-center rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-8 text-sm text-slate-500">
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function PostImageGrid({ media }) {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   if (!media || media.length === 0) return null;
@@ -107,31 +132,32 @@ function PostImageGrid({ media }) {
     media.length === 1
       ? 'grid grid-cols-1'
       : media.length === 2
-      ? 'grid grid-cols-2 gap-1'
-      : media.length === 3
-      ? 'grid grid-cols-2 gap-1'
-      : 'grid grid-cols-2 gap-1';
+        ? 'grid grid-cols-2 gap-1'
+        : media.length === 3
+          ? 'grid grid-cols-2 gap-1'
+          : 'grid grid-cols-2 gap-1';
 
   return (
     <>
-      <div className={`mt-3 overflow-hidden rounded-2xl ${gridClass}`}>
+      <div className={`mt-4 rounded-2xl ${media.length === 1 ? '' : gridClass}`}>
         {media.map((item, idx) => (
           <button
             key={item.id || idx}
             type="button"
             aria-label={`View image ${idx + 1}`}
             onClick={() => setLightboxUrl(item.url)}
-            className={`relative block overflow-hidden bg-slate-900 ${
-              media.length === 3 && idx === 0 ? 'row-span-2' : ''
-            }`}
-            style={{ aspectRatio: media.length === 1 ? '16/9' : '1/1' }}
+            className={`relative block overflow-hidden rounded-2xl bg-slate-950/70 ${media.length === 1 ? 'w-full' : ''} ${media.length === 3 && idx === 0 ? 'row-span-2' : ''
+              }`}
+            style={media.length === 1 ? undefined : { aspectRatio: media.length === 3 && idx === 0 ? '1/2' : '1/1' }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ImageWithFallback
               src={item.url}
-              alt={`Post image ${idx + 1}`}
-              className="h-full w-full object-cover transition-transform hover:scale-[1.02]"
-              loading="lazy"
+              alt={item.alt || `Community post image ${idx + 1}`}
+              className={
+                media.length === 1
+                  ? 'mx-auto block h-auto max-h-none max-w-full rounded-2xl transition-opacity'
+                  : 'h-full w-full object-contain p-1 transition-transform hover:scale-[1.01]'
+              }
             />
           </button>
         ))}
@@ -296,9 +322,15 @@ function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onErro
   return (
     <article id={`community-post-${post.id}`} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
       <div className="mb-4 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-xs font-bold text-accent">
-          {getInitials(authorName)}
-        </div>
+        <ProfileAvatar
+          src={author.profile_photo_url}
+          name={authorName}
+          username={author.username}
+          alt={authorName}
+          fallback={getInitials(authorName)}
+          className="h-10 w-10"
+          fallbackClassName="border border-accent/30 bg-accent/10 text-xs font-bold text-accent"
+        />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-white">{authorName}</p>
           <p className="text-xs text-slate-500">{post.created_at || post.timestamp || 'Recently'}</p>
@@ -403,9 +435,20 @@ function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onErro
                 const commentAuthor = comment.author || {};
                 const commentAuthorName = [commentAuthor.first_name, commentAuthor.last_name].filter(Boolean).join(' ') || commentAuthor.username || 'Community member';
                 return (
-                  <div key={comment.id} className="rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-3">
-                    <p className="text-xs font-semibold text-white">{commentAuthorName}</p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{comment.content}</p>
+                  <div key={comment.id} className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-3">
+                    <ProfileAvatar
+                      src={commentAuthor.profile_photo_url}
+                      name={commentAuthorName}
+                      username={commentAuthor.username}
+                      alt={commentAuthorName}
+                      fallback={getInitials(commentAuthorName)}
+                      className="h-8 w-8"
+                      fallbackClassName="border border-accent/25 bg-accent/10 text-[10px] font-bold text-accent"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white">{commentAuthorName}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{comment.content}</p>
+                    </div>
                   </div>
                 );
               })}
@@ -576,31 +619,43 @@ function PostComposer({ joined, onSubmit, disabled }) {
   const hasContent = content.trim() || images.length > 0;
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-      <label className="block">
-        <span className="text-sm font-semibold text-white">What&apos;s on your mind?</span>
-        <textarea
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          disabled={disabled || submitting}
-          rows={3}
-          placeholder="Write a post..."
-          className="mt-3 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25 disabled:opacity-60"
-        />
-      </label>
+    <form onSubmit={handleSubmit} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+      <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-xs font-bold text-accent">
+          You
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">Share with the community</p>
+          <p className="text-xs text-slate-500">Start a discussion, ask a question, or post an update.</p>
+        </div>
+      </div>
+
+      <div className="px-5 py-4">
+        <label className="block">
+          <span className="sr-only">What do you want to share?</span>
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            disabled={disabled || submitting}
+            rows={3}
+            placeholder="Share something with your community..."
+            className="max-h-56 min-h-24 w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 text-base leading-relaxed text-white outline-none placeholder:text-slate-500 focus:ring-0 disabled:opacity-60"
+          />
+        </label>
+      </div>
 
       {/* Image previews */}
       {images.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mx-5 mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {images.map((img, idx) => (
-            <div key={idx} className="relative h-20 w-20 overflow-hidden rounded-xl border border-white/10">
+            <div key={img.previewUrl} className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img.previewUrl} alt={`Selected image ${idx + 1}`} className="h-full w-full object-cover" />
+              <img src={img.previewUrl} alt={`Selected image ${idx + 1}`} className="max-h-full max-w-full object-contain" />
               <button
                 type="button"
                 aria-label={`Remove image ${idx + 1}`}
                 onClick={() => handleRemoveImage(idx)}
-                className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+                className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white shadow-lg hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -611,15 +666,15 @@ function PostComposer({ joined, onSubmit, disabled }) {
 
       {/* Tag chips */}
       {tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mx-5 mb-3 flex flex-wrap gap-1.5">
           {tags.map((tag, idx) => (
-            <span key={idx} className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-0.5 text-xs text-accent">
+            <span key={idx} className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
               #{tag}
               <button
                 type="button"
                 aria-label={`Remove tag ${tag}`}
                 onClick={() => handleRemoveTag(idx)}
-                className="ml-0.5 rounded-full hover:text-white"
+                className="ml-0.5 rounded-full hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <X className="h-2.5 w-2.5" />
               </button>
@@ -629,8 +684,8 @@ function PostComposer({ joined, onSubmit, disabled }) {
       )}
 
       {/* Tag input */}
-      <div className="mt-3 flex gap-2">
-        <div className="relative flex-1">
+      <div className="mx-5 mb-2 flex flex-col gap-2 rounded-2xl border border-white/10 bg-slate-950/35 p-2 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
           <Tag className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <input
             value={tagInput}
@@ -638,35 +693,37 @@ function PostComposer({ joined, onSubmit, disabled }) {
             onKeyDown={handleTagKeyDown}
             placeholder="Add topic tag"
             disabled={disabled || submitting || tags.length >= MAX_POST_TAGS}
-            className="w-full rounded-2xl border border-white/10 bg-slate-950/40 py-2 pl-8 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25 disabled:opacity-50"
+            className="w-full rounded-xl border border-transparent bg-transparent py-2 pl-8 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-accent/30 focus:bg-white/[0.03] disabled:opacity-50"
           />
         </div>
         <button
           type="button"
           onClick={addTag}
           disabled={!tagInput.trim() || tags.length >= MAX_POST_TAGS || disabled || submitting}
-          className="rounded-full border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
+          aria-label="Add topic tag"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
         >
-          Add
+          # Topic
         </button>
       </div>
-      {tagError && <p className="mt-1 text-xs text-rose-300">{tagError}</p>}
+      {tagError && <p className="mx-5 mt-1 text-xs text-rose-300">{tagError}</p>}
 
       {(error || success) && (
-        <p className={`mt-2 text-sm ${error ? 'text-rose-300' : 'text-emerald-300'}`} role="status">
+        <p className={`mx-5 mt-2 text-sm ${error ? 'text-rose-300' : 'text-emerald-300'}`} role="status">
           {error || success}
         </p>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex flex-col gap-3 border-t border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Image add button */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
             disabled={disabled || submitting || images.length >= MAX_POST_IMAGES}
             title={images.length >= MAX_POST_IMAGES ? `Maximum ${MAX_POST_IMAGES} images` : 'Add photo'}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
+            aria-label="Add photos to your post"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-3.5 py-2 text-sm font-medium text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
           >
             <ImageIcon className="h-3.5 w-3.5" />
             Photo {images.length > 0 ? `(${images.length}/${MAX_POST_IMAGES})` : ''}
@@ -681,7 +738,7 @@ function PostComposer({ joined, onSubmit, disabled }) {
           />
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap justify-end gap-3">
           {hasContent && (
             <button
               type="button"
@@ -694,7 +751,7 @@ function PostComposer({ joined, onSubmit, disabled }) {
                 setError('');
               }}
               disabled={submitting}
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 hover:text-white"
+              className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-200 hover:border-white/25 hover:text-white disabled:opacity-50"
             >
               Cancel
             </button>
@@ -702,10 +759,10 @@ function PostComposer({ joined, onSubmit, disabled }) {
           <button
             type="submit"
             disabled={disabled || submitting}
-            className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black hover:bg-accentSoft disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black shadow-[0_8px_28px_rgba(255,143,50,0.22)] hover:bg-accentSoft disabled:opacity-60"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Post
+            {submitting ? 'Posting...' : 'Post'}
           </button>
         </div>
       </div>
@@ -1110,9 +1167,15 @@ export default function CommunityDetailPage({ communityId }) {
                 return (
                   <article key={user.id ?? name} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-xs font-bold text-accent">
-                        {getInitials(name)}
-                      </div>
+                      <ProfileAvatar
+                        src={user.profile_photo_url}
+                        name={name}
+                        username={user.username}
+                        alt={name}
+                        fallback={getInitials(name)}
+                        className="h-10 w-10"
+                        fallbackClassName="border border-accent/30 bg-accent/10 text-xs font-bold text-accent"
+                      />
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-white">{name}</p>
                         <p className="truncate text-sm text-slate-500">{user.headline || 'Professional profile'}</p>

@@ -95,6 +95,33 @@ describe('Navbar', () => {
     expect(mockLogout).toHaveBeenCalledTimes(1);
   });
 
+  test('shows authenticated user profile image when available', () => {
+    mockAuthState.user.profile_photo_url = 'https://cdn.example.com/raj-avatar.jpg';
+
+    render(<Navbar />);
+
+    expect(screen.getAllByAltText('Raj Yadav')[0]).toHaveAttribute('src', 'https://cdn.example.com/raj-avatar.jpg');
+  });
+
+  test('shows authenticated user initial when no profile image exists', () => {
+    render(<Navbar />);
+
+    const userButton = screen.getByRole('button', { name: /user profile menu/i });
+    expect(within(userButton).getByText('R')).toBeInTheDocument();
+    expect(within(userButton).queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  test('falls back to authenticated user initial when profile image fails to load', () => {
+    mockAuthState.user.profile_photo_url = 'https://cdn.example.com/broken-avatar.jpg';
+
+    render(<Navbar />);
+
+    const userButton = screen.getByRole('button', { name: /user profile menu/i });
+    fireEvent.error(within(userButton).getByRole('img', { name: 'Raj Yadav' }));
+
+    expect(within(userButton).getByText('R')).toBeInTheDocument();
+  });
+
   test('opens and closes mobile navigation drawer', () => {
     render(<Navbar />);
 

@@ -203,7 +203,105 @@ describe('CommunityDetailPage', () => {
     expect(screen.getByText(/2,431 members/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /posts/i })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByText(/has anyone worked with rag/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/write a post/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/share something with your community/i)).toBeInTheDocument();
+  });
+
+  test('community post shows author profile image when available', async () => {
+    listCommunityPosts.mockResolvedValueOnce({
+      posts: [
+        {
+          id: 'post-1',
+          community_id: 'ai-ml',
+          content: 'Profile image should render.',
+          author: {
+            id: 'u1',
+            first_name: 'Raj',
+            last_name: 'Yadav',
+            profile_photo_url: 'https://cdn.example.com/raj.jpg',
+          },
+          total_reactions: 0,
+          comment_count: 0,
+          can_delete: false,
+          created_at: '2h ago',
+        },
+      ],
+    });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+
+    expect(await screen.findByRole('img', { name: 'Raj Yadav' })).toHaveAttribute('src', 'https://cdn.example.com/raj.jpg');
+    expect(screen.queryByText('RY')).not.toBeInTheDocument();
+  });
+
+  test('community post falls back to author initials when no profile image exists', async () => {
+    render(<CommunityDetailPage communityId="ai-ml" />);
+
+    await screen.findByText(/has anyone worked with rag/i);
+    expect(screen.getByText('RY')).toBeInTheDocument();
+  });
+
+  test('different community post authors display their own images or initials', async () => {
+    listCommunityPosts.mockResolvedValueOnce({
+      posts: [
+        {
+          id: 'post-1',
+          community_id: 'ai-ml',
+          content: 'Raj has a photo.',
+          author: {
+            id: 'u1',
+            first_name: 'Raj',
+            last_name: 'Yadav',
+            profile_photo_url: 'https://cdn.example.com/raj.jpg',
+          },
+          total_reactions: 0,
+          comment_count: 0,
+          can_delete: false,
+          created_at: '2h ago',
+        },
+        {
+          id: 'post-2',
+          community_id: 'ai-ml',
+          content: 'User One has no photo.',
+          author: { id: 'u2', first_name: 'User', last_name: 'One' },
+          total_reactions: 0,
+          comment_count: 0,
+          can_delete: false,
+          created_at: '1h ago',
+        },
+      ],
+    });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+
+    expect(await screen.findByRole('img', { name: 'Raj Yadav' })).toHaveAttribute('src', 'https://cdn.example.com/raj.jpg');
+    expect(screen.getByText('UO')).toBeInTheDocument();
+  });
+
+  test('broken community author image falls back to initials', async () => {
+    listCommunityPosts.mockResolvedValueOnce({
+      posts: [
+        {
+          id: 'post-1',
+          community_id: 'ai-ml',
+          content: 'Broken profile image should fallback.',
+          author: {
+            id: 'u1',
+            first_name: 'Raj',
+            last_name: 'Yadav',
+            profile_photo_url: 'https://cdn.example.com/broken.jpg',
+          },
+          total_reactions: 0,
+          comment_count: 0,
+          can_delete: false,
+          created_at: '2h ago',
+        },
+      ],
+    });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+
+    fireEvent.error(await screen.findByRole('img', { name: 'Raj Yadav' }));
+    expect(screen.getByText('RY')).toBeInTheDocument();
   });
 
   test('reaction picker selects and removes reactions', async () => {
@@ -229,6 +327,32 @@ describe('CommunityDetailPage', () => {
 
     await waitFor(() => expect(createCommunityPostComment).toHaveBeenCalledWith('post-1', { content: 'I agree.' }));
     expect(await screen.findByText(/test user/i)).toBeInTheDocument();
+  });
+
+  test('community comments show author profile image when available', async () => {
+    listCommunityPostComments.mockResolvedValueOnce({
+      comments: [
+        {
+          id: 'comment-1',
+          post_id: 'post-1',
+          content: 'Good point.',
+          author: {
+            id: 'u2',
+            first_name: 'User',
+            last_name: 'One',
+            profile_photo_url: 'https://cdn.example.com/user-one.jpg',
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    render(<CommunityDetailPage communityId="ai-ml" />);
+    await screen.findByText(/has anyone worked with rag/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /^8$/i }));
+
+    expect(await screen.findByRole('img', { name: 'User One' })).toHaveAttribute('src', 'https://cdn.example.com/user-one.jpg');
   });
 
   test('share copies a stable community post URL when Web Share is unavailable', async () => {
@@ -296,12 +420,12 @@ describe('CommunityDetailPage', () => {
 
   test('post composer validates text and reports missing backend', async () => {
     render(<CommunityDetailPage communityId="ai-ml" />);
-    await screen.findByPlaceholderText(/write a post/i);
+    await screen.findByPlaceholderText(/share something with your community/i);
 
     fireEvent.click(screen.getByRole('button', { name: /^post$/i }));
-    expect(screen.getByText(/write something before posting/i)).toBeInTheDocument();
+    expect(screen.getByText(/write something or add at least one image before posting/i)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText(/write a post/i), { target: { value: 'Hello community' } });
+    fireEvent.change(screen.getByPlaceholderText(/share something with your community/i), { target: { value: 'Hello community' } });
     fireEvent.click(screen.getByRole('button', { name: /^post$/i }));
     expect(await screen.findByText(/community posting is waiting for backend integration/i)).toBeInTheDocument();
   });

@@ -85,6 +85,7 @@ class UserResponse(BaseModel):
     last_name: str
     username: str
     email: str
+    profile_photo_url: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
