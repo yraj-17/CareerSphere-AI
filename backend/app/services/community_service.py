@@ -1,35 +1,55 @@
 from __future__ import annotations
 
-from fastapi import HTTPException, status
+import io
+import logging
+from typing import List
+
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db.models import (
     Community,
     CommunityMembership,
     CommunityPost,
     CommunityPostComment,
+    CommunityPostMedia,
     CommunityPostReaction,
+    CommunityPostTag,
     Profile,
     User,
 )
 from app.schemas.communities import (
+    ALLOWED_IMAGE_MIME_TYPES,
+    MAX_COMMUNITY_IMAGE_BYTES,
+    MAX_POST_IMAGE_BYTES,
+    MAX_POST_IMAGES,
+    MAX_POST_TAGS,
     CommunityCreateRequest,
+    CommunityImageUpdateResponse,
     CommunityMemberResponse,
     CommunityMembershipResponse,
-    CommunityPostCreateRequest,
     CommunityPostCommentCreateRequest,
     CommunityPostCommentResponse,
+    CommunityPostCreateRequest,
     CommunityPostDeleteResponse,
+    CommunityPostMediaResponse,
     CommunityPostResponse,
     CommunityReactionRequest,
     CommunityReactionSummaryResponse,
     CommunityResponse,
     CommunityUserSummary,
+    clean_post_tags,
 )
-from app.services.storage_service import presigned_get_url
+from app.services.storage_service import (
+    build_object_key,
+    delete_file,
+    presigned_get_url,
+    upload_bytes,
+)
 
+logger = logging.getLogger(__name__)
 
 OWNER_ROLE = "owner"
 MEMBER_ROLE = "member"
@@ -38,11 +58,24 @@ PRIVATE_VISIBILITY = "private"
 REACTION_TYPES = ("LIKE", "LOVE", "CELEBRATE", "SUPPORT", "INSIGHTFUL", "FUNNY")
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
 def _profile_photo_url(profile: Profile | None) -> str | None:
     if not profile or not profile.profile_photo:
         return None
     try:
         return presigned_get_url(profile.profile_photo.object_key)
+    except Exception:
+        return None
+
+
+def _community_image_url(community: Community) -> str | None:
+    if not community.image_key:
+        return None
+    try:
+        return presigned_get_url(community.image_key)
     except Exception:
         return None
 
@@ -131,10 +164,36 @@ def _community_response(
         is_joined=joined,
         is_owner=is_owner,
         membership_status="joined" if joined else "none",
+        image_url=_community_image_url(community),
         created_at=community.created_at,
         updated_at=community.updated_at,
     )
 
+
+# ---------------------------------------------------------------------------
+# Image validation helper (reused for community photo and post images)
+# ---------------------------------------------------------------------------
+
+def _validate_image(payload: bytes, content_type: str, max_bytes: int) -> None:
+    """Validate image MIME type and size. Raises HTTPException on failure."""
+    ct = (content_type or "").lower().split(";")[0].strip()
+    if ct not in ALLOWED_IMAGE_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported image type '{ct}'. Allowed: jpeg, png, webp.",
+        )
+    if len(payload) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image exceeds the {max_bytes // (1024 * 1024)} MB limit.",
+        )
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
+
+
+# ---------------------------------------------------------------------------
+# Community CRUD
+# ---------------------------------------------------------------------------
 
 def create_community(
     db: Session,
@@ -381,6 +440,97 @@ def list_members(
     return total, members
 
 
+# ---------------------------------------------------------------------------
+# Community photo management
+# ---------------------------------------------------------------------------
+
+async def update_community_image(
+    db: Session,
+    current_user: User,
+    community_id: str,
+    file: UploadFile | None,
+    remove: bool = False,
+) -> CommunityImageUpdateResponse:
+    """Upload, change, or remove a community profile photo."""
+    community = _require_community(db, community_id)
+    membership = _membership_for(db, community.id, current_user.id)
+    if not _is_community_owner(community, current_user.id, membership):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the community owner can change the community photo.",
+        )
+
+    old_key = community.image_key
+
+    if remove:
+        # Remove the photo
+        community.image_key = None
+        db.commit()
+        if old_key:
+            try:
+                delete_file(old_key)
+            except Exception:
+                logger.warning("Failed to delete old community image from MinIO: %s", old_key)
+        return CommunityImageUpdateResponse(
+            success=True, community_id=community_id, image_url=None
+        )
+
+    if file is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided.",
+        )
+
+    payload = await file.read()
+    content_type = file.content_type or ""
+    _validate_image(payload, content_type, MAX_COMMUNITY_IMAGE_BYTES)
+
+    filename = file.filename or "community_photo.jpg"
+    object_key = build_object_key(current_user.id, "community_image", filename)
+
+    try:
+        upload_bytes(
+            object_key=object_key,
+            payload=payload,
+            content_type=content_type,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Object storage unavailable. ({exc})",
+        )
+
+    community.image_key = object_key
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            delete_file(object_key)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update community image.",
+        )
+
+    # Clean up old image after successful DB commit
+    if old_key and old_key != object_key:
+        try:
+            delete_file(old_key)
+        except Exception:
+            logger.warning("Failed to delete old community image from MinIO: %s", old_key)
+
+    image_url = presigned_get_url(object_key)
+    return CommunityImageUpdateResponse(
+        success=True, community_id=community_id, image_url=image_url
+    )
+
+
+# ---------------------------------------------------------------------------
+# Posts
+# ---------------------------------------------------------------------------
+
 def list_posts(
     db: Session,
     current_user: User,
@@ -391,7 +541,11 @@ def list_posts(
     community, _ = _require_view_access(db, community_id, current_user)
     base = (
         db.query(CommunityPost)
-        .options(joinedload(CommunityPost.author).joinedload(User.profile).joinedload(Profile.profile_photo))
+        .options(
+            joinedload(CommunityPost.author).joinedload(User.profile).joinedload(Profile.profile_photo),
+            selectinload(CommunityPost.media),
+            selectinload(CommunityPost.post_tags),
+        )
         .filter(CommunityPost.community_id == community.id)
     )
     total = base.count()
@@ -405,12 +559,15 @@ def list_posts(
     return total, [_post_response(post, **post_meta.get(post.id, {})) for post in posts]
 
 
-def create_post(
+async def create_post(
     db: Session,
     current_user: User,
     community_id: str,
-    payload: CommunityPostCreateRequest,
+    content: str,
+    tags: list[str],
+    images: list[UploadFile],
 ) -> CommunityPostResponse:
+    """Create a community post with optional images and topic tags."""
     community = _require_community(db, community_id)
     membership = _membership_for(db, community.id, current_user.id)
     if membership is None:
@@ -419,16 +576,144 @@ def create_post(
             detail="Only community members can create posts.",
         )
 
+    # Validate: at least content or at least one image
+    content = (content or "").strip()
+    if not content and not images:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A post must have content text or at least one image.",
+        )
+
+    # Validate image count
+    if len(images) > MAX_POST_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"A post may have at most {MAX_POST_IMAGES} images.",
+        )
+
+    # Validate and read images upfront before touching the DB
+    validated_images: list[tuple[bytes, str, str]] = []  # (payload, content_type, filename)
+    for img in images:
+        payload = await img.read()
+        ct = img.content_type or ""
+        _validate_image(payload, ct, MAX_POST_IMAGE_BYTES)
+        validated_images.append((payload, ct, img.filename or "post_image.jpg"))
+
+    # Validate tags (raises HTTPException on invalid input)
+    try:
+        cleaned_tags = clean_post_tags(tags)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    if len(cleaned_tags) > MAX_POST_TAGS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"A post may have at most {MAX_POST_TAGS} topic tags.",
+        )
+
+    # Create the post record
     post = CommunityPost(
         community_id=community.id,
         author_id=current_user.id,
-        content=payload.content,
+        content=content,
     )
     db.add(post)
-    db.commit()
+    db.flush()  # Get post.id without committing
+
+    # ── Phase 1: Upload all images to MinIO ──────────────────────────────────
+    # We upload first so we have the object_keys, then do all DB inserts in one
+    # pass.  This means any MinIO failure aborts before we touch the DB further.
+    # Keys collected here are the ONLY ones eligible for cleanup if a later step
+    # fails — we never touch pre-existing community or post images.
+    uploaded_keys: list[str] = []          # MinIO keys created this request
+    upload_results: list[tuple[str, str]]  # (object_key, presigned_url)
+    upload_results = []
+
+    if validated_images:
+        try:
+            for payload, ct, filename in validated_images:
+                object_key = build_object_key(current_user.id, "post_image", filename)
+                upload_bytes(object_key=object_key, payload=payload, content_type=ct)
+                uploaded_keys.append(object_key)
+                upload_results.append((object_key, presigned_get_url(object_key)))
+        except Exception as exc:
+            # MinIO / storage failure — roll back the post flush and clean up
+            # any objects that were successfully uploaded before the failure.
+            db.rollback()
+            for key in uploaded_keys:
+                try:
+                    delete_file(key)
+                except Exception:
+                    logger.warning("Failed to clean up MinIO object after upload error: %s", key)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Image upload failed: object storage is unavailable.",
+            )
+
+    # ── Phase 2: Insert media metadata rows with integer sort_order ──────────
+    # sort_order is always assigned by the backend from the upload index —
+    # the frontend never sends it and it is always a Python int.
+    media_responses: list[CommunityPostMediaResponse] = []
+    try:
+        for sort_order, (object_key, url) in enumerate(upload_results):
+            media_obj = CommunityPostMedia(
+                post_id=post.id,
+                object_key=object_key,
+                media_type="image",
+                sort_order=sort_order,   # int — matches INTEGER column in PostgreSQL
+            )
+            db.add(media_obj)
+            db.flush()
+            media_responses.append(
+                CommunityPostMediaResponse(
+                    id=media_obj.id,
+                    url=url,
+                    media_type="image",
+                    sort_order=sort_order,
+                )
+            )
+    except Exception as exc:
+        # DB failure after successful MinIO uploads — roll back and clean up
+        # only the objects we just uploaded (never touch anything pre-existing).
+        db.rollback()
+        for key in uploaded_keys:
+            try:
+                delete_file(key)
+            except Exception:
+                logger.warning("Failed to clean up MinIO object after DB error: %s", key)
+        logger.error("Failed to persist post media metadata: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save post media. The post was not created.",
+        )
+
+    # ── Phase 3: Insert tag rows ──────────────────────────────────────────────
+    for tag in cleaned_tags:
+        db.add(CommunityPostTag(
+            post_id=post.id,
+            tag=tag,
+            tag_normalized=tag.lower(),
+        ))
+
+    # ── Phase 4: Commit ───────────────────────────────────────────────────────
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        for key in uploaded_keys:
+            try:
+                delete_file(key)
+            except Exception:
+                logger.warning("Failed to clean up MinIO object after commit error: %s", key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate tag detected. Each tag must be unique per post.",
+        )
+
     db.refresh(post)
     post.author = current_user
     post.community = community
+
     return _post_response(
         post,
         reaction_counts=_empty_reaction_counts(),
@@ -436,6 +721,8 @@ def create_post(
         my_reaction=None,
         comment_count=0,
         can_delete=True,
+        media_items=media_responses,
+        tag_names=cleaned_tags,
     )
 
 
@@ -540,12 +827,36 @@ def delete_post(db: Session, current_user: User, post_id: str) -> CommunityPostD
     if post.author_id != current_user.id and not _is_community_owner(community, current_user.id, membership):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot delete this post.")
 
+    # Collect MinIO object keys before deleting DB records
+    media_objects = (
+        db.query(CommunityPostMedia)
+        .filter(CommunityPostMedia.post_id == post.id)
+        .all()
+    )
+    object_keys = [m.object_key for m in media_objects]
+
+    # Delete child records (cascade handles reactions/comments/media/tags,
+    # but we delete reactions and comments explicitly for clarity)
     db.query(CommunityPostReaction).filter(CommunityPostReaction.post_id == post.id).delete(synchronize_session=False)
     db.query(CommunityPostComment).filter(CommunityPostComment.post_id == post.id).delete(synchronize_session=False)
+    db.query(CommunityPostMedia).filter(CommunityPostMedia.post_id == post.id).delete(synchronize_session=False)
+    db.query(CommunityPostTag).filter(CommunityPostTag.post_id == post.id).delete(synchronize_session=False)
     db.delete(post)
     db.commit()
+
+    # Clean up MinIO objects after successful DB commit
+    for key in object_keys:
+        try:
+            delete_file(key)
+        except Exception:
+            logger.warning("Failed to delete post image from MinIO: %s", key)
+
     return CommunityPostDeleteResponse(success=True, post_id=post_id)
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers (post access / meta / response builders)
+# ---------------------------------------------------------------------------
 
 def _require_post_access(
     db: Session,
@@ -588,10 +899,13 @@ def _post_meta_for_posts(
             "my_reaction": None,
             "comment_count": 0,
             "can_delete": False,
+            "media_items": [],
+            "tag_names": [],
         }
         for post_id in post_ids
     }
 
+    # Reactions
     reaction_rows = (
         db.query(
             CommunityPostReaction.post_id,
@@ -618,6 +932,7 @@ def _post_meta_for_posts(
     for post_id, reaction_type in my_reactions:
         meta[post_id]["my_reaction"] = reaction_type
 
+    # Comments count
     comment_rows = (
         db.query(CommunityPostComment.post_id, func.count(CommunityPostComment.id))
         .filter(CommunityPostComment.post_id.in_(post_ids))
@@ -627,6 +942,7 @@ def _post_meta_for_posts(
     for post_id, count in comment_rows:
         meta[post_id]["comment_count"] = int(count or 0)
 
+    # Delete permission
     community_owner_ids: dict[str, str] = {}
     if community is not None:
         community_owner_ids[community.id] = community.creator_id
@@ -644,6 +960,37 @@ def _post_meta_for_posts(
             post.author_id == current_user_id
             or community_owner_ids.get(post.community_id) == current_user_id
         )
+
+    # Media — batch load
+    media_rows = (
+        db.query(CommunityPostMedia)
+        .filter(CommunityPostMedia.post_id.in_(post_ids))
+        .order_by(CommunityPostMedia.post_id, CommunityPostMedia.sort_order)
+        .all()
+    )
+    for m in media_rows:
+        try:
+            url = presigned_get_url(m.object_key)
+        except Exception:
+            url = ""
+        meta[m.post_id]["media_items"].append(
+            CommunityPostMediaResponse(
+                id=m.id,
+                url=url,
+                media_type=m.media_type or "image",
+                sort_order=m.sort_order,  # Integer column — no cast needed
+            )
+        )
+
+    # Tags — batch load
+    tag_rows = (
+        db.query(CommunityPostTag)
+        .filter(CommunityPostTag.post_id.in_(post_ids))
+        .order_by(CommunityPostTag.post_id, CommunityPostTag.created_at)
+        .all()
+    )
+    for t in tag_rows:
+        meta[t.post_id]["tag_names"].append(t.tag)
 
     return meta
 
@@ -695,6 +1042,8 @@ def _post_response(
     my_reaction: str | None = None,
     comment_count: int = 0,
     can_delete: bool = False,
+    media_items: list[CommunityPostMediaResponse] | None = None,
+    tag_names: list[str] | None = None,
 ) -> CommunityPostResponse:
     reaction_counts = reaction_counts or _empty_reaction_counts()
     return CommunityPostResponse(
@@ -709,6 +1058,8 @@ def _post_response(
         my_reaction=my_reaction,
         comment_count=comment_count,
         can_delete=can_delete,
+        media=media_items or [],
+        tags=tag_names or [],
         created_at=post.created_at,
         updated_at=post.updated_at,
     )

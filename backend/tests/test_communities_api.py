@@ -25,7 +25,9 @@ from app.db.models import (
     CommunityMembership,
     CommunityPost,
     CommunityPostComment,
+    CommunityPostMedia,
     CommunityPostReaction,
+    CommunityPostTag,
     Connection,
     User,
 )
@@ -180,10 +182,12 @@ def _join(user: dict, community_id: str):
     return client.post(f"/api/communities/{community_id}/join", headers=user["headers"])
 
 
-def _create_post(user: dict, community_id: str, content: str = "Community post") -> dict:
+def _create_post(user: dict, community_id: str, content: str = "Community post", tags: list | None = None) -> dict:
+    import json as _json
+    data = {"content": content, "tags": _json.dumps(tags or [])}
     res = client.post(
         f"/api/communities/{community_id}/posts",
-        json={"content": content},
+        data=data,
         headers=user["headers"],
     )
     assert res.status_code == 201, res.text
@@ -515,7 +519,7 @@ def test_27_member_can_create_post_and_response_has_safe_author(user_a, user_b):
 
     res = client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "  Excited to learn with everyone.  "},
+        data={"content": "  Excited to learn with everyone.  ", "tags": "[]"},
         headers=user_b["headers"],
     )
     assert res.status_code == 201
@@ -534,7 +538,7 @@ def test_28_non_member_cannot_create_post(user_a, user_b):
     community = _create_community(user_a)
     res = client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "I should not be allowed."},
+        data={"content": "I should not be allowed.", "tags": "[]"},
         headers=user_b["headers"],
     )
     assert res.status_code == 403
@@ -544,14 +548,14 @@ def test_29_post_validation_rejects_blank_and_too_long_content(user_a):
     community = _create_community(user_a)
     blank = client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "   "},
+        data={"content": "   ", "tags": "[]"},
         headers=user_a["headers"],
     )
     assert blank.status_code == 422
 
     too_long = client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "x" * 2001},
+        data={"content": "x" * 2001, "tags": "[]"},
         headers=user_a["headers"],
     )
     assert too_long.status_code == 422
@@ -564,17 +568,17 @@ def test_30_posts_list_is_scoped_ordered_and_paginated(user_a, user_b):
 
     first = client.post(
         f"/api/communities/{community_a['id']}/posts",
-        json={"content": "First post"},
+        data={"content": "First post", "tags": "[]"},
         headers=user_a["headers"],
     ).json()
     second = client.post(
         f"/api/communities/{community_a['id']}/posts",
-        json={"content": "Second post"},
+        data={"content": "Second post", "tags": "[]"},
         headers=user_b["headers"],
     ).json()
     client.post(
         f"/api/communities/{community_b['id']}/posts",
-        json={"content": "Other community"},
+        data={"content": "Other community", "tags": "[]"},
         headers=user_a["headers"],
     )
 
@@ -612,7 +616,7 @@ def test_31_private_posts_are_forbidden_to_non_member(user_a, user_b):
     community = _create_community(user_a, visibility="private")
     client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "Private update"},
+        data={"content": "Private update", "tags": "[]"},
         headers=user_a["headers"],
     )
 
@@ -626,7 +630,7 @@ def test_32_private_member_can_list_and_create_posts(user_a, user_b):
 
     create = client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "Member-only discussion"},
+        data={"content": "Member-only discussion", "tags": "[]"},
         headers=user_b["headers"],
     )
     assert create.status_code == 201
@@ -642,7 +646,7 @@ def test_33_community_responses_do_not_expose_sensitive_fields(user_a, user_b):
     _join(user_b, community["id"])
     client.post(
         f"/api/communities/{community['id']}/posts",
-        json={"content": "Privacy check"},
+        data={"content": "Privacy check", "tags": "[]"},
         headers=user_b["headers"],
     )
 
@@ -898,3 +902,364 @@ def test_47_private_post_delete_does_not_leak_to_non_member(user_a, user_b):
     post = _create_post(user_a, community["id"])
     res = client.delete(f"/api/communities/posts/{post['id']}", headers=user_b["headers"])
     assert res.status_code == 404
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# V2 features: post topic tags
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_48_post_with_valid_tags_persists_and_returns_tags(user_a):
+    community = _create_community(user_a)
+    import json as _json
+
+    res = client.post(
+        f"/api/communities/{community['id']}/posts",
+        data={"content": "Post about DevOps and cloud", "tags": _json.dumps(["DevOps", "Cloud"])},
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert "DevOps" in post["tags"]
+    assert "Cloud" in post["tags"]
+    assert len(post["tags"]) == 2
+
+    # Verify tags are returned in list
+    listed = client.get(f"/api/communities/{community['id']}/posts", headers=user_a["headers"])
+    listed_post = next(p for p in listed.json()["posts"] if p["id"] == post["id"])
+    assert set(listed_post["tags"]) == {"DevOps", "Cloud"}
+
+
+def test_49_duplicate_tags_are_rejected(user_a):
+    community = _create_community(user_a)
+    import json as _json
+
+    res = client.post(
+        f"/api/communities/{community['id']}/posts",
+        data={"content": "Duplicate tags test", "tags": _json.dumps(["AI", "ai"])},
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 422
+
+
+def test_50_too_many_tags_are_rejected(user_a):
+    community = _create_community(user_a)
+    import json as _json
+
+    # More than 5 tags
+    many_tags = [f"Tag{i}" for i in range(6)]
+    res = client.post(
+        f"/api/communities/{community['id']}/posts",
+        data={"content": "Too many tags", "tags": _json.dumps(many_tags)},
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 422
+
+
+def test_51_tag_too_long_is_rejected(user_a):
+    community = _create_community(user_a)
+    import json as _json
+
+    long_tag = "A" * 31  # 31 chars, max is 30
+    res = client.post(
+        f"/api/communities/{community['id']}/posts",
+        data={"content": "Long tag test", "tags": _json.dumps([long_tag])},
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 422
+
+
+def test_52_post_with_empty_content_and_no_images_rejected(user_a):
+    community = _create_community(user_a)
+    import json as _json
+
+    res = client.post(
+        f"/api/communities/{community['id']}/posts",
+        data={"content": "   ", "tags": _json.dumps([])},
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 422
+
+
+def test_53_tags_preserved_through_delete(user_a):
+    """Deleting a post should also remove all associated tags (cascade)."""
+    community = _create_community(user_a)
+    post = _create_post(user_a, community["id"], tags=["Python", "Backend"])
+    post_id = post["id"]
+
+    db = SessionLocal()
+    try:
+        assert db.query(CommunityPostTag).filter(CommunityPostTag.post_id == post_id).count() == 2
+    finally:
+        db.close()
+
+    res = client.delete(f"/api/communities/posts/{post_id}", headers=user_a["headers"])
+    assert res.status_code == 200
+
+    db = SessionLocal()
+    try:
+        assert db.query(CommunityPostTag).filter(CommunityPostTag.post_id == post_id).count() == 0
+    finally:
+        db.close()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# V2 features: community image upload/remove (owner only)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _make_minimal_jpeg() -> bytes:
+    """Return a minimal valid 1x1 JPEG for testing uploads."""
+    # Smallest valid JPEG (1x1 white pixel)
+    return (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
+        b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
+        b"\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'"
+        b"9=82<.342\x1edL\t\x10\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b"
+        b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
+        b"\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00"
+        b"\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b"
+        b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xf5\xd0\xff\xd9"
+    )
+
+
+def test_54_unauthenticated_image_upload_rejected(user_a):
+    community = _create_community(user_a)
+    res = client.patch(
+        f"/api/communities/{community['id']}/image",
+        files={"file": ("photo.jpg", _make_minimal_jpeg(), "image/jpeg")},
+    )
+    assert res.status_code == 401
+
+
+def test_55_non_owner_cannot_upload_community_image(user_a, user_b):
+    community = _create_community(user_a)
+    _join(user_b, community["id"])
+
+    res = client.patch(
+        f"/api/communities/{community['id']}/image",
+        files={"file": ("photo.jpg", _make_minimal_jpeg(), "image/jpeg")},
+        headers=user_b["headers"],
+    )
+    assert res.status_code == 403
+
+
+def test_56_owner_can_remove_community_image(user_a):
+    community = _create_community(user_a)
+    # Remove on a community that has no image — should succeed gracefully
+    res = client.delete(
+        f"/api/communities/{community['id']}/image",
+        headers=user_a["headers"],
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    assert data["image_url"] is None
+
+
+def test_57_community_response_has_image_url_field(user_a):
+    community = _create_community(user_a)
+    res = client.get(f"/api/communities/{community['id']}", headers=user_a["headers"])
+    assert res.status_code == 200
+    # image_url should be present (null for communities without a photo)
+    assert "image_url" in res.json()
+
+
+def test_58_post_response_has_media_and_tags_fields(user_a):
+    """Response schema must include 'media' and 'tags' lists even for text-only posts."""
+    community = _create_community(user_a)
+    post = _create_post(user_a, community["id"])
+
+    listed = client.get(f"/api/communities/{community['id']}/posts", headers=user_a["headers"])
+    returned = next(p for p in listed.json()["posts"] if p["id"] == post["id"])
+
+    assert isinstance(returned.get("media"), list)
+    assert isinstance(returned.get("tags"), list)
+    assert returned["media"] == []
+    assert returned["tags"] == []
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Bug-fix regression: sort_order must be stored as INTEGER, not VARCHAR
+# Tests 59–68 specifically target the DatatypeMismatch bug.
+# ────────────────────────────────────────────────────────────────────────────
+
+def _make_jpeg(pixel_color: int = 0xFF) -> bytes:
+    """Return a minimal 1×1 JPEG for upload tests. pixel_color varies bytes so
+    files differ enough to get distinct MinIO keys."""
+    return (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
+        b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
+        b"\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'"
+        b"9=82<.342\x1edL\t\x10\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b"
+        b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
+        b"\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00"
+        b"\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b"
+        + bytes([pixel_color]) +
+        b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xf5\xd0\xff\xd9"
+    )
+
+
+def _post_with_images(user: dict, community_id: str, n: int, content: str = "") -> dict:
+    """POST a community post with n JPEG images."""
+    import json as _json
+    files = [("images", (f"img{i}.jpg", _make_jpeg(i + 1), "image/jpeg")) for i in range(n)]
+    data = {"content": content, "tags": _json.dumps([])}
+    res = client.post(
+        f"/api/communities/{community_id}/posts",
+        data=data,
+        files=files,
+        headers=user["headers"],
+    )
+    return res
+
+
+def test_59_text_only_post_still_works(user_a):
+    """Regression: text-only posts must not be broken by the image fix."""
+    community = _create_community(user_a)
+    post = _create_post(user_a, community["id"], content="Hello community")
+    assert post["content"] == "Hello community"
+    assert post["media"] == []
+
+
+def test_60_single_image_post_succeeds_and_sort_order_is_zero(user_a):
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=1, content="One image")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert len(post["media"]) == 1
+    media = post["media"][0]
+    # sort_order must be an integer 0, not a string "0"
+    assert media["sort_order"] == 0
+    assert isinstance(media["sort_order"], int)
+    assert media["url"]  # presigned URL is populated
+
+
+def test_61_two_image_post_sort_order_is_sequential_integers(user_a):
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=2, content="Two images")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert len(post["media"]) == 2
+    orders = [m["sort_order"] for m in post["media"]]
+    assert orders == [0, 1], f"Expected [0, 1], got {orders}"
+    for order in orders:
+        assert isinstance(order, int), f"sort_order {order!r} is not an int"
+
+
+def test_62_four_image_post_sort_order_is_0_1_2_3(user_a):
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=4, content="Four images")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert len(post["media"]) == 4
+    orders = [m["sort_order"] for m in post["media"]]
+    assert orders == [0, 1, 2, 3], f"Expected [0,1,2,3], got {orders}"
+    for order in orders:
+        assert isinstance(order, int)
+
+
+def test_63_image_only_post_succeeds(user_a):
+    """A post with no text content but at least one image must be accepted."""
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=1, content="")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert post["content"] == ""
+    assert len(post["media"]) == 1
+
+
+def test_64_text_and_image_post_succeeds(user_a):
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=2, content="Text and images")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    assert post["content"] == "Text and images"
+    assert len(post["media"]) == 2
+
+
+def test_65_sort_order_is_integer_in_postgresql(user_a):
+    """Verify the value stored in PostgreSQL is INTEGER, not a varchar.
+    This directly exercises the DatatypeMismatch bug — if sort_order were
+    inserted as a string the SELECT would still succeed (Postgres would coerce
+    it on read in some drivers) but the INSERT itself would have failed.
+    We verify via the SQLAlchemy ORM that the column type is integer and the
+    value round-trips correctly."""
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=2, content="DB type check")
+    assert res.status_code == 201, res.text
+    post = res.json()
+    post_id = post["id"]
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CommunityPostMedia)
+            .filter(CommunityPostMedia.post_id == post_id)
+            .order_by(CommunityPostMedia.sort_order)
+            .all()
+        )
+        assert len(rows) == 2
+        for expected, row in enumerate(rows):
+            # The ORM should return a Python int because the column is Integer
+            assert row.sort_order == expected, f"Row {expected}: sort_order={row.sort_order!r}"
+            assert isinstance(row.sort_order, int), (
+                f"sort_order is {type(row.sort_order).__name__}, expected int"
+            )
+    finally:
+        db.close()
+
+
+def test_66_listed_posts_include_media_with_integer_sort_orders(user_a):
+    """After creation, listing posts must return integer sort_order values."""
+    community = _create_community(user_a)
+    _post_with_images(user_a, community["id"], n=3, content="List check")
+
+    listed = client.get(f"/api/communities/{community['id']}/posts", headers=user_a["headers"])
+    assert listed.status_code == 200
+    posts = listed.json()["posts"]
+    media_post = next((p for p in posts if len(p.get("media", [])) == 3), None)
+    assert media_post is not None, "Expected a post with 3 media items in the list"
+    orders = [m["sort_order"] for m in media_post["media"]]
+    assert orders == [0, 1, 2]
+    for order in orders:
+        assert isinstance(order, int)
+
+
+def test_67_post_with_five_images_rejected(user_a):
+    """More than 4 images must be rejected."""
+    community = _create_community(user_a)
+    res = _post_with_images(user_a, community["id"], n=5, content="Too many")
+    assert res.status_code == 422
+
+
+def test_68_existing_reactions_comments_delete_unaffected(user_a, user_b):
+    """Full regression: reactions, comments, and delete still work after the fix."""
+    community = _create_community(user_a)
+    post = _create_post(user_a, community["id"], "Regression check")
+
+    # Reaction
+    react = client.post(
+        f"/api/communities/posts/{post['id']}/reaction",
+        json={"reaction_type": "LIKE"},
+        headers=user_a["headers"],
+    )
+    assert react.status_code == 200
+    assert react.json()["my_reaction"] == "LIKE"
+
+    # Comment
+    comment = client.post(
+        f"/api/communities/posts/{post['id']}/comments",
+        json={"content": "Still works"},
+        headers=user_a["headers"],
+    )
+    assert comment.status_code == 201
+    assert comment.json()["content"] == "Still works"
+
+    # Delete
+    delete = client.delete(
+        f"/api/communities/posts/{post['id']}",
+        headers=user_a["headers"],
+    )
+    assert delete.status_code == 200
+    assert delete.json()["success"] is True

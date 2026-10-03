@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
+  Camera,
   Check,
+  Image as ImageIcon,
   Loader2,
   MessageCircle,
   MoreVertical,
@@ -14,6 +16,7 @@ import {
   Tag,
   Trash2,
   Users,
+  X,
 } from 'lucide-react';
 import {
   createCommunityPost,
@@ -26,7 +29,9 @@ import {
   listCommunityPostComments,
   listCommunityMembers,
   listCommunityPosts,
+  removeCommunityImage,
   setCommunityPostReaction,
+  uploadCommunityImage,
 } from '@/services/api';
 import {
   CATEGORY_LABELS,
@@ -48,6 +53,13 @@ const REACTION_BY_TYPE = REACTIONS.reduce((acc, reaction) => {
   acc[reaction.type] = reaction;
   return acc;
 }, {});
+
+const MAX_POST_IMAGES = 4;
+const MAX_POST_IMAGE_MB = 5;
+const MAX_POST_TAGS = 5;
+const MAX_POST_TAG_LENGTH = 30;
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_COMMUNITY_IMAGE_MB = 5;
 
 function isEndpointMissing(error) {
   return [404, 405, 501].includes(error?.response?.status);
@@ -85,6 +97,95 @@ function EmptyPanel({ title, description }) {
   );
 }
 
+// ── Post image grid ─────────────────────────────────────────────────────────
+
+function PostImageGrid({ media }) {
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  if (!media || media.length === 0) return null;
+
+  const gridClass =
+    media.length === 1
+      ? 'grid grid-cols-1'
+      : media.length === 2
+      ? 'grid grid-cols-2 gap-1'
+      : media.length === 3
+      ? 'grid grid-cols-2 gap-1'
+      : 'grid grid-cols-2 gap-1';
+
+  return (
+    <>
+      <div className={`mt-3 overflow-hidden rounded-2xl ${gridClass}`}>
+        {media.map((item, idx) => (
+          <button
+            key={item.id || idx}
+            type="button"
+            aria-label={`View image ${idx + 1}`}
+            onClick={() => setLightboxUrl(item.url)}
+            className={`relative block overflow-hidden bg-slate-900 ${
+              media.length === 3 && idx === 0 ? 'row-span-2' : ''
+            }`}
+            style={{ aspectRatio: media.length === 1 ? '16/9' : '1/1' }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.url}
+              alt={`Post image ${idx + 1}`}
+              className="h-full w-full object-cover transition-transform hover:scale-[1.02]"
+              loading="lazy"
+            />
+          </button>
+        ))}
+      </div>
+
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+          onClick={() => setLightboxUrl(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+        >
+          <button
+            type="button"
+            aria-label="Close preview"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxUrl}
+            alt="Full size preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Post tags display ────────────────────────────────────────────────────────
+
+function PostTagList({ tags }) {
+  if (!tags || tags.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="inline-block rounded-full border border-accent/20 bg-accent/8 px-2.5 py-0.5 text-xs font-medium text-accent/80"
+        >
+          #{tag}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── PostCard ─────────────────────────────────────────────────────────────────
+
 function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onError }) {
   const author = post.author || post.user || {};
   const authorName = [author.first_name, author.last_name].filter(Boolean).join(' ') || author.name || 'Community member';
@@ -105,6 +206,8 @@ function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onErro
   const reactionEmoji = activeReaction ? activeReaction.emoji : '👍';
   const reactionTotal = post.total_reactions ?? post.like_count ?? 0;
   const commentCount = post.comment_count ?? comments.length ?? 0;
+  const media = post.media || [];
+  const tags = post.tags || [];
 
   const loadComments = async () => {
     setCommentsLoading(true);
@@ -227,7 +330,18 @@ function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onErro
           </div>
         )}
       </div>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{post.content || post.text}</p>
+
+      {/* Post content text */}
+      {post.content && (
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{post.content}</p>
+      )}
+
+      {/* Post images */}
+      <PostImageGrid media={media} />
+
+      {/* Post topic tags */}
+      <PostTagList tags={tags} />
+
       <div hidden>
         <button type="button" className="hover:text-white">♡ {post.like_count ?? 0}</button>
         <button type="button" className="inline-flex items-center gap-1 hover:text-white">
@@ -338,26 +452,119 @@ function PostCard({ post, onReactionUpdated, onCommentCreated, onDeleted, onErro
   );
 }
 
+// ── PostComposer with image + tag support ─────────────────────────────────────
+
 function PostComposer({ joined, onSubmit, disabled }) {
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Images
+  const [images, setImages] = useState([]); // Array of { file: File, previewUrl: string }
+  const imageInputRef = useRef(null);
+
+  // Tags
+  const [tagInput, setTagInput] = useState('');
+  const [tags, setTags] = useState([]);
+  const [tagError, setTagError] = useState('');
+
   if (!joined) return null;
+
+  // ── Image helpers ──
+
+  const handleImageSelect = (event) => {
+    const files = Array.from(event.target.files || []);
+    const remaining = MAX_POST_IMAGES - images.length;
+    const toAdd = files.slice(0, remaining);
+    const newImages = [];
+    let newError = '';
+
+    for (const file of toAdd) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        newError = `"${file.name}" is not a supported image type. Use JPEG, PNG, or WebP.`;
+        break;
+      }
+      if (file.size > MAX_POST_IMAGE_MB * 1024 * 1024) {
+        newError = `"${file.name}" exceeds the ${MAX_POST_IMAGE_MB} MB limit.`;
+        break;
+      }
+      newImages.push({ file, previewUrl: URL.createObjectURL(file) });
+    }
+
+    if (newError) {
+      setError(newError);
+    } else {
+      setImages((prev) => [...prev, ...newImages]);
+    }
+
+    // Reset input so same file can be re-selected after removal
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const handleRemoveImage = (index) => {
+    setImages((prev) => {
+      const next = [...prev];
+      URL.revokeObjectURL(next[index].previewUrl);
+      next.splice(index, 1);
+      return next;
+    });
+  };
+
+  // ── Tag helpers ──
+
+  const addTag = () => {
+    const raw = tagInput.trim().replace(/^#+/, '');
+    if (!raw) return;
+    if (raw.length > MAX_POST_TAG_LENGTH) {
+      setTagError(`Tag must be ${MAX_POST_TAG_LENGTH} characters or fewer.`);
+      return;
+    }
+    if (tags.some((t) => t.toLowerCase() === raw.toLowerCase())) {
+      setTagError('That tag is already added.');
+      return;
+    }
+    if (tags.length >= MAX_POST_TAGS) {
+      setTagError(`Maximum ${MAX_POST_TAGS} tags allowed.`);
+      return;
+    }
+    setTags((prev) => [...prev, raw]);
+    setTagInput('');
+    setTagError('');
+  };
+
+  const handleTagKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addTag();
+    }
+  };
+
+  const handleRemoveTag = (index) => {
+    setTags((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // ── Submit ──
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setSuccess('');
-    if (!content.trim()) {
-      setError('Write something before posting.');
+    setTagError('');
+    const trimmedContent = content.trim();
+    if (!trimmedContent && images.length === 0) {
+      setError('Write something or add at least one image before posting.');
       return;
     }
     setSubmitting(true);
     try {
-      await onSubmit(content.trim());
+      await onSubmit({ content: trimmedContent, tags, images: images.map((i) => i.file) });
+      // Cleanup previews
+      images.forEach((i) => URL.revokeObjectURL(i.previewUrl));
       setContent('');
+      setImages([]);
+      setTags([]);
+      setTagInput('');
       setSuccess('Post submitted.');
     } catch (err) {
       setError(err?.message || 'Unable to create post.');
@@ -365,6 +572,8 @@ function PostComposer({ joined, onSubmit, disabled }) {
       setSubmitting(false);
     }
   };
+
+  const hasContent = content.trim() || images.length > 0;
 
   return (
     <form onSubmit={handleSubmit} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
@@ -379,29 +588,209 @@ function PostComposer({ joined, onSubmit, disabled }) {
           className="mt-3 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25 disabled:opacity-60"
         />
       </label>
+
+      {/* Image previews */}
+      {images.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {images.map((img, idx) => (
+            <div key={idx} className="relative h-20 w-20 overflow-hidden rounded-xl border border-white/10">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={img.previewUrl} alt={`Selected image ${idx + 1}`} className="h-full w-full object-cover" />
+              <button
+                type="button"
+                aria-label={`Remove image ${idx + 1}`}
+                onClick={() => handleRemoveImage(idx)}
+                className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tag chips */}
+      {tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {tags.map((tag, idx) => (
+            <span key={idx} className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-0.5 text-xs text-accent">
+              #{tag}
+              <button
+                type="button"
+                aria-label={`Remove tag ${tag}`}
+                onClick={() => handleRemoveTag(idx)}
+                className="ml-0.5 rounded-full hover:text-white"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Tag input */}
+      <div className="mt-3 flex gap-2">
+        <div className="relative flex-1">
+          <Tag className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <input
+            value={tagInput}
+            onChange={(e) => { setTagInput(e.target.value); setTagError(''); }}
+            onKeyDown={handleTagKeyDown}
+            placeholder="Add topic tag"
+            disabled={disabled || submitting || tags.length >= MAX_POST_TAGS}
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/40 py-2 pl-8 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25 disabled:opacity-50"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={addTag}
+          disabled={!tagInput.trim() || tags.length >= MAX_POST_TAGS || disabled || submitting}
+          className="rounded-full border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+      {tagError && <p className="mt-1 text-xs text-rose-300">{tagError}</p>}
+
       {(error || success) && (
         <p className={`mt-2 text-sm ${error ? 'text-rose-300' : 'text-emerald-300'}`} role="status">
           {error || success}
         </p>
       )}
-      <div className="mt-4 flex justify-end gap-3">
-        {content && (
-          <button type="button" onClick={() => setContent('')} disabled={submitting} className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 hover:text-white">
-            Cancel
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        {/* Image add button */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={disabled || submitting || images.length >= MAX_POST_IMAGES}
+            title={images.length >= MAX_POST_IMAGES ? `Maximum ${MAX_POST_IMAGES} images` : 'Add photo'}
+            className="flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-40"
+          >
+            <ImageIcon className="h-3.5 w-3.5" />
+            Photo {images.length > 0 ? `(${images.length}/${MAX_POST_IMAGES})` : ''}
           </button>
-        )}
-        <button
-          type="submit"
-          disabled={disabled || submitting}
-          className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black hover:bg-accentSoft disabled:opacity-60"
-        >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          Post
-        </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept={ALLOWED_IMAGE_TYPES.join(',')}
+            multiple
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+        </div>
+
+        <div className="flex gap-3">
+          {hasContent && (
+            <button
+              type="button"
+              onClick={() => {
+                images.forEach((i) => URL.revokeObjectURL(i.previewUrl));
+                setContent('');
+                setImages([]);
+                setTags([]);
+                setTagInput('');
+                setError('');
+              }}
+              disabled={submitting}
+              className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 hover:text-white"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={disabled || submitting}
+            className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black hover:bg-accentSoft disabled:opacity-60"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Post
+          </button>
+        </div>
       </div>
     </form>
   );
 }
+
+// ── Community Photo Controls (owner-only) ─────────────────────────────────────
+
+function CommunityPhotoControls({ communityId, isOwner, currentImageUrl, onImageUpdated }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!isOwner) return null;
+
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!fileRef.current) return;
+    fileRef.current.value = '';
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setError('Unsupported image type. Use JPEG, PNG, or WebP.');
+      return;
+    }
+    if (file.size > MAX_COMMUNITY_IMAGE_MB * 1024 * 1024) {
+      setError(`Image exceeds the ${MAX_COMMUNITY_IMAGE_MB} MB limit.`);
+      return;
+    }
+
+    setError('');
+    setBusy(true);
+    try {
+      const result = await uploadCommunityImage(communityId, file);
+      onImageUpdated(result.image_url || null);
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Unable to upload photo.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      await removeCommunityImage(communityId);
+      onImageUpdated(null);
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Unable to remove photo.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-slate-300 hover:border-accent/30 hover:text-accent disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+        {currentImageUrl ? 'Change photo' : 'Add photo'}
+      </button>
+      {currentImageUrl && (
+        <button
+          type="button"
+          onClick={handleRemove}
+          disabled={busy}
+          className="flex items-center gap-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/15 disabled:opacity-50"
+        >
+          <Trash2 className="h-3 w-3" />
+          Remove photo
+        </button>
+      )}
+      <input ref={fileRef} type="file" accept={ALLOWED_IMAGE_TYPES.join(',')} className="hidden" onChange={handleFile} />
+      {error && <span className="text-xs text-rose-300">{error}</span>}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CommunityDetailPage({ communityId }) {
   const [community, setCommunity] = useState(null);
@@ -415,8 +804,10 @@ export default function CommunityDetailPage({ communityId }) {
   const [membershipBusy, setMembershipBusy] = useState(false);
 
   const joined = !!(community?.joined || community?.is_joined || community?.membership_status === 'joined');
+  const isOwner = !!(community?.is_owner);
   const categoryLabel = community?.category_label || CATEGORY_LABELS[community?.category] || community?.category || 'Other';
   const tags = Array.isArray(community?.tags) ? community.tags : [];
+  const communityImageUrl = community?.image_url || null;
 
   const loadCommunity = useCallback(async () => {
     setLoading(true);
@@ -496,9 +887,9 @@ export default function CommunityDetailPage({ communityId }) {
     }
   };
 
-  const handleCreatePost = async (content) => {
+  const handleCreatePost = async ({ content, tags: postTags, images }) => {
     try {
-      await createCommunityPost(communityId, { content });
+      await createCommunityPost(communityId, { content, tags: postTags, images });
       await loadTabData();
     } catch (err) {
       throw new Error(isEndpointMissing(err) ? 'Community posting is waiting for backend integration.' : extractErrorMessage(err));
@@ -533,6 +924,10 @@ export default function CommunityDetailPage({ communityId }) {
 
   const handlePostDeleted = (postId) => {
     setPosts((prev) => prev.filter((post) => post.id !== postId));
+  };
+
+  const handleCommunityImageUpdated = (newImageUrl) => {
+    setCommunity((prev) => ({ ...prev, image_url: newImageUrl }));
   };
 
   const memberCount = useMemo(() => {
@@ -577,9 +972,22 @@ export default function CommunityDetailPage({ communityId }) {
         <div className="h-36 bg-[radial-gradient(circle_at_20%_0%,rgba(255,143,50,0.20),transparent_42%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.95))]" />
         <div className="-mt-10 flex flex-col gap-5 p-6 sm:p-8 md:flex-row md:items-end md:justify-between">
           <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl border border-accent/30 bg-slate-950 text-xl font-bold text-accent shadow-[0_0_28px_rgba(255,143,50,0.18)]">
-              {getInitials(community.name)}
+            {/* Community avatar / photo */}
+            <div className="relative shrink-0">
+              {communityImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={communityImageUrl}
+                  alt={`${community.name} community photo`}
+                  className="h-20 w-20 rounded-3xl border-2 border-accent/30 bg-slate-950 object-cover shadow-[0_0_28px_rgba(255,143,50,0.18)]"
+                />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-accent/30 bg-slate-950 text-xl font-bold text-accent shadow-[0_0_28px_rgba(255,143,50,0.18)]">
+                  {getInitials(community.name)}
+                </div>
+              )}
             </div>
+
             <div className="min-w-0 pt-2">
               <h1 className="text-2xl font-extrabold text-white sm:text-3xl">{community.name}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">{community.description}</p>
@@ -591,6 +999,14 @@ export default function CommunityDetailPage({ communityId }) {
                   <Tag className="h-3.5 w-3.5" /> {categoryLabel}
                 </span>
               </div>
+
+              {/* Owner photo controls */}
+              <CommunityPhotoControls
+                communityId={community.id}
+                isOwner={isOwner}
+                currentImageUrl={communityImageUrl}
+                onImageUpdated={handleCommunityImageUpdated}
+              />
             </div>
           </div>
 

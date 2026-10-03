@@ -576,8 +576,26 @@ export const listCommunityPosts = async (communityId) => {
   return response.data;
 };
 
+/**
+ * Create a community post supporting text, images, and/or topic tags.
+ *
+ * @param {string} communityId
+ * @param {{ content?: string, tags?: string[], images?: File[] }} payload
+ * @returns {Promise<CommunityPostResponse>}
+ */
 export const createCommunityPost = async (communityId, payload) => {
-  const response = await apiClient.post(`/api/communities/${communityId}/posts`, payload);
+  const { content = '', tags = [], images = [] } = payload;
+
+  // If there are no images, we can still use multipart to be consistent
+  const formData = new FormData();
+  formData.append('content', content || '');
+  formData.append('tags', JSON.stringify(tags));
+  images.forEach((img) => formData.append('images', img));
+
+  const response = await apiClient.post(`/api/communities/${communityId}/posts`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000, // longer timeout for image uploads
+  });
   return response.data;
 };
 
@@ -607,6 +625,32 @@ export const deleteCommunityPost = async (postId) => {
 
 export const listCommunityMembers = async (communityId) => {
   const response = await apiClient.get(`/api/communities/${communityId}/members`);
+  return response.data;
+};
+
+/**
+ * Upload or replace the community profile photo (owner only).
+ * @param {string} communityId
+ * @param {File} file
+ * @returns {Promise<{ success: boolean, community_id: string, image_url: string | null }>}
+ */
+export const uploadCommunityImage = async (communityId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.patch(`/api/communities/${communityId}/image`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  });
+  return response.data;
+};
+
+/**
+ * Remove the community profile photo (owner only).
+ * @param {string} communityId
+ * @returns {Promise<{ success: boolean, community_id: string, image_url: null }>}
+ */
+export const removeCommunityImage = async (communityId) => {
+  const response = await apiClient.delete(`/api/communities/${communityId}/image`);
   return response.data;
 };
 

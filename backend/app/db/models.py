@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -403,6 +403,9 @@ class Community(Base):
     tags = Column(JSON, nullable=False, default=list)
     visibility = Column(String(20), nullable=False, default="public")
     creator_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # Optional MinIO object key for the community profile photo.
+    # Follows the same pattern as Profile.profile_photo_media_id / MediaObject.
+    image_key = Column(String(512), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -459,7 +462,8 @@ class CommunityPost(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     community_id = Column(String(36), ForeignKey("communities.id", ondelete="CASCADE"), nullable=False)
     author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    content = Column(Text, nullable=False)
+    # content may be empty string when the post contains images only
+    content = Column(Text, nullable=False, default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -475,6 +479,18 @@ class CommunityPost(Base):
         back_populates="post",
         cascade="all, delete-orphan",
         order_by="CommunityPostComment.created_at.asc()",
+    )
+    media = relationship(
+        "CommunityPostMedia",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        order_by="CommunityPostMedia.sort_order.asc()",
+    )
+    post_tags = relationship(
+        "CommunityPostTag",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        order_by="CommunityPostTag.created_at.asc()",
     )
 
     def __repr__(self) -> str:
@@ -527,6 +543,50 @@ class CommunityPostComment(Base):
 
     def __repr__(self) -> str:
         return f"<CommunityPostComment id={self.id} post={self.post_id} author={self.author_id}>"
+
+
+class CommunityPostMedia(Base):
+    """Image attachment for a community post. Binary lives in MinIO; key lives here."""
+
+    __tablename__ = "community_post_media"
+    __table_args__ = (
+        Index("ix_community_post_media_post_id", "post_id"),
+        Index("ix_community_post_media_post_order", "post_id", "sort_order"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("community_posts.id", ondelete="CASCADE"), nullable=False)
+    object_key = Column(String(512), nullable=False)
+    media_type = Column(String(20), nullable=False, default="image")
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("CommunityPost", back_populates="media")
+
+    def __repr__(self) -> str:
+        return f"<CommunityPostMedia id={self.id} post={self.post_id} key={self.object_key}>"
+
+
+class CommunityPostTag(Base):
+    """Topic hashtag on a community post."""
+
+    __tablename__ = "community_post_tags"
+    __table_args__ = (
+        UniqueConstraint("post_id", "tag_normalized", name="uq_community_post_tag_normalized"),
+        Index("ix_community_post_tags_post_id", "post_id"),
+        Index("ix_community_post_tags_tag_normalized", "tag_normalized"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("community_posts.id", ondelete="CASCADE"), nullable=False)
+    tag = Column(String(30), nullable=False)          # display form (e.g. "DevOps")
+    tag_normalized = Column(String(30), nullable=False)  # lowercase for dedup
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("CommunityPost", back_populates="post_tags")
+
+    def __repr__(self) -> str:
+        return f"<CommunityPostTag id={self.id} post={self.post_id} tag={self.tag}>"
 
 
 class DirectConversationParticipant(Base):
