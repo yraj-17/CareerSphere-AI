@@ -228,6 +228,9 @@ def _message_data(msg, current_user_id: str = None, db=None) -> dict:
         "conversation_id": msg.conversation_id,
         "sender_id": msg.sender_id,
         "content": msg.content,
+        "message_type": getattr(msg, "message_type", None) or "TEXT",
+        "resource_id": getattr(msg, "resource_id", None),
+        "resource": None,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
         "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
         "read_at": msg.read_at.isoformat() if msg.read_at else None,
@@ -319,19 +322,29 @@ async def _handle_message(
     # ── Step 4: Cross-instance fanout via Redis ───────────────────────────
     try:
         reply_preview = msg_payload.get("reply_to_message") or {}
-        await publish_new_message(
-            message_id=msg_payload["id"],
-            conversation_id=conversation_id,
-            sender_id=current_user.id,
-            recipient_id=other_user_id,
-            content=msg_payload["content"],
-            created_at=msg_payload.get("created_at") or "",
-            reply_to_message_id=msg_payload.get("reply_to_message_id"),
-            reply_to_content=reply_preview.get("content") if reply_preview else None,
-            reply_to_sender_id=reply_preview.get("sender_id") if reply_preview else None,
-            is_forwarded=msg_payload.get("is_forwarded", False),
-            forwarded_from_message_id=msg_payload.get("forwarded_from_message_id"),
-        )
+        fanout_kwargs = {
+            "message_id": msg_payload["id"],
+            "conversation_id": conversation_id,
+            "sender_id": current_user.id,
+            "recipient_id": other_user_id,
+            "content": msg_payload["content"],
+            "created_at": msg_payload.get("created_at") or "",
+            "reply_to_message_id": msg_payload.get("reply_to_message_id"),
+            "reply_to_content": reply_preview.get("content") if reply_preview else None,
+            "reply_to_sender_id": reply_preview.get("sender_id") if reply_preview else None,
+            "is_forwarded": msg_payload.get("is_forwarded", False),
+            "forwarded_from_message_id": msg_payload.get("forwarded_from_message_id"),
+        }
+        message_type = msg_payload.get("message_type") or "TEXT"
+        if message_type != "TEXT" or msg_payload.get("resource_id") or msg_payload.get("resource") is not None:
+            fanout_kwargs.update(
+                {
+                    "message_type": message_type,
+                    "resource_id": msg_payload.get("resource_id"),
+                    "resource": msg_payload.get("resource"),
+                }
+            )
+        await publish_new_message(**fanout_kwargs)
     except Exception as exc:
         logger.warning("ws: unexpected error from publish_new_message: %s", exc)
 

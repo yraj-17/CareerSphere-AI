@@ -380,6 +380,122 @@ class DirectConversation(Base):
         return (min(user_a, user_b), max(user_a, user_b))
 
 
+class NotificationType(str, enum.Enum):
+    """Persistent platform notification types."""
+
+    connection_request = "CONNECTION_REQUEST"
+    connection_accepted = "CONNECTION_ACCEPTED"
+    connection_rejected = "CONNECTION_REJECTED"
+    new_message = "NEW_MESSAGE"
+
+
+class Notification(Base):
+    """Persistent platform notification for a single recipient."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_recipient_read_created", "recipient_id", "is_read", "created_at"),
+        Index("ix_notifications_reference", "reference_type", "reference_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    recipient_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    type = Column(
+        Enum(NotificationType, name="notificationtype", create_constraint=True),
+        nullable=False,
+        index=True,
+    )
+    message = Column(String(500), nullable=False)
+    reference_type = Column(String(50), nullable=True)
+    reference_id = Column(String(36), nullable=True)
+    action_url = Column(String(255), nullable=True)
+    is_read = Column(Boolean, nullable=False, server_default="false", default=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    recipient = relationship("User", foreign_keys=[recipient_id])
+    actor = relationship("User", foreign_keys=[actor_id])
+
+
+# ---------------------------------------------------------------------------
+# Resource Sharing V1
+# ---------------------------------------------------------------------------
+
+
+class ResourceType(str, enum.Enum):
+    """Supported professional resource types."""
+
+    article = "ARTICLE"
+    course = "COURSE"
+    video = "VIDEO"
+    documentation = "DOCUMENTATION"
+    github_repository = "GITHUB_REPOSITORY"
+    tool = "TOOL"
+    book = "BOOK"
+    tutorial = "TUTORIAL"
+    other = "OTHER"
+
+
+class Resource(Base):
+    """Professional/learning resource shared by a CareerSphere user."""
+
+    __tablename__ = "resources"
+    __table_args__ = (
+        Index("ix_resources_author_created", "author_id", "created_at"),
+        Index("ix_resources_type_created", "resource_type", "created_at"),
+        Index("ix_resources_category_created", "category", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(180), nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(String(1000), nullable=False)
+    source_domain = Column(String(255), nullable=True, index=True)
+    resource_type = Column(
+        Enum(ResourceType, name="resourcetype", create_constraint=True),
+        nullable=False,
+        index=True,
+    )
+    category = Column(String(80), nullable=True, index=True)
+    tags = Column(JSON, nullable=False, default=list)
+    normalized_tags = Column(JSON, nullable=False, default=list)
+    thumbnail_url = Column(String(1000), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    author = relationship("User")
+    saved_by = relationship(
+        "SavedResource",
+        back_populates="resource",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Resource id={self.id} title={self.title!r} type={self.resource_type}>"
+
+
+class SavedResource(Base):
+    """Bookmark relation between a user and a shared resource."""
+
+    __tablename__ = "saved_resources"
+    __table_args__ = (
+        UniqueConstraint("user_id", "resource_id", name="uq_saved_resource_user_resource"),
+        Index("ix_saved_resources_user_created", "user_id", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    resource_id = Column(String(36), ForeignKey("resources.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    resource = relationship("Resource", back_populates="saved_by")
+
+    def __repr__(self) -> str:
+        return f"<SavedResource user={self.user_id} resource={self.resource_id}>"
+
+
 # ---------------------------------------------------------------------------
 # Communities V1
 # ---------------------------------------------------------------------------
@@ -665,6 +781,9 @@ class DirectMessage(Base):
         Index("ix_direct_messages_conversation_read_at", "conversation_id", "read_at"),
         # Pinned-message lookup per conversation.
         Index("ix_direct_messages_conversation_pinned_at", "conversation_id", "pinned_at"),
+        # Resource-share lookup / diagnostics without affecting normal messages.
+        Index("ix_direct_messages_message_type", "message_type"),
+        Index("ix_direct_messages_resource_id", "resource_id"),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
@@ -682,6 +801,12 @@ class DirectMessage(Base):
     )
 
     content = Column(Text, nullable=False)
+    message_type = Column(String(30), nullable=False, server_default="TEXT", default="TEXT")
+    resource_id = Column(
+        String(36),
+        ForeignKey("resources.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -724,6 +849,7 @@ class DirectMessage(Base):
     # ── Relationships ─────────────────────────────────────────────────────
     conversation = relationship("DirectConversation", back_populates="messages")
     sender = relationship("User", foreign_keys=[sender_id])
+    resource = relationship("Resource", foreign_keys=[resource_id])
     pinned_by = relationship("User", foreign_keys=[pinned_by_user_id])
     # Self-referential: the message being replied to.
     reply_to = relationship(

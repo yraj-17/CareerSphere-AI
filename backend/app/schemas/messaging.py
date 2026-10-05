@@ -127,6 +127,19 @@ class ReplyToPreview(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MessageResourcePreview(BaseModel):
+    """Compact resource preview embedded in a RESOURCE_SHARE direct message."""
+
+    id: str
+    title: str
+    description: Optional[str] = None
+    url: str
+    source_domain: Optional[str] = None
+    resource_type: str
+    category: Optional[str] = None
+    tags: list[str] = []
+
+
 # ---------------------------------------------------------------------------
 # Message responses
 # ---------------------------------------------------------------------------
@@ -157,6 +170,9 @@ class DirectMessageResponse(BaseModel):
     conversation_id: str
     sender_id: str
     content: str
+    message_type: str = "TEXT"
+    resource_id: Optional[str] = None
+    resource: Optional[MessageResourcePreview] = None
     created_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
@@ -187,6 +203,9 @@ class DirectMessageResponse(BaseModel):
             conversation_id=d["conversation_id"],
             sender_id=d["sender_id"],
             content=d["content"],
+            message_type=d.get("message_type", "TEXT"),
+            resource_id=d.get("resource_id"),
+            resource=MessageResourcePreview(**d["resource"]) if d.get("resource") else None,
             created_at=d.get("created_at"),
             delivered_at=d.get("delivered_at"),
             read_at=d.get("read_at"),
@@ -235,6 +254,17 @@ class SendMessageRequest(BaseModel):
             "Optional ID of the message being replied to. "
             "Must belong to the same conversation."
         ),
+    )
+
+
+class ShareResourceMessageRequest(BaseModel):
+    """Request body for sharing an existing resource into a conversation."""
+
+    resource_id: str = Field(..., min_length=1)
+    message: Optional[str] = Field(
+        default="",
+        max_length=DM_MAX_CONTENT_CHARS,
+        description="Optional text shown above the shared resource preview.",
     )
 
 
