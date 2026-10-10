@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart2,
   Bell,
+  BookOpen,
   Briefcase,
   ChevronDown,
   Globe2,
@@ -22,6 +23,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ProfileAvatar from '@/components/common/ProfileAvatar';
+import {
+  getNotificationUnreadCount,
+  getUnreadCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '@/services/api';
 
 const primaryNav = [
   {
@@ -64,10 +72,22 @@ const networkingLinks = [
     isActive: (pathname) => pathname === '/dashboard/networking/my-network',
   },
   {
+    label: 'Requests',
+    href: '/dashboard/networking/my-network?tab=requests',
+    icon: Users,
+    isActive: (pathname) => pathname === '/dashboard/networking/my-network',
+  },
+  {
     label: 'Communities',
     href: '/dashboard/communities',
     icon: Globe2,
     isActive: (pathname) => pathname.startsWith('/dashboard/communities'),
+  },
+  {
+    label: 'Resources',
+    href: '/dashboard/resources',
+    icon: BookOpen,
+    isActive: (pathname) => pathname.startsWith('/dashboard/resources'),
   },
 ];
 
@@ -98,6 +118,130 @@ function getProfilePhotoUrl(user) {
   return user?.profile_photo_url || user?.profile_photo?.url || null;
 }
 
+function formatBadgeCount(count) {
+  if (!count || count < 1) return null;
+  return count > 99 ? '99+' : String(count);
+}
+
+function CountBadge({ count, label }) {
+  const text = formatBadgeCount(count);
+  if (!text) return null;
+  return (
+    <span
+      aria-label={label}
+      className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
+    >
+      {text}
+    </span>
+  );
+}
+
+function formatRelativeTime(value) {
+  if (!value) return 'Recently';
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) return 'Recently';
+  const seconds = Math.max(1, Math.floor((Date.now() - then) / 1000));
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(value).toLocaleDateString();
+}
+
+function notificationDestination(notification) {
+  if (notification?.action_url) return notification.action_url;
+  if (notification?.type === 'CONNECTION_REQUEST') return '/dashboard/networking/my-network?tab=requests';
+  if (notification?.type === 'CONNECTION_ACCEPTED') return '/dashboard/networking/my-network';
+  if (notification?.type === 'CONNECTION_REJECTED') return '/dashboard/networking/my-network?tab=sent';
+  return '/dashboard/notifications';
+}
+
+function NotificationDropdown({
+  notifications,
+  loading,
+  error,
+  onRetry,
+  onMarkAllRead,
+  onNotificationClick,
+  onClose,
+}) {
+  return (
+    <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/98 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div>
+          <p className="text-sm font-bold text-white">Notifications</p>
+          <p className="text-xs text-slate-500">Connection and platform updates</p>
+        </div>
+        <button
+          type="button"
+          onClick={onMarkAllRead}
+          className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-accent/30 hover:text-accent"
+        >
+          Mark all read
+        </button>
+      </div>
+
+      <div className="max-h-96 overflow-y-auto py-1">
+        {loading ? (
+          <div className="space-y-2 px-4 py-4">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div key={idx} className="h-14 animate-pulse rounded-xl bg-white/[0.05]" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="px-4 py-5 text-sm text-rose-200">
+            <p>{error}</p>
+            <button type="button" onClick={onRetry} className="mt-3 rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 hover:text-white">
+              Try again
+            </button>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-slate-400">
+            <Bell className="mx-auto mb-2 h-6 w-6 text-slate-600" />
+            No notifications yet.
+          </div>
+        ) : (
+          notifications.map((notification) => (
+            <button
+              key={notification.id}
+              type="button"
+              onClick={() => onNotificationClick(notification)}
+              className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.06] ${
+                notification.is_read ? 'bg-transparent' : 'bg-accent/[0.06]'
+              }`}
+            >
+              <ProfileAvatar
+                src={notification.actor?.profile_photo_url}
+                name={notification.actor?.name}
+                username={notification.actor?.username}
+                alt={notification.actor?.name || 'Notification actor'}
+                fallback={(notification.actor?.first_name?.[0] || 'N').toUpperCase()}
+                className="h-9 w-9"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm leading-snug text-slate-100">{notification.message}</span>
+                <span className="mt-1 block text-xs text-slate-500">{formatRelativeTime(notification.created_at)}</span>
+              </span>
+              {!notification.is_read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent" aria-label="Unread" />}
+            </button>
+          ))
+        )}
+      </div>
+
+      <Link
+        href="/dashboard/notifications"
+        onClick={onClose}
+        className="block border-t border-white/10 px-4 py-3 text-center text-sm font-semibold text-accent hover:bg-white/[0.04]"
+      >
+        View all notifications
+      </Link>
+    </div>
+  );
+}
+
 function Brand({ compact = false, href = '/dashboard' }) {
   return (
     <Link
@@ -120,7 +264,7 @@ function Brand({ compact = false, href = '/dashboard' }) {
   );
 }
 
-function NavLink({ item, pathname, onClick, compact = false }) {
+function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, badgeLabel }) {
   const Icon = item.icon;
   const active = item.isActive(pathname);
 
@@ -137,6 +281,7 @@ function NavLink({ item, pathname, onClick, compact = false }) {
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className={compact ? 'truncate' : 'hidden min-[1180px]:inline'}>{item.label}</span>
+      <CountBadge count={badgeCount} label={badgeLabel || `${item.label} unread count`} />
     </Link>
   );
 }
@@ -144,24 +289,43 @@ function NavLink({ item, pathname, onClick, compact = false }) {
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const [netOpen, setNetOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationSource, setNotificationSource] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
+  const userIdentity = user?.id ?? user?.username ?? user?.email ?? null;
+  const hasAuthenticatedUser = isAuthenticated && Boolean(userIdentity);
   const [userOpen, setUserOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const netRef = useRef(null);
+  const notificationDesktopRef = useRef(null);
+  const notificationMobileRef = useRef(null);
   const userRef = useRef(null);
   const searchRef = useRef(null);
 
   const userName = getUserName(user);
   const userInitial = getInitial(user);
   const profilePhotoUrl = getProfilePhotoUrl(user);
-  const isNetworkingActive = pathname.startsWith('/dashboard/networking') || pathname.startsWith('/dashboard/communities');
+  const isNetworkingActive = pathname.startsWith('/dashboard/networking') || pathname.startsWith('/dashboard/communities') || pathname.startsWith('/dashboard/resources');
 
   useEffect(() => {
     const handlePointerDown = (event) => {
       if (netRef.current && !netRef.current.contains(event.target)) {
         setNetOpen(false);
+      }
+      const inNotification =
+        notificationDesktopRef.current?.contains(event.target) ||
+        notificationMobileRef.current?.contains(event.target);
+      if (!inNotification) {
+        setNotificationOpen(false);
+        setNotificationSource(null);
       }
       if (userRef.current && !userRef.current.contains(event.target)) {
         setUserOpen(false);
@@ -179,6 +343,8 @@ export default function Navbar() {
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setNetOpen(false);
+        setNotificationOpen(false);
+        setNotificationSource(null);
         setUserOpen(false);
         setMobileOpen(false);
         setSearchOpen(false);
@@ -191,10 +357,95 @@ export default function Navbar() {
 
   useEffect(() => {
     setNetOpen(false);
+    setNotificationOpen(false);
+    setNotificationSource(null);
     setUserOpen(false);
     setMobileOpen(false);
     setSearchOpen(false);
   }, [pathname]);
+
+  const refreshCounts = useCallback(async () => {
+    if (!hasAuthenticatedUser) return;
+    try {
+      const [messageCount, notificationCount] = await Promise.all([
+        getUnreadCount(),
+        getNotificationUnreadCount(),
+      ]);
+      setMessageUnreadCount(messageCount?.unread_count ?? 0);
+      setNotificationUnreadCount(notificationCount?.unread_count ?? 0);
+    } catch {
+      // Header counts are non-blocking; dropdown/page surface detailed errors.
+    }
+  }, [hasAuthenticatedUser]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!hasAuthenticatedUser) return;
+    setNotificationsLoading(true);
+    setNotificationsError('');
+    try {
+      const payload = await listNotifications({ limit: 10, offset: 0 });
+      setNotifications(payload?.notifications ?? []);
+    } catch {
+      setNotificationsError('Unable to load notifications.');
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [hasAuthenticatedUser]);
+
+  useEffect(() => {
+    if (!hasAuthenticatedUser) return undefined;
+    refreshCounts();
+    const handleFocus = () => refreshCounts();
+    window.addEventListener('focus', handleFocus);
+    const interval = window.setInterval(refreshCounts, 30000);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.clearInterval(interval);
+    };
+  }, [hasAuthenticatedUser, refreshCounts, pathname]);
+
+  useEffect(() => {
+    if (notificationOpen) {
+      loadNotifications();
+      refreshCounts();
+    }
+  }, [loadNotifications, notificationOpen, refreshCounts]);
+
+  const handleToggleNotifications = (source) => {
+    setNotificationSource((currentSource) => {
+      if (notificationOpen && currentSource === source) return null;
+      return source;
+    });
+    setNotificationOpen((open) => (notificationSource === source ? !open : true));
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      setNotifications((prev) => prev.map((notification) => ({ ...notification, is_read: true })));
+      setNotificationUnreadCount(0);
+    } catch {
+      setNotificationsError('Unable to mark notifications read.');
+    }
+  };
+
+  const handleNotificationClick = async (notification) => {
+    const destination = notificationDestination(notification);
+    setNotifications((prev) =>
+      prev.map((item) => (item.id === notification.id ? { ...item, is_read: true } : item))
+    );
+    if (!notification.is_read) {
+      setNotificationUnreadCount((count) => Math.max(0, count - 1));
+      try {
+        await markNotificationRead(notification.id);
+      } catch {
+        await refreshCounts();
+      }
+    }
+    setNotificationOpen(false);
+    setNotificationSource(null);
+    router.push(destination);
+  };
 
   useEffect(() => {
     if (!mobileOpen) return undefined;
@@ -209,6 +460,8 @@ export default function Navbar() {
   const handleLogout = () => {
     setUserOpen(false);
     setMobileOpen(false);
+    setNotificationOpen(false);
+    setNotificationSource(null);
     logout();
   };
 
@@ -256,7 +509,7 @@ export default function Navbar() {
               onClick={() => setNetOpen((open) => !open)}
               aria-haspopup="menu"
               aria-expanded={netOpen}
-              aria-label="Networking menu"
+              aria-label="Connect & Explore menu"
               className={`group flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
                 isNetworkingActive
                   ? 'border-accent/35 bg-accent/15 text-accent shadow-[inset_0_-2px_0_rgba(255,143,50,0.85)]'
@@ -264,7 +517,7 @@ export default function Navbar() {
               }`}
             >
               <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="hidden min-[1180px]:inline">Networking</span>
+              <span className="hidden min-[1180px]:inline">Connect & Explore</span>
               <ChevronDown
                 className={`hidden h-3.5 w-3.5 transition-transform duration-150 min-[1180px]:block ${
                   netOpen ? 'rotate-180' : ''
@@ -302,7 +555,12 @@ export default function Navbar() {
             )}
           </div>
 
-          <NavLink item={messageNav} pathname={pathname} />
+          <NavLink
+            item={messageNav}
+            pathname={pathname}
+            badgeCount={messageUnreadCount}
+            badgeLabel={`${messageUnreadCount} unread direct messages`}
+          />
         </nav>
 
         <div className="flex min-w-0 items-center justify-end gap-2">
@@ -345,13 +603,35 @@ export default function Navbar() {
             )}
           </div>
 
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-          >
-            <Bell className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="relative" ref={notificationDesktopRef}>
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-haspopup="menu"
+              aria-expanded={notificationOpen}
+              onClick={() => handleToggleNotifications('desktop')}
+              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            >
+              <Bell className="h-4 w-4" aria-hidden="true" />
+              <span className="absolute -right-1 -top-1">
+                <CountBadge count={notificationUnreadCount} label={`${notificationUnreadCount} unread notifications`} />
+              </span>
+            </button>
+            {notificationOpen && notificationSource === 'desktop' && (
+              <NotificationDropdown
+                notifications={notifications}
+                loading={notificationsLoading}
+                error={notificationsError}
+                onRetry={loadNotifications}
+                onMarkAllRead={handleMarkAllNotificationsRead}
+                onNotificationClick={handleNotificationClick}
+                onClose={() => {
+                  setNotificationOpen(false);
+                  setNotificationSource(null);
+                }}
+              />
+            )}
+          </div>
 
           <div className="relative" ref={userRef}>
             <button
@@ -424,13 +704,35 @@ export default function Navbar() {
         <Brand compact />
 
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-          >
-            <Bell className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="relative" ref={notificationMobileRef}>
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-haspopup="menu"
+              aria-expanded={notificationOpen}
+              onClick={() => handleToggleNotifications('mobile')}
+              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            >
+              <Bell className="h-4 w-4" aria-hidden="true" />
+              <span className="absolute -right-1 -top-1">
+                <CountBadge count={notificationUnreadCount} label={`${notificationUnreadCount} unread notifications`} />
+              </span>
+            </button>
+            {notificationOpen && notificationSource === 'mobile' && (
+              <NotificationDropdown
+                notifications={notifications}
+                loading={notificationsLoading}
+                error={notificationsError}
+                onRetry={loadNotifications}
+                onMarkAllRead={handleMarkAllNotificationsRead}
+                onNotificationClick={handleNotificationClick}
+                onClose={() => {
+                  setNotificationOpen(false);
+                  setNotificationSource(null);
+                }}
+              />
+            )}
+          </div>
           <Link
             href={profileNav.href}
             aria-label="Profile"
@@ -494,7 +796,7 @@ export default function Navbar() {
               ))}
 
               <div className="mt-2 px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Networking
+                Connect & Explore
               </div>
               {networkingLinks.map((item) => (
                 <NavLink
@@ -506,7 +808,23 @@ export default function Navbar() {
                 />
               ))}
 
-              <NavLink item={messageNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
+              <NavLink
+                item={messageNav}
+                pathname={pathname}
+                onClick={() => setMobileOpen(false)}
+                compact
+                badgeCount={messageUnreadCount}
+                badgeLabel={`${messageUnreadCount} unread direct messages`}
+              />
+              <Link
+                href="/dashboard/notifications"
+                onClick={() => setMobileOpen(false)}
+                className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium text-slate-300 transition-all hover:border-white/10 hover:bg-white/[0.04] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              >
+                <Bell className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">Notifications</span>
+                <CountBadge count={notificationUnreadCount} label={`${notificationUnreadCount} unread notifications`} />
+              </Link>
               <NavLink item={profileNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
             </nav>
 

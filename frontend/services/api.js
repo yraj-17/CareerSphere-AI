@@ -654,6 +654,63 @@ export const removeCommunityImage = async (communityId) => {
   return response.data;
 };
 
+export const listResources = async ({
+  q = '',
+  resourceType = 'all',
+  category = 'all',
+  tag = '',
+  saved = false,
+  sort = 'newest',
+  limit = 20,
+  offset = 0,
+} = {}) => {
+  const params = { limit, offset, saved, sort };
+  if (q && q.trim()) params.q = q.trim();
+  if (resourceType && resourceType !== 'all') params.resource_type = resourceType;
+  if (category && category !== 'all') params.category = category;
+  if (tag && tag.trim()) params.tag = tag.trim();
+  const response = await apiClient.get('/api/resources', { params });
+  return response.data;
+};
+
+export const getResource = async (resourceId) => {
+  const response = await apiClient.get(`/api/resources/${resourceId}`);
+  return response.data;
+};
+
+export const createResource = async (payload) => {
+  const response = await apiClient.post('/api/resources', payload);
+  return response.data;
+};
+
+export const updateResource = async (resourceId, payload) => {
+  const response = await apiClient.patch(`/api/resources/${resourceId}`, payload);
+  return response.data;
+};
+
+export const deleteResource = async (resourceId) => {
+  const response = await apiClient.delete(`/api/resources/${resourceId}`);
+  return response.data;
+};
+
+export const saveResource = async (resourceId) => {
+  const response = await apiClient.post(`/api/resources/${resourceId}/save`);
+  return response.data;
+};
+
+export const unsaveResource = async (resourceId) => {
+  const response = await apiClient.delete(`/api/resources/${resourceId}/save`);
+  return response.data;
+};
+
+export const shareResourceInConversation = async (conversationId, payload) => {
+  const response = await apiClient.post(
+    `/api/messaging/conversations/${conversationId}/resource-share`,
+    payload
+  );
+  return response.data;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Messaging — Phase 5.8.6
 // ─────────────────────────────────────────────────────────────────────────────
@@ -757,6 +814,32 @@ export const markMessagesRead = async (conversationId) => {
  */
 export const getUnreadCount = async () => {
   const response = await apiClient.get('/api/messaging/unread-count');
+  return response.data;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const listNotifications = async ({ limit = 10, offset = 0, unreadOnly = false } = {}) => {
+  const response = await apiClient.get('/api/notifications', {
+    params: { limit, offset, unread_only: unreadOnly },
+  });
+  return response.data;
+};
+
+export const getNotificationUnreadCount = async () => {
+  const response = await apiClient.get('/api/notifications/unread-count');
+  return response.data;
+};
+
+export const markNotificationRead = async (notificationId) => {
+  const response = await apiClient.patch(`/api/notifications/${notificationId}/read`);
+  return response.data;
+};
+
+export const markAllNotificationsRead = async () => {
+  const response = await apiClient.patch('/api/notifications/read-all');
   return response.data;
 };
 

@@ -222,8 +222,9 @@ function SectionEmpty({ tabId }) {
 
 // ─── MyNetworkPage ────────────────────────────────────────────────────────────
 
-export default function MyNetworkPage() {
-  const [activeTab, setActiveTab] = useState('connections');
+export default function MyNetworkPage({ initialTab = 'connections' }) {
+  const normalizedInitialTab = TABS.some((tab) => tab.id === initialTab) ? initialTab : 'connections';
+  const [activeTab, setActiveTab] = useState(normalizedInitialTab);
 
   // Per-tab data state: { data, loading, error, loaded }
   const [tabState, setTabState] = useState({
@@ -254,6 +255,11 @@ export default function MyNetworkPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(null);
   }, []);
+
+  useEffect(() => {
+    const nextTab = TABS.some((tab) => tab.id === initialTab) ? initialTab : 'connections';
+    setActiveTab(nextTab);
+  }, [initialTab]);
 
   // ── Tab data fetcher ──────────────────────────────────────────────────────
 

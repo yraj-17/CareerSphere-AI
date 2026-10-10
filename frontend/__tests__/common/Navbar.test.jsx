@@ -1,7 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const mockLogout = jest.fn();
+const mockPush = jest.fn();
 let mockPathname = '/dashboard';
 let mockAuthState = {
   isAuthenticated: true,
@@ -24,6 +25,7 @@ jest.mock('next/link', () => {
 
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
+  useRouter: () => ({ push: mockPush }),
 }));
 
 jest.mock('@/context/AuthContext', () => ({
@@ -33,11 +35,32 @@ jest.mock('@/context/AuthContext', () => ({
   }),
 }));
 
+jest.mock('@/services/api', () => ({
+  getUnreadCount: jest.fn(),
+  getNotificationUnreadCount: jest.fn(),
+  listNotifications: jest.fn(),
+  markAllNotificationsRead: jest.fn(),
+  markNotificationRead: jest.fn(),
+}));
+
+import {
+  getNotificationUnreadCount,
+  getUnreadCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '@/services/api';
 import Navbar from '@/components/common/Navbar';
 
 describe('Navbar', () => {
   beforeEach(() => {
     mockLogout.mockClear();
+    mockPush.mockClear();
+    getUnreadCount.mockResolvedValue({ unread_count: 0 });
+    getNotificationUnreadCount.mockResolvedValue({ unread_count: 0 });
+    listNotifications.mockResolvedValue({ notifications: [], total: 0 });
+    markAllNotificationsRead.mockResolvedValue({ success: true, updated: 0 });
+    markNotificationRead.mockResolvedValue({ success: true, updated: 1 });
     mockPathname = '/dashboard';
     mockAuthState = {
       isAuthenticated: true,
@@ -62,14 +85,16 @@ describe('Navbar', () => {
     expect(within(primaryNav).getByRole('link', { name: /messages/i })).toHaveAttribute('href', '/dashboard/messaging');
   });
 
-  test('opens networking dropdown with existing networking destinations', () => {
+  test('opens Connect & Explore dropdown with existing and upcoming destinations', () => {
     render(<Navbar />);
 
-    fireEvent.click(screen.getByRole('button', { name: /networking menu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /connect & explore menu/i }));
 
     expect(screen.getByRole('menuitem', { name: /discover people/i })).toHaveAttribute('href', '/dashboard/networking');
     expect(screen.getByRole('menuitem', { name: /my network/i })).toHaveAttribute('href', '/dashboard/networking/my-network');
+    expect(screen.getByRole('menuitem', { name: /requests/i })).toHaveAttribute('href', '/dashboard/networking/my-network?tab=requests');
     expect(screen.getByRole('menuitem', { name: /communities/i })).toHaveAttribute('href', '/dashboard/communities');
+    expect(screen.getByRole('menuitem', { name: /resources/i })).toHaveAttribute('href', '/dashboard/resources');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('menuitem', { name: /discover people/i })).not.toBeInTheDocument();
@@ -93,6 +118,77 @@ describe('Navbar', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /logout/i }));
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows separate message and notification unread badges', async () => {
+    getUnreadCount.mockResolvedValue({ unread_count: 3 });
+    getNotificationUnreadCount.mockResolvedValue({ unread_count: 2 });
+
+    render(<Navbar />);
+
+    expect(await screen.findByLabelText(/3 unread direct messages/i)).toHaveTextContent('3');
+    expect((await screen.findAllByLabelText(/2 unread notifications/i))[0]).toHaveTextContent('2');
+  });
+
+  test('opens notification dropdown and marks all read', async () => {
+    getNotificationUnreadCount.mockResolvedValue({ unread_count: 1 });
+    listNotifications.mockResolvedValue({
+      notifications: [
+        {
+          id: 'n1',
+          type: 'CONNECTION_REQUEST',
+          actor: { id: 'u2', first_name: 'Priya', last_name: 'Sharma', name: 'Priya Sharma' },
+          message: 'Priya Sharma sent you a connection request.',
+          action_url: '/dashboard/networking/my-network?tab=requests',
+          is_read: false,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+    });
+
+    render(<Navbar />);
+    fireEvent.click(screen.getAllByRole('button', { name: /notifications/i })[0]);
+
+    expect(await screen.findByText(/priya sharma sent you a connection request/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /mark all read/i }));
+
+    await waitFor(() => expect(markAllNotificationsRead).toHaveBeenCalledTimes(1));
+  });
+
+  test('clicking a notification marks it read and navigates', async () => {
+    listNotifications.mockResolvedValue({
+      notifications: [
+        {
+          id: 'n1',
+          type: 'CONNECTION_ACCEPTED',
+          actor: { id: 'u2', first_name: 'Priya', last_name: 'Sharma', name: 'Priya Sharma' },
+          message: 'Priya Sharma accepted your connection request.',
+          action_url: '/dashboard/networking/my-network',
+          is_read: false,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+    });
+
+    render(<Navbar />);
+    fireEvent.click(screen.getAllByRole('button', { name: /notifications/i })[0]);
+    fireEvent.click(await screen.findByText(/accepted your connection request/i));
+
+    await waitFor(() => expect(markNotificationRead).toHaveBeenCalledWith('n1'));
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/networking/my-network');
+  });
+
+  test('notification dropdown shows empty and error states', async () => {
+    render(<Navbar />);
+    fireEvent.click(screen.getAllByRole('button', { name: /notifications/i })[0]);
+    expect(await screen.findByText('No notifications yet.')).toBeInTheDocument();
+
+    listNotifications.mockRejectedValueOnce(new Error('boom'));
+    fireEvent.click(screen.getAllByRole('button', { name: /notifications/i })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /notifications/i })[0]);
+    expect(await screen.findByText(/unable to load notifications/i)).toBeInTheDocument();
   });
 
   test('shows authenticated user profile image when available', () => {
@@ -129,6 +225,9 @@ describe('Navbar', () => {
     expect(screen.getByRole('dialog', { name: /navigation menu/i })).toBeInTheDocument();
     expect(document.body.style.overflow).toBe('hidden');
     expect(screen.getByRole('link', { name: /communities/i })).toHaveAttribute('href', '/dashboard/communities');
+    expect(screen.getAllByText(/connect & explore/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /resources/i })).toHaveAttribute('href', '/dashboard/resources');
+    expect(screen.getByRole('link', { name: /notifications/i })).toHaveAttribute('href', '/dashboard/notifications');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: /navigation menu/i })).not.toBeInTheDocument();

@@ -192,6 +192,9 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       conversation_id: payload.conversation_id,
       sender_id: payload.sender_id,
       content: payload.content,
+      message_type: payload.message_type ?? 'TEXT',
+      resource_id: payload.resource_id ?? null,
+      resource: payload.resource ?? null,
       created_at: payload.created_at,
       delivered_at: payload.delivered_at ?? null,
       read_at: payload.read_at ?? null,
@@ -229,7 +232,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
         return {
           ...c,
           latest_message_id: msg.id,
-          latest_message_content: msg.content,
+          latest_message_content: msg.content || (msg.message_type === 'RESOURCE_SHARE' ? 'Shared a resource' : ''),
           latest_message_at: msg.created_at,
           latest_message_sender_id: msg.sender_id,
           updated_at: msg.created_at,

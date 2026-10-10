@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.db.models import Connection, ConnectionStatus, User
+from app.services import notification_service
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +104,13 @@ def send_connection_request(
     connection = _build_connection(requester, receiver)
     db.add(connection)
     try:
+        db.flush()
+        notification_service.create_connection_request_notification(
+            db,
+            connection_id=connection.id,
+            requester=requester,
+            receiver=receiver,
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -141,6 +149,14 @@ def accept_connection_request(
     _require_pending(connection, "accept")
 
     connection.status = ConnectionStatus.accepted
+    requester = db.query(User).filter(User.id == connection.requester_id).first()
+    if requester is not None:
+        notification_service.create_connection_accepted_notification(
+            db,
+            connection_id=connection.id,
+            requester=requester,
+            receiver=receiver,
+        )
     db.commit()
     db.refresh(connection)
     return connection
@@ -173,6 +189,14 @@ def reject_connection_request(
     _require_pending(connection, "reject")
 
     connection.status = ConnectionStatus.rejected
+    requester = db.query(User).filter(User.id == connection.requester_id).first()
+    if requester is not None:
+        notification_service.create_connection_rejected_notification(
+            db,
+            connection_id=connection.id,
+            requester=requester,
+            receiver=receiver,
+        )
     db.commit()
     db.refresh(connection)
     return connection

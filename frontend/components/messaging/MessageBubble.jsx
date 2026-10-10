@@ -17,7 +17,8 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { CheckCheck, Check, Star, Pin, Share2, Reply } from 'lucide-react';
+import Link from 'next/link';
+import { CheckCheck, Check, ExternalLink, Star, Pin, Share2, Reply } from 'lucide-react';
 import MessageActionMenu from '@/components/messaging/MessageActionMenu';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -94,6 +95,62 @@ function ForwardedBadge({ isMine }) {
   );
 }
 
+function ResourceShareCard({ resource, isMine }) {
+  if (!resource) {
+    return (
+      <div className={`mt-2 rounded-2xl border px-3 py-3 text-sm ${
+        isMine ? 'border-black/20 bg-black/10 text-black/70' : 'border-white/10 bg-white/[0.04] text-slate-300'
+      }`}>
+        <p className="font-semibold">Resource no longer available.</p>
+        <p className="mt-1 text-xs opacity-70">The original shared resource was deleted.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`mt-2 min-w-[230px] overflow-hidden rounded-2xl border ${
+      isMine ? 'border-black/20 bg-black/10' : 'border-white/10 bg-slate-950/45'
+    }`}>
+      <div className="p-3">
+        <p className={`text-[10px] font-bold uppercase tracking-[0.16em] ${isMine ? 'text-black/55' : 'text-accent'}`}>
+          {resource.resource_type?.replaceAll('_', ' ') || 'Resource'}
+        </p>
+        <h3 className={`mt-1 line-clamp-2 text-sm font-bold ${isMine ? 'text-black' : 'text-white'}`}>
+          {resource.title}
+        </h3>
+        {resource.description && (
+          <p className={`mt-1 line-clamp-2 text-xs leading-relaxed ${isMine ? 'text-black/65' : 'text-slate-400'}`}>
+            {resource.description}
+          </p>
+        )}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {(resource.tags || []).slice(0, 3).map((tag) => (
+            <span key={tag.toLowerCase()} className={`rounded-full px-2 py-0.5 text-[10px] ${
+              isMine ? 'bg-black/10 text-black/65' : 'bg-white/[0.06] text-slate-300'
+            }`}>
+              {tag}
+            </span>
+          ))}
+        </div>
+        <p className={`mt-2 truncate text-[10px] ${isMine ? 'text-black/50' : 'text-slate-500'}`}>
+          {[resource.category, resource.source_domain].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+      <Link
+        href={`/dashboard/resources/${resource.id}`}
+        className={`flex items-center justify-center gap-2 border-t px-3 py-2 text-xs font-bold ${
+          isMine
+            ? 'border-black/15 text-black hover:bg-black/10'
+            : 'border-white/10 text-accent hover:bg-white/[0.05]'
+        }`}
+      >
+        Open Resource
+        <ExternalLink className="h-3 w-3" />
+      </Link>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MessageBubble({
@@ -119,6 +176,7 @@ export default function MessageBubble({
   const isStarred = message?.is_starred;
   const isForwarded = message?.is_forwarded;
   const hasReply = Boolean(message?.reply_to_message);
+  const isResourceShare = message?.message_type === 'RESOURCE_SHARE';
 
   const handleLongPress = useCallback(() => {
     // Detect if menu should open upward or downward
@@ -208,7 +266,10 @@ export default function MessageBubble({
           )}
 
           {/* Content */}
-          <span>{message.content}</span>
+          {message.content && <span>{message.content}</span>}
+          {isResourceShare && !isDeleted && (
+            <ResourceShareCard resource={message.resource} isMine={isMine} />
+          )}
 
           {/* Hover action button */}
           {!isDeleted && (

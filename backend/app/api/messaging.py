@@ -47,6 +47,7 @@ from app.schemas.messaging import (
     MessageParticipantSummary,
     MessageStateUpdateResponse,
     SendMessageRequest,
+    ShareResourceMessageRequest,
     UnreadCountResponse,
 )
 from app.services import messaging_service as svc
@@ -128,19 +129,29 @@ async def _deliver_new_message(
     )
     try:
         reply = payload.get("reply_to_message") or {}
-        await publish_new_message(
-            message_id=payload["id"],
-            conversation_id=payload["conversation_id"],
-            sender_id=sender_id,
-            recipient_id=recipient_id,
-            content=payload["content"],
-            created_at=payload.get("created_at") or "",
-            reply_to_message_id=payload.get("reply_to_message_id"),
-            reply_to_content=reply.get("content"),
-            reply_to_sender_id=reply.get("sender_id"),
-            is_forwarded=payload.get("is_forwarded", False),
-            forwarded_from_message_id=payload.get("forwarded_from_message_id"),
-        )
+        fanout_kwargs = {
+            "message_id": payload["id"],
+            "conversation_id": payload["conversation_id"],
+            "sender_id": sender_id,
+            "recipient_id": recipient_id,
+            "content": payload["content"],
+            "created_at": payload.get("created_at") or "",
+            "reply_to_message_id": payload.get("reply_to_message_id"),
+            "reply_to_content": reply.get("content"),
+            "reply_to_sender_id": reply.get("sender_id"),
+            "is_forwarded": payload.get("is_forwarded", False),
+            "forwarded_from_message_id": payload.get("forwarded_from_message_id"),
+        }
+        message_type = payload.get("message_type") or "TEXT"
+        if message_type != "TEXT" or payload.get("resource_id") or payload.get("resource") is not None:
+            fanout_kwargs.update(
+                {
+                    "message_type": message_type,
+                    "resource_id": payload.get("resource_id"),
+                    "resource": payload.get("resource"),
+                }
+            )
+        await publish_new_message(**fanout_kwargs)
     except Exception as exc:
         logger.warning("REST message fanout failed after persistence: %s", exc)
 
@@ -349,6 +360,37 @@ async def send_message(
 # Endpoint 4 — MESSAGE HISTORY  (extended with per-user fields)
 # GET /messaging/conversations/{conversation_id}/messages
 # ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/conversations/{conversation_id}/resource-share",
+    response_model=DirectMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Share an existing resource in a direct conversation",
+)
+async def share_resource_message(
+    conversation_id: str,
+    body: ShareResourceMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DirectMessageResponse:
+    """
+    Share an existing CareerSphere resource through the current direct
+    conversation. This reuses normal direct-message persistence, WebSocket
+    delivery, fanout, unread counts, and read/delivery state.
+    """
+    msg = mgmt.send_resource_share_message(
+        db=db,
+        conversation_id=conversation_id,
+        sender=current_user,
+        resource_id=body.resource_id,
+        message=body.message or "",
+    )
+    d = mgmt.serialize_message(db, msg, current_user.id)
+    response = DirectMessageResponse.from_dict(d)
+    recipient_id = svc._get_other_participant_id(db, conversation_id, current_user.id)
+    await _deliver_new_message(d, current_user.id, recipient_id)
+    return response
 
 
 @router.get(

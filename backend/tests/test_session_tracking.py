@@ -565,7 +565,7 @@ def test_17_no_pubsub_in_ws_endpoint():
 
 
 # ===========================================================================
-# 18. Session tracking introduced no migration beyond community post interactions
+# 18. Session tracking introduced no migration beyond the current app head
 # ===========================================================================
 
 
@@ -576,18 +576,22 @@ def test_18_no_new_migration():
         f for f in os.listdir(migration_dir)
         if f.endswith(".py") and not f.startswith("_")
     ]
-    # Community post interactions legitimately added migration 010. Session
+    # Later product features legitimately added migrations 011 through 014. Session
     # tracking itself must not introduce another schema migration beyond the
-    # current head.
+    # current application head.
     assert "008_message_management.py" in files
     assert "009_communities.py" in files
     assert "010_community_post_interactions.py" in files
+    assert "011_community_media_and_tags.py" in files
+    assert "012_notifications.py" in files
+    assert "013_resources.py" in files
+    assert "014_resource_share_messages.py" in files
     ids = sorted(
         int(f.split("_")[0])
         for f in files
         if f.split("_")[0].isdigit()
     )
-    assert max(ids) == 10
+    assert max(ids) == 14
 
 
 # ===========================================================================

@@ -627,6 +627,8 @@ def list_direct_conversations(
                 latest_message_content=(
                     DELETED_FOR_EVERYONE_PLACEHOLDER
                     if lm and lm.deleted_for_everyone_at is not None
+                    else "Shared a resource"
+                    if lm and getattr(lm, "message_type", None) == "RESOURCE_SHARE" and not lm.content
                     else lm.content if lm else None
                 ),
                 latest_message_at=lm.created_at if lm else None,

@@ -434,3 +434,51 @@ test('17. Delete for everyone immediately sanitizes the sender conversation prev
   expect(screen.getByText('🚫 This message was deleted')).toBeInTheDocument();
   expect(deleteMessageForEveryone).toHaveBeenCalledWith(MESSAGE_FROM_SELF.id);
 });
+
+test('18. Resource-share message renders a resource preview card', () => {
+  const resourceMessage = {
+    ...MESSAGE_FROM_OTHER,
+    id: 'msg-resource-1',
+    content: 'This helped me understand hooks.',
+    message_type: 'RESOURCE_SHARE',
+    resource_id: 'res-1',
+    resource: {
+      id: 'res-1',
+      title: 'React Hooks Deep Dive',
+      description: 'A practical guide to useEffect and custom hooks.',
+      resource_type: 'ARTICLE',
+      category: 'frontend',
+      source_domain: 'example.com',
+      tags: ['React', 'Hooks'],
+    },
+  };
+
+  render(<MessageBubble message={resourceMessage} isMine={false} />);
+
+  expect(screen.getByText('This helped me understand hooks.')).toBeInTheDocument();
+  expect(screen.getByText('React Hooks Deep Dive')).toBeInTheDocument();
+  expect(screen.getByText('A practical guide to useEffect and custom hooks.')).toBeInTheDocument();
+  expect(screen.getByText('React')).toBeInTheDocument();
+  expect(screen.getByText('Hooks')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /open resource/i })).toHaveAttribute(
+    'href',
+    '/dashboard/resources/res-1'
+  );
+});
+
+test('19. Resource-share message renders deleted resource fallback safely', () => {
+  const resourceMessage = {
+    ...MESSAGE_FROM_OTHER,
+    id: 'msg-resource-deleted',
+    content: '',
+    message_type: 'RESOURCE_SHARE',
+    resource_id: null,
+    resource: null,
+  };
+
+  render(<MessageBubble message={resourceMessage} isMine={false} />);
+
+  expect(screen.getByText('Resource no longer available.')).toBeInTheDocument();
+  expect(screen.getByText('The original shared resource was deleted.')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /open resource/i })).not.toBeInTheDocument();
+});

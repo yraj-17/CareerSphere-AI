@@ -58,6 +58,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockClient.get.mockResolvedValue({ data: {} });
   mockClient.post.mockResolvedValue({ data: {} });
+  mockClient.patch.mockResolvedValue({ data: {} });
   mockClient.delete.mockResolvedValue({ data: undefined });
 });
 
@@ -165,5 +166,31 @@ describe('Networking API functions', () => {
     expect(mockClient.delete).toHaveBeenCalledWith(
       '/api/networking/connections/conn-444'
     );
+  });
+
+  test('12. listNotifications calls GET /api/notifications with pagination', async () => {
+    mockClient.get.mockResolvedValue({ data: { notifications: [], total: 0 } });
+    await api.listNotifications({ limit: 10, offset: 5, unreadOnly: true });
+    expect(mockClient.get).toHaveBeenCalledWith(
+      '/api/notifications',
+      { params: { limit: 10, offset: 5, unread_only: true } }
+    );
+  });
+
+  test('13. getNotificationUnreadCount calls notification count endpoint', async () => {
+    mockClient.get.mockResolvedValue({ data: { unread_count: 2 } });
+    const result = await api.getNotificationUnreadCount();
+    expect(mockClient.get).toHaveBeenCalledWith('/api/notifications/unread-count');
+    expect(result.unread_count).toBe(2);
+  });
+
+  test('14. markNotificationRead patches single notification', async () => {
+    await api.markNotificationRead('notif-1');
+    expect(mockClient.patch).toHaveBeenCalledWith('/api/notifications/notif-1/read');
+  });
+
+  test('15. markAllNotificationsRead patches read-all endpoint', async () => {
+    await api.markAllNotificationsRead();
+    expect(mockClient.patch).toHaveBeenCalledWith('/api/notifications/read-all');
   });
 });

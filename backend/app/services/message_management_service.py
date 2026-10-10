@@ -62,6 +62,7 @@ from app.db.models import (
     DirectMessage,
     MessageStar,
     MessageUserDeletion,
+    Resource,
     User,
 )
 from app.services.messaging_service import (
@@ -79,6 +80,8 @@ from app.services.messaging_service import (
 
 #: Placeholder shown when a replied-to message has been deleted for everyone.
 DELETED_REPLY_PLACEHOLDER: str = "This message was deleted"
+RESOURCE_SHARE_TYPE: str = "RESOURCE_SHARE"
+TEXT_MESSAGE_TYPE: str = "TEXT"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -137,6 +140,22 @@ def _require_message_access(
         )
 
     return msg
+
+
+def _resource_preview(resource: Resource | None) -> dict | None:
+    if resource is None:
+        return None
+    resource_type = resource.resource_type.value if hasattr(resource.resource_type, "value") else str(resource.resource_type)
+    return {
+        "id": resource.id,
+        "title": resource.title,
+        "description": resource.description,
+        "url": resource.url,
+        "source_domain": resource.source_domain,
+        "resource_type": resource_type,
+        "category": resource.category,
+        "tags": list(resource.tags or []),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +218,9 @@ def serialize_message(
         "conversation_id": msg.conversation_id,
         "sender_id": msg.sender_id,
         "content": content,
+        "message_type": getattr(msg, "message_type", None) or TEXT_MESSAGE_TYPE,
+        "resource_id": getattr(msg, "resource_id", None),
+        "resource": None if is_deleted else _resource_preview(getattr(msg, "resource", None)),
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
         "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
         "read_at": msg.read_at.isoformat() if msg.read_at else None,
@@ -309,6 +331,50 @@ def send_direct_message_extended(
     # Eagerly load reply_to for serialization
     if msg.reply_to_message_id:
         _ = msg.reply_to
+    return msg
+
+
+def send_resource_share_message(
+    db: Session,
+    conversation_id: str,
+    sender: User,
+    resource_id: str,
+    message: Optional[str] = "",
+) -> DirectMessage:
+    """
+    Persist one RESOURCE_SHARE message in an existing direct conversation.
+
+    Reuses the same participant and accepted-connection checks as normal
+    direct messages. Sender identity comes from the authenticated User.
+    """
+    conv = get_direct_conversation_for_user(db, conversation_id, sender)
+
+    resource = db.query(Resource).filter(Resource.id == resource_id).first()
+    if resource is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    stripped = message.strip() if message else ""
+    if len(stripped) > DM_MAX_CONTENT_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Message exceeds the {DM_MAX_CONTENT_CHARS}-character limit.",
+        )
+
+    other_user_id = _get_other_participant_id(db, conversation_id, sender.id)
+    _require_accepted_connection(db, sender.id, other_user_id)
+
+    msg = DirectMessage(
+        conversation_id=conversation_id,
+        sender_id=sender.id,
+        content=stripped,
+        message_type=RESOURCE_SHARE_TYPE,
+        resource_id=resource.id,
+    )
+    db.add(msg)
+    conv.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(msg)
+    msg.resource = resource
     return msg
 
 
@@ -661,6 +727,12 @@ def list_messages_for_user(
         )
         starred_ids = {r[0] for r in star_rows}
 
+    resource_ids = list({m.resource_id for m in msgs if getattr(m, "resource_id", None)})
+    resources_by_id: dict[str, Resource] = {}
+    if resource_ids:
+        resource_rows = db.query(Resource).filter(Resource.id.in_(resource_ids)).all()
+        resources_by_id = {resource.id: resource for resource in resource_rows}
+
     results = []
     for msg in msgs:
         is_deleted = msg.deleted_for_everyone_at is not None
@@ -688,6 +760,9 @@ def list_messages_for_user(
             "conversation_id": msg.conversation_id,
             "sender_id": msg.sender_id,
             "content": content,
+            "message_type": getattr(msg, "message_type", None) or TEXT_MESSAGE_TYPE,
+            "resource_id": getattr(msg, "resource_id", None),
+            "resource": None if is_deleted else _resource_preview(resources_by_id.get(msg.resource_id)),
             "created_at": msg.created_at.isoformat() if msg.created_at else None,
             "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
             "read_at": msg.read_at.isoformat() if msg.read_at else None,
