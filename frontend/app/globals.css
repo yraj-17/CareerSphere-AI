@@ -2,14 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CareerSphere AI design system */
+:root {
+  --brand-navy: #102f6b;
+  --brand-deep-navy: #0b2a5b;
+  --brand-amber: #e89b00;
+  --brand-yellow: #f4a300;
+  --page-bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-subtle: #eaf0f8;
+  --border: #dde3ea;
+  --border-strong: #cbd5e1;
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #64748b;
+  --success: #15803d;
+  --warning: #a15c00;
+  --danger: #b42318;
+  --info: #1d4ed8;
+  --radius-card: 1rem;
+  --radius-control: 0.625rem;
+  --shadow-card: 0 8px 24px rgba(16, 47, 107, 0.06);
+  --shadow-popover: 0 16px 36px rgba(11, 42, 91, 0.16);
+  --focus-ring: 0 0 0 3px rgba(16, 47, 107, 0.18);
+}
+
 @layer base {
-  :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+  html {
+    background: var(--page-bg);
+    color-scheme: light;
   }
 
   body {
-    @apply bg-slate-950 text-slate-100 font-sans antialiased min-h-screen selection:bg-indigo-500/30 selection:text-indigo-200;
+    @apply min-h-screen font-sans antialiased;
+    background: var(--page-bg);
+    color: var(--text-primary);
     scroll-behavior: smooth;
   }
 
@@ -17,54 +44,324 @@
   h2,
   h3,
   h4,
+  h5,
+  h6,
   .display-font {
     @apply font-semibold;
+    color: var(--text-primary);
   }
 
   a,
-  button {
+  button,
+  input,
+  textarea,
+  select {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
 }
 
-/* Glassmorphism card utilities */
-.glass-card {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5), 0 0 30px -10px rgba(99, 102, 241, 0.15);
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight sm:text-3xl;
+    color: var(--text-primary);
+  }
+
+  .page-description {
+    @apply mt-2 max-w-2xl text-sm leading-6;
+    color: var(--text-muted);
+  }
+
+  .surface-card {
+    @apply rounded-2xl border p-5 sm:p-6;
+    background: var(--surface);
+    border-color: var(--border);
+    box-shadow: var(--shadow-card);
+  }
+
+  .surface-card-subtle {
+    @apply rounded-xl border p-4;
+    background: var(--surface-subtle);
+    border-color: var(--border);
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .btn-ghost,
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    background: var(--brand-navy);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    background: var(--brand-deep-navy);
+  }
+
+  .btn-secondary {
+    background: var(--brand-yellow);
+    color: var(--text-primary);
+  }
+
+  .btn-secondary:hover {
+    background: var(--brand-amber);
+  }
+
+  .btn-outline {
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--brand-navy);
+  }
+
+  .btn-outline:hover,
+  .btn-ghost:hover {
+    border-color: var(--brand-navy);
+    background: var(--surface-subtle);
+  }
+
+  .btn-ghost {
+    color: var(--text-secondary);
+  }
+
+  .btn-danger {
+    background: var(--danger);
+    color: #fff;
+  }
+
+  .input-base {
+    @apply w-full rounded-lg border px-3 py-2.5 text-sm transition-colors;
+    border-color: var(--border-strong);
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+
+  .input-base::placeholder {
+    color: var(--text-muted);
+  }
+
+  .input-base:focus {
+    border-color: var(--brand-navy);
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}
+
+/* Legacy utility compatibility: keeps existing feature markup cohesive while
+   the individual screens are migrated over time. */
+.glass-card,
+.glass-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: none;
 }
 
 .glass-card-hover {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .glass-card-hover:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 40px -8px rgba(99, 102, 241, 0.25);
-  transform: translateY(-2px);
+  border-color: rgba(16, 47, 107, 0.28);
+  box-shadow: 0 12px 28px rgba(16, 47, 107, 0.1);
+  transform: translateY(-1px);
 }
 
-/* Subtle gradient background glow */
+[class*='rounded-['] {
+  border-radius: var(--radius-card) !important;
+}
+
+[class~='rounded-3xl'] {
+  border-radius: var(--radius-card) !important;
+}
+
+[class*='backdrop-blur'] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 .bg-grid-pattern {
+  background-image: linear-gradient(rgba(16, 47, 107, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 47, 107, 0.035) 1px, transparent 1px);
   background-size: 40px 40px;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
 }
 
-/* Focus ring styles */
 .input-focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-200;
+  outline: none;
 }
 
-.glass-panel {
-  @apply border border-white/10 bg-white/[0.05] backdrop-blur-xl;
+.input-focus-ring:focus {
+  border-color: var(--brand-navy);
+  box-shadow: var(--focus-ring);
 }
 
-/* Keep long chat threads readable without page-level overflow quirks */
+/* Retheme the former dark utility vocabulary. These selectors are deliberately
+   semantic and centralized so feature pages keep their behavior and markup. */
+[class~='bg-slate-950'],
+[class*='bg-slate-950/'] {
+  background-color: var(--surface-subtle) !important;
+}
+
+[class~='bg-slate-950/72'],
+[class~='bg-slate-950/75'] {
+  background-color: rgba(11, 42, 91, 0.38) !important;
+}
+
+[class~='bg-slate-900'],
+[class*='bg-slate-900/'],
+[class~='bg-slate-800'],
+[class*='bg-slate-800/'] {
+  background-color: var(--surface) !important;
+}
+
+[class*='bg-white/'] {
+  background-color: var(--surface-subtle) !important;
+}
+
+[class~='text-white'],
+[class~='text-slate-100'] {
+  color: var(--text-primary) !important;
+}
+
+[class~='text-slate-200'],
+[class~='text-slate-300'] {
+  color: var(--text-secondary) !important;
+}
+
+[class~='text-slate-400'],
+[class~='text-slate-500'] {
+  color: var(--text-muted) !important;
+}
+
+[class~='text-slate-600'] {
+  color: #94a3b8 !important;
+}
+
+[class*='border-white'],
+[class*='border-slate-'] {
+  border-color: var(--border) !important;
+}
+
+[class~='bg-accent'],
+[class~='bg-brand-500'] {
+  background-color: var(--brand-navy) !important;
+}
+
+[class*='bg-accent/'],
+[class*='bg-brand-'][class*='/'] {
+  background-color: var(--surface-subtle) !important;
+}
+
+[class~='bg-accentSoft'] {
+  background-color: var(--brand-yellow) !important;
+}
+
+[class~='text-accent'],
+[class~='text-accentSoft'] {
+  color: var(--brand-amber) !important;
+}
+
+[class~='bg-accent'][class~='text-black'],
+[class~='bg-accentSoft'][class~='text-black'] {
+  color: #fff !important;
+}
+
+[class~='text-cyan'],
+[class~='text-cyan-200'],
+[class~='text-cyan-300'],
+[class~='text-violet'],
+[class~='text-violet-300'] {
+  color: var(--brand-navy) !important;
+}
+
+[class*='bg-cyan/'],
+[class*='bg-violet/'] {
+  background-color: var(--surface-subtle) !important;
+}
+
+[class*='border-cyan'],
+[class*='border-violet'] {
+  border-color: rgba(16, 47, 107, 0.25) !important;
+}
+
+[class~='text-emerald-300'],
+[class~='text-emerald-400'] {
+  color: var(--success) !important;
+}
+
+[class*='bg-emerald-'] {
+  background-color: #ecfdf3 !important;
+}
+
+[class*='border-emerald-'] {
+  border-color: #bbf7d0 !important;
+}
+
+[class~='text-rose-200'],
+[class~='text-rose-300'],
+[class~='text-rose-400'] {
+  color: var(--danger) !important;
+}
+
+[class*='bg-rose-'] {
+  background-color: #fef3f2 !important;
+}
+
+[class*='border-rose-'] {
+  border-color: #f4c7c3 !important;
+}
+
+[class~='text-amber-300'],
+[class~='text-amber-400'] {
+  color: var(--warning) !important;
+}
+
+[class*='bg-amber-'] {
+  background-color: #fff7e0 !important;
+}
+
+[class*='border-amber-'] {
+  border-color: #f4d28c !important;
+}
+
+.bg-clip-text.text-transparent {
+  background-image: none !important;
+  color: var(--brand-navy) !important;
+  -webkit-text-fill-color: var(--brand-navy) !important;
+}
+
+[class~='shadow-glow'] {
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* Keep intentionally dark scrims legible after the light-theme migration. */
+[class~='bg-black/60'],
+[class~='bg-black/40'] {
+  background-color: rgba(11, 42, 91, 0.45) !important;
+}
+
 .chat-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+@media (max-width: 640px) {
+  .surface-card {
+    @apply rounded-xl p-4;
+  }
 }

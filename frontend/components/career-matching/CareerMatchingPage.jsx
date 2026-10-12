@@ -111,12 +111,12 @@ function MatchScoreRing({ score }) {
   const circ = 2 * Math.PI * r;
   const pct = Math.min(100, Math.max(0, score));
   const offset = circ - (pct / 100) * circ;
-  const color = pct >= 75 ? '#40d9ff' : pct >= 55 ? '#ff8f32' : '#9b7cff';
+  const color = pct >= 75 ? '#102f6b' : pct >= 55 ? '#e89b00' : '#f4a300';
 
   return (
     <div className="relative w-24 h-24 flex-shrink-0">
       <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
-        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="7" />
+        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(221,227,234,0.95)" strokeWidth="7" />
         <motion.circle
           cx="44"
           cy="44"

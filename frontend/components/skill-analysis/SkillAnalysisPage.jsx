@@ -46,7 +46,7 @@ import { getSkillAnalysis, extractErrorMessage } from '@/services/api';
  * Animated SVG ring for coverage percentages.
  * pct is exactly the integer from coverage.required_pct / overall_pct / recommended_pct.
  */
-function CoverageRing({ pct, label, color, trackColor = 'rgba(255,255,255,0.07)' }) {
+function CoverageRing({ pct, label, color, trackColor = 'rgba(221,227,234,0.95)' }) {
   const r = 52;
   const circ = 2 * Math.PI * r;
   const offset = circ - (Math.min(100, Math.max(0, pct)) / 100) * circ;
@@ -476,17 +476,17 @@ export default function SkillAnalysisPage() {
             <CoverageRing
               pct={coverage.overall_pct}
               label="Overall"
-              color="#ff8f32"
+              color="#102f6b"
             />
             <CoverageRing
               pct={coverage.required_pct}
               label="Required"
-              color="#40d9ff"
+              color="#e89b00"
             />
             <CoverageRing
               pct={coverage.recommended_pct}
               label="Recommended"
-              color="#9b7cff"
+              color="#f4a300"
             />
           </div>
         </Card>

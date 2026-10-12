@@ -129,7 +129,7 @@ function CountBadge({ count, label }) {
   return (
     <span
       aria-label={label}
-      className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
+      className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
     >
       {text}
     </span>
@@ -169,7 +169,7 @@ function NotificationDropdown({
   onClose,
 }) {
   return (
-    <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/98 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_36px_rgba(11,42,91,0.16)]">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div>
           <p className="text-sm font-bold text-white">Notifications</p>
@@ -249,11 +249,11 @@ function Brand({ compact = false, href = '/dashboard' }) {
       className="group flex min-w-0 shrink-0 items-center gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
       aria-label="CareerSphere AI dashboard"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/35 bg-accent/10 text-xs font-bold text-accent shadow-[0_0_20px_rgba(255,143,50,0.18)] transition-transform duration-200 group-hover:scale-105">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-xs font-bold text-white transition-transform duration-200 group-hover:scale-105">
         CS
       </div>
       <div className={compact ? 'min-w-0' : 'hidden min-w-0 sm:block'}>
-        <div className="truncate text-sm font-semibold tracking-wide text-white">CareerSphere AI</div>
+        <div className="truncate text-sm font-semibold tracking-wide text-slate-900">CareerSphere AI</div>
         {!compact && (
           <div className="hidden text-[10px] uppercase tracking-[0.22em] text-slate-500 xl:block">
             AI Career Ecosystem
@@ -275,8 +275,8 @@ function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, bad
       aria-current={active ? 'page' : undefined}
       className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
         active
-          ? 'border-accent/35 bg-accent/15 text-accent shadow-[inset_0_-2px_0_rgba(255,143,50,0.85)]'
-          : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/[0.04] hover:text-white'
+          ? 'border-brand-200 bg-brand-50 text-brand-600'
+          : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
       } ${compact ? 'justify-start' : 'justify-center'}`}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -467,23 +467,23 @@ export default function Navbar() {
 
   if (!isAuthenticated || !user) {
     return (
-      <header className="sticky top-0 z-50 w-full px-4 py-3 md:px-8">
-        <div className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/10 bg-slate-950/70 px-5 py-3 shadow-glow backdrop-blur-xl transition-all duration-300">
+      <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-8">
           <Brand href="/" />
           <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/login"
               className={`rounded-full px-4 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
                 pathname === '/login'
-                  ? 'border border-accent/40 bg-accent/10 text-accent shadow-[0_0_15px_rgba(255,143,50,0.2)]'
-                  : 'border border-white/10 text-slate-200 hover:border-white/20 hover:text-white'
+                  ? 'border border-brand-200 bg-brand-50 text-brand-600'
+                  : 'border border-slate-300 text-slate-700 hover:border-brand-300 hover:text-brand-600'
               }`}
             >
               Login
             </Link>
             <Link
               href="/signup"
-              className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)] transition-all hover:-translate-y-0.5 hover:bg-accentSoft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               Create Account
             </Link>
@@ -494,7 +494,7 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-slate-950/88 shadow-[0_18px_45px_rgba(0,0,0,0.28),0_0_24px_rgba(255,143,50,0.08)] backdrop-blur-xl">
+    <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm">
       <div className="hidden w-full items-center gap-5 px-4 py-3 lg:grid lg:grid-cols-[minmax(190px,auto)_minmax(0,1fr)_auto] lg:px-6 2xl:px-8">
         <Brand />
 
@@ -512,8 +512,8 @@ export default function Navbar() {
               aria-label="Connect & Explore menu"
               className={`group flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
                 isNetworkingActive
-                  ? 'border-accent/35 bg-accent/15 text-accent shadow-[inset_0_-2px_0_rgba(255,143,50,0.85)]'
-                  : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/[0.04] hover:text-white'
+                  ? 'border-brand-200 bg-brand-50 text-brand-600'
+                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
               }`}
             >
               <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -529,7 +529,7 @@ export default function Navbar() {
             {netOpen && (
               <div
                 role="menu"
-                className="absolute left-1/2 top-full z-50 mt-3 w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-slate-900/98 py-1 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+                className="absolute left-1/2 top-full z-50 mt-3 w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(11,42,91,0.16)]"
               >
                 {networkingLinks.map((item) => {
                   const Icon = item.icon;
@@ -543,7 +543,7 @@ export default function Navbar() {
                       onClick={() => setNetOpen(false)}
                       aria-current={active ? 'page' : undefined}
                       className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:bg-white/10 ${
-                        active ? 'bg-accent/10 text-accent' : 'text-slate-200 hover:bg-white/[0.06] hover:text-white'
+                        active ? 'bg-brand-50 text-brand-600' : 'text-slate-700 hover:bg-slate-50 hover:text-brand-600'
                       }`}
                     >
                       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -564,7 +564,7 @@ export default function Navbar() {
         </nav>
 
         <div className="flex min-w-0 items-center justify-end gap-2">
-          <label className="hidden min-[1180px]:flex w-52 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400 transition-colors focus-within:border-accent/45 focus-within:bg-white/[0.07] focus-within:text-slate-200 2xl:w-72">
+          <label className="hidden min-[1180px]:flex w-52 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 transition-colors focus-within:border-brand-300 focus-within:bg-white focus-within:text-slate-700 2xl:w-72">
             <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="sr-only">Global search</span>
             <input
@@ -572,7 +572,7 @@ export default function Navbar() {
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
               placeholder="Search people, skills, careers..."
-              className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
           </label>
 
@@ -582,13 +582,13 @@ export default function Navbar() {
               aria-label="Open global search"
               aria-expanded={searchOpen}
               onClick={() => setSearchOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <Search className="h-4 w-4" aria-hidden="true" />
             </button>
 
             {searchOpen && (
-              <label className="absolute right-0 top-full z-50 mt-3 flex w-72 items-center gap-2 rounded-xl border border-white/10 bg-slate-900/98 px-3 py-2 text-sm text-slate-400 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl focus-within:border-accent/45 focus-within:text-slate-200">
+              <label className="absolute right-0 top-full z-50 mt-3 flex w-72 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-[0_16px_36px_rgba(11,42,91,0.16)] focus-within:border-brand-300 focus-within:text-slate-700">
                 <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="sr-only">Global search</span>
                 <input
@@ -596,7 +596,7 @@ export default function Navbar() {
                   value={searchValue}
                   onChange={(event) => setSearchValue(event.target.value)}
                   placeholder="Search people, skills, careers..."
-                  className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
                   autoFocus
                 />
               </label>
@@ -610,7 +610,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={notificationOpen}
               onClick={() => handleToggleNotifications('desktop')}
-              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <Bell className="h-4 w-4" aria-hidden="true" />
               <span className="absolute -right-1 -top-1">
@@ -640,7 +640,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={userOpen}
               aria-label="User profile menu"
-              className="flex max-w-[220px] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-left transition-colors hover:border-white/20 hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="flex max-w-[220px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <ProfileAvatar
                 src={profilePhotoUrl}
@@ -664,13 +664,13 @@ export default function Navbar() {
             {userOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-3 w-56 overflow-hidden rounded-xl border border-white/10 bg-slate-900/98 py-1 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+                className="absolute right-0 top-full z-50 mt-3 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(11,42,91,0.16)]"
               >
                 <Link
                   href={profileNav.href}
                   role="menuitem"
                   onClick={() => setUserOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:bg-white/10"
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-brand-600 focus:outline-none focus-visible:bg-brand-50"
                 >
                   <UserRound className="h-4 w-4 shrink-0" aria-hidden="true" />
                   Profile
@@ -736,7 +736,7 @@ export default function Navbar() {
           <Link
             href={profileNav.href}
             aria-label="Profile"
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-xs font-bold uppercase text-accent transition-colors hover:bg-accent/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 text-xs font-bold uppercase text-brand-600 transition-colors hover:bg-brand-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
           >
             <ProfileAvatar
               src={profilePhotoUrl}
@@ -759,7 +759,7 @@ export default function Navbar() {
             aria-label="Close navigation menu"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col border-r border-white/10 bg-slate-950 px-4 py-4 shadow-[20px_0_55px_rgba(0,0,0,0.45)]">
+          <div className="relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white px-4 py-4 shadow-[20px_0_55px_rgba(11,42,91,0.14)]">
             <div className="flex items-center justify-between gap-3">
               <Brand compact />
               <button

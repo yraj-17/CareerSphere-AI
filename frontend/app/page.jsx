@@ -12,7 +12,6 @@ import ArchitectureFlow from '@/components/landing/ArchitectureFlow';
 import TechnologyStack from '@/components/landing/TechnologyStack';
 import SecuritySection from '@/components/landing/SecuritySection';
 import CTASection from '@/components/landing/CTASection';
-import Footer from '@/components/landing/Footer';
 
 export default function HomePage() {
   return (
@@ -31,7 +30,6 @@ export default function HomePage() {
       <TechnologyStack />
       <SecuritySection />
       <CTASection />
-      <Footer />
     </div>
   );
 }

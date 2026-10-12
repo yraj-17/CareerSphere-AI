@@ -10,7 +10,7 @@ export default function Dashboard3DVisual({ user }) {
   return (
     <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.03] p-6 sm:p-8 shadow-glow backdrop-blur-2xl">
       {/* Background ambient radial gradients matching Landing Page */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,143,50,0.15),transparent_35%),radial-gradient(circle_at_15%_15%,rgba(64,217,255,0.12),transparent_25%),radial-gradient(circle_at_85%_15%,rgba(155,124,255,0.12),transparent_25%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(16,47,107,0.09),transparent_35%),radial-gradient(circle_at_15%_15%,rgba(232,155,0,0.08),transparent_25%),radial-gradient(circle_at_85%_15%,rgba(16,47,107,0.07),transparent_25%)]" />
 
       <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
         <div className="max-w-md space-y-4">
@@ -77,7 +77,7 @@ export default function Dashboard3DVisual({ user }) {
             />
 
             {/* Glowing Central AI Orb */}
-            <div className="absolute left-1/2 top-1/2 h-36 w-36 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.9),rgba(255,143,50,0.6),rgba(7,9,15,0.98)_72%)] shadow-[0_0_60px_rgba(255,143,50,0.35)] flex flex-col items-center justify-center text-center p-2">
+            <div className="absolute left-1/2 top-1/2 h-36 w-36 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.96),rgba(232,155,0,0.64),rgba(11,42,91,0.98)_72%)] shadow-[0_0_40px_rgba(16,47,107,0.22)] flex flex-col items-center justify-center text-center p-2">
               <div className="absolute inset-3 rounded-full border border-white/20 bg-[radial-gradient(circle_at_65%_35%,rgba(255,255,255,0.3),transparent_40%)]" />
               <BrainCircuit className="h-6 w-6 text-white mb-1 drop-shadow" />
               <div className="text-[10px] uppercase tracking-[0.24em] text-accentSoft font-bold">AI Core</div>
@@ -88,7 +88,7 @@ export default function Dashboard3DVisual({ user }) {
             <motion.div
               animate={{ y: [0, -8, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute top-[8%] left-[2%] w-36 rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(255,143,50,0.2)] backdrop-blur-xl"
+              className="absolute top-[8%] left-[2%] w-36 rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(16,47,107,0.12)] backdrop-blur-xl"
               style={{ transform: 'translateZ(40px)' }}
             >
               <div className="flex items-center justify-between">
@@ -103,7 +103,7 @@ export default function Dashboard3DVisual({ user }) {
             <motion.div
               animate={{ y: [0, 8, 0] }}
               transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-              className="absolute bottom-[10%] right-[2%] w-38 rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(64,217,255,0.2)] backdrop-blur-xl"
+              className="absolute bottom-[10%] right-[2%] w-38 rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(16,47,107,0.12)] backdrop-blur-xl"
               style={{ transform: 'translateZ(50px)' }}
             >
               <div className="flex items-center justify-between">

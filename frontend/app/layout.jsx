@@ -10,8 +10,8 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-slate-950 text-slate-100 flex flex-col min-h-screen bg-grid-pattern">
+    <html lang="en">
+      <body className="flex min-h-screen flex-col bg-grid-pattern">
         <AuthProvider>
           <AppChrome>{children}</AppChrome>
         </AuthProvider>
