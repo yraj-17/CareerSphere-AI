@@ -45,8 +45,8 @@ function MenuItem({ icon: Icon, label, onClick, danger = false, disabled = false
         flex items-center gap-2.5 w-full px-3 py-2 text-xs rounded-lg
         transition-all duration-150 group
         ${danger
-          ? 'text-rose-400 hover:bg-rose-500/15 hover:text-rose-300'
-          : 'text-slate-300 hover:bg-white/10 hover:text-white'
+          ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
+          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
         }
         ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}
       `}
@@ -58,7 +58,7 @@ function MenuItem({ icon: Icon, label, onClick, danger = false, disabled = false
 }
 
 function Divider() {
-  return <div className="h-px bg-white/10 my-1 mx-2" />;
+  return <div className="mx-2 my-1 h-px bg-slate-100" />;
 }
 
 export default function MessageActionMenu({
@@ -115,9 +115,8 @@ export default function MessageActionMenu({
       className={`
         absolute ${posClass} ${alignClass} z-50
         w-44 py-1.5 px-1
-        bg-slate-900/95 backdrop-blur-xl
-        border border-white/10 rounded-2xl
-        shadow-[0_8px_32px_rgba(0,0,0,0.5)]
+        rounded-xl border border-slate-200 bg-white
+        shadow-[0_12px_32px_rgba(11,42,91,0.16)]
         animate-in fade-in zoom-in-95 duration-100
       `}
       role="menu"

@@ -40,6 +40,7 @@ import {
   Send,
   Loader2,
   AlertCircle,
+  PanelLeftOpen,
   Wifi,
   WifiOff,
   ExternalLink,
@@ -51,6 +52,7 @@ import {
 } from 'lucide-react';
 import MessageBubble from '@/components/messaging/MessageBubble';
 import TypingIndicator from '@/components/messaging/TypingIndicator';
+import { formatDateSeparatorLabel, getLocalDateKey } from '@/components/messaging/messageDateUtils';
 import { WS_STATE } from '@/hooks/useMessagingWebSocket';
 
 const DM_MAX_CHARS = 4000;
@@ -61,7 +63,7 @@ function AvatarInitials({ user, size = 'md' }) {
   const initials = `${user?.first_name?.[0] ?? ''}${user?.last_name?.[0] ?? ''}`.toUpperCase() || '?';
   const sz = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
   return (
-    <div className={`${sz} rounded-full bg-gradient-to-br from-accent/30 via-accent/10 to-violet-500/20 border border-accent/20 flex items-center justify-center font-bold text-white flex-shrink-0`}>
+    <div className={`chat-inverse ${sz} flex shrink-0 items-center justify-center rounded-full bg-brand-500 font-bold`}>
       {initials}
     </div>
   );
@@ -73,19 +75,19 @@ function ConnectionStatusBanner({ wsState }) {
   const configs = {
     [WS_STATE.CONNECTING]: {
       text: 'Connecting…',
-      cls: 'bg-amber-500/10 border-amber-500/20 text-amber-300',
+      cls: 'border-amber-200 bg-amber-50 text-amber-700',
       Icon: Loader2,
       spin: true,
     },
     [WS_STATE.DISCONNECTED]: {
       text: 'Reconnecting…',
-      cls: 'bg-amber-500/10 border-amber-500/20 text-amber-300',
+      cls: 'border-amber-200 bg-amber-50 text-amber-700',
       Icon: Wifi,
       spin: false,
     },
     [WS_STATE.FAILED]: {
       text: 'Unable to connect — check your network',
-      cls: 'bg-rose-500/10 border-rose-500/20 text-rose-300',
+      cls: 'border-red-200 bg-red-50 text-red-700',
       Icon: WifiOff,
       spin: false,
     },
@@ -95,7 +97,7 @@ function ConnectionStatusBanner({ wsState }) {
   if (!cfg) return null;
 
   return (
-    <div className={`flex items-center justify-center gap-2 px-3 py-1.5 text-xs border-b ${cfg.cls}`}>
+    <div className={`flex items-center justify-center gap-2 border-b px-3 py-1.5 text-xs ${cfg.cls}`}>
       <cfg.Icon className={`h-3.5 w-3.5 ${cfg.spin ? 'animate-spin' : ''}`} />
       {cfg.text}
     </div>
@@ -109,20 +111,20 @@ function PinnedMessageBanner({ pinnedMessage, onScrollTo, onUnpin }) {
     : (pinnedMessage.content || '').slice(0, 60) + ((pinnedMessage.content?.length ?? 0) > 60 ? '…' : '');
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
-      <Pin className="h-3 w-3 text-amber-400 flex-shrink-0" />
+    <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 transition-colors hover:bg-amber-100">
+      <Pin className="h-3 w-3 shrink-0 text-amber-600" />
       <button
         onClick={() => onScrollTo?.(pinnedMessage.id)}
         className="flex-1 text-left min-w-0"
       >
-        <p className="text-[10px] text-amber-400/70 mb-0.5">Pinned message</p>
-        <p className="text-xs text-slate-300 truncate">{preview}</p>
+        <p className="mb-0.5 text-[10px] font-semibold text-amber-700">Pinned message</p>
+        <p className="truncate text-xs text-slate-600">{preview}</p>
       </button>
       {onUnpin && (
         <button
           onClick={onUnpin}
           aria-label="Unpin message"
-          className="h-5 w-5 rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+          className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-amber-200 hover:text-slate-700"
         >
           <X className="h-3 w-3" />
         </button>
@@ -138,16 +140,16 @@ function ReplyBar({ replyingTo, isMine, onCancel }) {
     : (replyingTo.content || '').slice(0, 80) + ((replyingTo.content?.length ?? 0) > 80 ? '…' : '');
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10 bg-slate-950/60 backdrop-blur-sm">
-      <Reply className="h-3.5 w-3.5 text-accent flex-shrink-0" />
+    <div className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2">
+      <Reply className="h-3.5 w-3.5 shrink-0 text-brand-500" />
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] text-accent/70 mb-0.5">Replying to</p>
-        <p className="text-xs text-slate-400 truncate">{preview}</p>
+        <p className="mb-0.5 text-[10px] font-semibold text-brand-600">Replying to</p>
+        <p className="truncate text-xs text-slate-500">{preview}</p>
       </div>
       <button
         onClick={onCancel}
         aria-label="Cancel reply"
-        className="h-5 w-5 rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+        className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-200 hover:text-slate-700"
       >
         <X className="h-3 w-3" />
       </button>
@@ -155,34 +157,46 @@ function ReplyBar({ replyingTo, isMine, onCancel }) {
   );
 }
 
+function DateSeparator({ label }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2" data-testid="message-date-separator">
+      <span className="h-px flex-1 bg-slate-100" />
+      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-slate-100" />
+    </div>
+  );
+}
+
 function DeleteConfirmDialog({ message, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <div
-        className="relative w-full max-w-xs bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+        className="relative w-full max-w-xs rounded-xl border border-slate-200 bg-white p-5 shadow-[0_24px_64px_rgba(11,42,91,0.2)]"
         data-testid="delete-confirm-dialog"
       >
         <div className="flex items-center gap-2 mb-3">
-          <div className="h-8 w-8 rounded-full bg-rose-500/15 flex items-center justify-center">
-            <Trash2 className="h-4 w-4 text-rose-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50">
+            <Trash2 className="h-4 w-4 text-red-600" />
           </div>
-          <h3 className="text-sm font-semibold text-white">Delete for Everyone?</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Delete for Everyone?</h3>
         </div>
-        <p className="text-xs text-slate-400 leading-relaxed mb-4">
+        <p className="mb-4 text-xs leading-relaxed text-slate-500">
           This message will be permanently hidden for all participants and cannot be undone.
         </p>
         <div className="flex gap-2">
           <button
             onClick={onCancel}
-            className="flex-1 py-2 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 transition-colors"
+            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             data-testid="confirm-delete-btn"
-            className="flex-1 py-2 px-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-sm text-rose-300 hover:bg-rose-500/30 transition-colors"
+            className="chat-inverse flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold transition-colors hover:bg-red-700"
           >
             Delete
           </button>
@@ -216,34 +230,61 @@ export default function ChatWindow({
   onForward,
   onDeleteForMe,
   onDeleteForEveryone,
+  sidebarOpen = true,
+  mobileSidebarOpen = true,
+  onOpenSidebar,
 }) {
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // message to delete-for-everyone
   const endRef = useRef(null);
+  const scrollViewportRef = useRef(null);
   const inputRef = useRef(null);
   const prevLenRef = useRef(0);
+  const prevFirstIdRef = useRef(null);
+  const shouldStickToBottomRef = useRef(true);
+  const previousScrollHeightRef = useRef(0);
   // Ref bag for scroll-to by message ID
   const msgScrollRefs = useRef({});
 
   const other = conversation?.other_user;
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (messages.length > prevLenRef.current) {
+    prevLenRef.current = 0;
+    prevFirstIdRef.current = null;
+    shouldStickToBottomRef.current = true;
+    previousScrollHeightRef.current = 0;
+  }, [conversation?.conversation_id]);
+
+  // Auto-scroll only when the reader is already near the bottom. Loading older
+  // messages must not yank the reader away from the part of the thread they are viewing.
+  useEffect(() => {
+    const firstId = messages[0]?.id ?? null;
+    const prepended = Boolean(
+      prevFirstIdRef.current && firstId && firstId !== prevFirstIdRef.current && messages.length > prevLenRef.current
+    );
+    if (prepended && scrollViewportRef.current && previousScrollHeightRef.current) {
+      const heightDelta = scrollViewportRef.current.scrollHeight - previousScrollHeightRef.current;
+      scrollViewportRef.current.scrollTop += heightDelta;
+      previousScrollHeightRef.current = 0;
+    } else if (!prepended && messages.length > prevLenRef.current && shouldStickToBottomRef.current) {
       endRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
     prevLenRef.current = messages.length;
-  }, [messages.length]);
+    prevFirstIdRef.current = firstId;
+  }, [messages]);
 
-  // Auto-scroll on first load
-  useEffect(() => {
-    if (!loadingHistory && messages.length > 0) {
-      endRef.current?.scrollIntoView?.({ behavior: 'instant' });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingHistory]);
+  const handleHistoryScroll = useCallback((event) => {
+    const element = event.currentTarget;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 120;
+  }, []);
+
+  const handleLoadEarlier = useCallback(() => {
+    previousScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0;
+    onLoadMore?.();
+  }, [onLoadMore]);
 
   // Scroll to a specific message by ID (for reply navigation)
   const scrollToMessage = useCallback((msgId) => {
@@ -317,13 +358,23 @@ export default function ChatWindow({
   // Empty / no selection state
   if (!conversation) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-        <div className="h-16 w-16 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center">
-          <User className="h-8 w-8 text-slate-500" />
+      <div className="flex h-full flex-col bg-white">
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 px-4">
+          {(!sidebarOpen || !mobileSidebarOpen) && onOpenSidebar ? (
+            <button type="button" onClick={onOpenSidebar} aria-label="Open conversations sidebar" title="Open sidebar" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200">
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          ) : null}
+          <p className="text-sm font-semibold text-slate-900">Messages</p>
         </div>
-        <div>
-          <p className="text-sm font-medium text-slate-300">Select a conversation</p>
-          <p className="text-xs text-slate-500 mt-1">Choose a conversation from the left to start messaging</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+            <User className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Select a conversation</p>
+            <p className="mt-1 text-xs text-slate-500">Choose a conversation from the left to start messaging</p>
+          </div>
         </div>
       </div>
     );
@@ -333,13 +384,18 @@ export default function ChatWindow({
   const canSend = text.trim().length > 0 && text.length <= DM_MAX_CHARS && wsState === WS_STATE.CONNECTED;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col bg-white">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-slate-950/40 backdrop-blur-sm flex-shrink-0">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+        {!sidebarOpen && onOpenSidebar ? (
+          <button type="button" onClick={onOpenSidebar} aria-label="Open conversations sidebar" title="Open sidebar" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 md:flex">
+            <PanelLeftOpen className="h-4 w-4" />
+          </button>
+        ) : null}
         {/* Mobile back button */}
         <button
           onClick={onBack}
-          className="md:hidden flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors p-1 -ml-1"
+          className="-ml-1 flex items-center gap-1.5 p-1 text-slate-500 transition-colors hover:text-brand-600 md:hidden"
           aria-label="Back to conversations"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -351,7 +407,7 @@ export default function ChatWindow({
           <img
             src={other.profile_photo_url}
             alt={`${other.first_name} ${other.last_name}`}
-            className="h-10 w-10 rounded-full object-cover border border-white/10 flex-shrink-0"
+            className="h-9 w-9 shrink-0 rounded-full border border-slate-200 object-cover"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         ) : (
@@ -360,12 +416,15 @@ export default function ChatWindow({
 
         {/* Name + status */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white truncate">
+          <p className="truncate text-sm font-semibold text-slate-900">
             {other?.first_name} {other?.last_name}
           </p>
           <div className="flex items-center gap-1.5">
-            <span className={`h-1.5 w-1.5 rounded-full ${isOtherOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-            <span className="text-xs text-slate-400">
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 rounded-full ${isOtherOnline ? 'bg-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.12)]' : 'bg-slate-300'}`}
+            />
+            <span className={`text-xs ${isOtherOnline ? 'font-medium text-emerald-700' : 'text-slate-500'}`}>
               {isOtherOnline ? 'Online' : 'Offline'}
             </span>
           </div>
@@ -375,11 +434,13 @@ export default function ChatWindow({
         {other?.id && (
           <Link
             href={`/dashboard/networking/${other.id}`}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-full px-3 py-1.5 hover:border-white/20 transition-all"
+            className="group flex shrink-0 items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-100 hover:shadow-[0_8px_20px_rgba(11,42,91,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             title="View Profile"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Profile</span>
+            <span className="chat-inverse flex h-6 w-6 items-center justify-center rounded-lg bg-brand-500 shadow-sm transition-colors group-hover:bg-brand-600">
+              <ExternalLink className="h-3.5 w-3.5" />
+            </span>
+            <span className="hidden sm:inline">View profile</span>
           </Link>
         )}
       </div>
@@ -395,14 +456,14 @@ export default function ChatWindow({
       />
 
       {/* ── Message area ─────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto chat-scroll flex flex-col py-4 gap-2 min-h-0">
+      <div ref={scrollViewportRef} onScroll={handleHistoryScroll} className="chat-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-white px-1 py-5 sm:px-2">
         {/* Load more */}
         {hasMore && (
           <div className="flex justify-center py-2">
             <button
-              onClick={onLoadMore}
+              onClick={handleLoadEarlier}
               disabled={loadingHistory}
-              className="flex items-center gap-2 text-xs text-slate-400 hover:text-accent border border-white/10 rounded-full px-4 py-2 hover:border-accent/30 transition-all"
+              className="flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs text-slate-500 transition-all hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
             >
               {loadingHistory ? (
                 <><Loader2 className="h-3 w-3 animate-spin" /> Loading…</>
@@ -430,20 +491,34 @@ export default function ChatWindow({
         )}
 
         {/* Messages */}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            isMine={msg.sender_id === currentUser?.id}
-            scrollRef={msgScrollRefs}
-            onReply={handleReply}
-            onStar={() => onStar?.(msg)}
-            onPin={() => onPin?.(msg)}
-            onForward={() => onForward?.(msg)}
-            onDeleteForMe={() => onDeleteForMe?.(msg)}
-            onDeleteForEveryone={() => handleDeleteForEveryoneClick(msg)}
-          />
-        ))}
+        {messages.reduce((rendered, msg) => {
+          const dateKey = getLocalDateKey(msg.created_at);
+          const showDateSeparator = Boolean(dateKey && dateKey !== rendered.dateKey);
+          const nextDateKey = dateKey || rendered.dateKey;
+
+          return {
+            dateKey: nextDateKey,
+            nodes: [
+              ...rendered.nodes,
+              <React.Fragment key={msg.id}>
+                {showDateSeparator ? (
+                  <DateSeparator label={formatDateSeparatorLabel(msg.created_at)} />
+                ) : null}
+                <MessageBubble
+                  message={msg}
+                  isMine={msg.sender_id === currentUser?.id}
+                  scrollRef={msgScrollRefs}
+                  onReply={handleReply}
+                  onStar={() => onStar?.(msg)}
+                  onPin={() => onPin?.(msg)}
+                  onForward={() => onForward?.(msg)}
+                  onDeleteForMe={() => onDeleteForMe?.(msg)}
+                  onDeleteForEveryone={() => handleDeleteForEveryoneClick(msg)}
+                />
+              </React.Fragment>,
+            ],
+          };
+        }, { dateKey: null, nodes: [] }).nodes}
 
         {/* Typing indicator */}
         {isTyping && (
@@ -464,16 +539,16 @@ export default function ChatWindow({
       )}
 
       {/* ── Input bar ─────────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 border-t border-white/10 bg-slate-950/40 backdrop-blur-sm px-4 py-3">
+      <div className="shrink-0 border-t border-slate-200 bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
         {/* Send error */}
         {sendError && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
             {sendError}
           </div>
         )}
 
-        <div className="flex items-end gap-3">
+        <div className="mx-auto flex max-w-[900px] items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 shadow-[0_8px_24px_rgba(16,47,107,0.08)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
           <textarea
             ref={inputRef}
             data-testid="message-input"
@@ -483,8 +558,8 @@ export default function ChatWindow({
             onKeyDown={handleKeyDown}
             placeholder={replyingTo ? 'Reply…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
             disabled={wsState !== WS_STATE.CONNECTED}
-            className="flex-1 resize-none bg-white/[0.06] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed max-h-32 overflow-y-auto chat-scroll leading-relaxed"
-            style={{ minHeight: '42px' }}
+            className="block max-h-32 min-h-10 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2 py-1.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ minHeight: '40px' }}
           />
 
           {/* Char count — only show when close to limit */}
@@ -499,10 +574,10 @@ export default function ChatWindow({
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send message"
-            className={`flex-shrink-0 h-10 w-10 rounded-2xl flex items-center justify-center transition-all ${
+            className={`chat-inverse flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${
               canSend
-                ? 'bg-accent text-black shadow-[0_4px_20px_rgba(255,143,50,0.35)] hover:bg-accentSoft hover:scale-105'
-                : 'bg-white/5 border border-white/10 text-slate-600 cursor-not-allowed'
+                ? 'bg-brand-500 shadow-sm hover:bg-brand-600'
+                : 'border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
           >
             <Send className="h-4 w-4" />

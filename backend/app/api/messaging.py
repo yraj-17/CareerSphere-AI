@@ -28,13 +28,14 @@ This router uses prefix /messaging to avoid any route conflict.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, get_db
-from app.db.models import DirectConversation, User
+from app.db.models import DirectConversation, Profile, User
 from app.schemas.messaging import (
     ConversationListItem,
     ConversationListResponse,
@@ -57,6 +58,7 @@ from app.services.messaging_fanout import (
     publish_message_pinned,
     publish_new_message,
 )
+from app.services.storage_service import presigned_get_url
 from app.services.websocket_manager import manager as ws_manager
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
@@ -68,19 +70,36 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _profile_photo_url(user: User) -> Optional[str]:
+    """Return the participant's presigned profile-photo URL when available."""
+    if not user.profile or not user.profile.profile_photo:
+        return None
+    try:
+        return presigned_get_url(user.profile.profile_photo.object_key)
+    except Exception:
+        return None
+
+
 def _participant_summary(db: Session, user_id: str) -> MessageParticipantSummary:
     """Load a User row and project it to the safe public summary schema."""
-    user: User | None = db.query(User).filter(User.id == user_id).first()
+    user: User | None = (
+        db.query(User)
+        .options(joinedload(User.profile).joinedload(Profile.profile_photo))
+        .filter(User.id == user_id)
+        .first()
+    )
     if user is None:
         # Defensive — participant rows always reference valid users via FK.
         return MessageParticipantSummary(
             id=user_id, username="unknown", first_name="Deleted", last_name="User"
         )
+
     return MessageParticipantSummary(
         id=user.id,
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
+        profile_photo_url=_profile_photo_url(user),
     )
 
 
@@ -257,7 +276,12 @@ def list_conversations(
     other_ids = list({s.other_user_id for s in summaries if s.other_user_id})
     users_by_id: dict[str, User] = {}
     if other_ids:
-        rows = db.query(User).filter(User.id.in_(other_ids)).all()
+        rows = (
+            db.query(User)
+            .options(joinedload(User.profile).joinedload(Profile.profile_photo))
+            .filter(User.id.in_(other_ids))
+            .all()
+        )
         users_by_id = {u.id: u for u in rows}
 
     items: list[ConversationListItem] = []
@@ -269,6 +293,7 @@ def list_conversations(
                 username=u.username,
                 first_name=u.first_name,
                 last_name=u.last_name,
+                profile_photo_url=_profile_photo_url(u),
             )
             if u
             else MessageParticipantSummary(
@@ -402,6 +427,18 @@ def list_messages(
     conversation_id: str,
     limit: int = Query(default=50, ge=1, le=200, description="Page size (max 200)."),
     offset: int = Query(default=0, ge=0, description="Pagination offset."),
+    latest: bool = Query(
+        default=False,
+        description="Return the newest page, ordered chronologically for the client.",
+    ),
+    before_created_at: Optional[datetime] = Query(
+        default=None,
+        description="Return messages strictly before this persisted timestamp.",
+    ),
+    before_id: Optional[str] = Query(
+        default=None,
+        description="Tie-breaker ID for before_created_at cursor pagination.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MessageListResponse:
@@ -411,13 +448,23 @@ def list_messages(
 
     - Only accessible to conversation participants.
     - Non-participants receive **403**.
-    - Messages are ordered by ``created_at ASC, id ASC`` for stable pagination.
+    - Default offset pages are ordered by ``created_at ASC, id ASC``.
+    - ``latest=true`` returns the newest page in chronological order.
+    - ``before_created_at`` + ``before_id`` fetches the preceding page without
+      reloading all earlier messages.
     - Messages deleted-for-me are excluded.
     - Messages deleted-for-everyone are included with sanitised content.
     - Per-user fields (is_starred, is_pinned, etc.) are computed for the caller.
     """
     dicts = mgmt.list_messages_for_user(
-        db, conversation_id, current_user, limit=limit, offset=offset
+        db,
+        conversation_id,
+        current_user,
+        limit=limit,
+        offset=offset,
+        latest=latest,
+        before_created_at=before_created_at,
+        before_id=before_id,
     )
     return MessageListResponse(
         messages=[DirectMessageResponse.from_dict(d) for d in dicts],

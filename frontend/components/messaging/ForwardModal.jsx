@@ -26,7 +26,7 @@ function ConversationRow({ conv, onSelect, loading }) {
     <button
       onClick={() => onSelect(conv.conversation_id)}
       disabled={loading}
-      className="flex items-center gap-3 w-full px-4 py-3 hover:bg-white/[0.06] transition-colors rounded-xl group disabled:opacity-50"
+      className="group flex w-full items-center gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-slate-100 disabled:opacity-50"
     >
       {/* Avatar */}
       {other?.profile_photo_url ? (
@@ -38,23 +38,23 @@ function ConversationRow({ conv, onSelect, loading }) {
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
         />
       ) : (
-        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-accent/30 via-accent/10 to-violet-500/20 border border-accent/20 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+        <div className="chat-inverse flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-bold">
           {initials}
         </div>
       )}
 
       {/* Name */}
       <div className="flex-1 min-w-0 text-left">
-        <p className="text-sm font-medium text-white truncate">
+        <p className="truncate text-sm font-medium text-slate-900">
           {other?.first_name} {other?.last_name}
         </p>
-        <p className="text-xs text-slate-500 truncate">
+        <p className="truncate text-xs text-slate-500">
           {conv.latest_message_content || 'No messages yet'}
         </p>
       </div>
 
       {/* Forward indicator */}
-      <Share2 className="h-3.5 w-3.5 text-slate-600 group-hover:text-accent transition-colors flex-shrink-0" />
+      <Share2 className="h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:text-brand-600" />
     </button>
   );
 }
@@ -124,20 +124,20 @@ export default function ForwardModal({
 
       {/* Modal panel */}
       <div
-        className="relative w-full max-w-sm bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden"
+        className="relative flex w-full max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_rgba(11,42,91,0.2)]"
         style={{ maxHeight: '70vh' }}
         onClick={(e) => e.stopPropagation()}
         data-testid="forward-modal"
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-          <Share2 className="h-4.5 w-4.5 text-accent" />
-          <h2 className="text-sm font-semibold text-white flex-1">Forward Message</h2>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
+          <Share2 className="h-4.5 w-4.5 text-brand-600" />
+          <h2 className="flex-1 text-sm font-semibold text-slate-900">Forward Message</h2>
           <button
             onClick={handleClose}
             disabled={forwarding}
             aria-label="Close"
-            className="h-7 w-7 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4 text-slate-400" />
           </button>
@@ -145,9 +145,9 @@ export default function ForwardModal({
 
         {/* Message preview */}
         {sourceMessage && (
-          <div className="mx-4 mt-3 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10">
-            <p className="text-[11px] text-slate-500 mb-1">Forwarding:</p>
-            <p className="text-xs text-slate-300 leading-relaxed">{previewTruncated}</p>
+          <div className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="mb-1 text-[11px] text-slate-500">Forwarding:</p>
+            <p className="text-xs leading-relaxed text-slate-700">{previewTruncated}</p>
           </div>
         )}
 
@@ -161,7 +161,7 @@ export default function ForwardModal({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
-              className="w-full bg-white/[0.06] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
             />
           </div>
         </div>
@@ -191,7 +191,7 @@ export default function ForwardModal({
 
         {/* Loading overlay */}
         {forwarding && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
             <Loader2 className="h-6 w-6 text-accent animate-spin" />
           </div>
         )}

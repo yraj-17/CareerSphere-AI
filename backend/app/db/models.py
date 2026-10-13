@@ -58,6 +58,8 @@ class Conversation(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(120), nullable=False, default="New conversation")
+    is_pinned = Column(Boolean, nullable=False, server_default="false", default=False, index=True)
+    is_favorite = Column(Boolean, nullable=False, server_default="false", default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

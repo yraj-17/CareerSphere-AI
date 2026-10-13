@@ -30,7 +30,7 @@ export default function AICareerAssistantPage() {
   }
 
   return (
-    <div className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 flex flex-col min-h-[calc(100vh-10.5rem)]">
+    <div className="flex min-h-0 flex-1 w-full flex-col">
       <CareerAssistant />
     </div>
   );

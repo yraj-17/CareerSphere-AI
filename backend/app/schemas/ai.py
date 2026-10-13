@@ -19,6 +19,8 @@ class ConversationSummary(BaseModel):
 
     id: str
     title: str
+    is_pinned: bool = False
+    is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -36,6 +38,22 @@ class ChatMessageOut(BaseModel):
 
 class ConversationDetail(ConversationSummary):
     messages: List[ChatMessageOut] = Field(default_factory=list)
+
+
+class ConversationUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=120)
+    is_pinned: Optional[bool] = None
+    is_favorite: Optional[bool] = None
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Conversation title cannot be empty.")
+        return cleaned
 
 
 class SendMessageRequest(BaseModel):

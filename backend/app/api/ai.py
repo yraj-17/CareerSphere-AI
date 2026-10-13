@@ -9,6 +9,7 @@ from app.schemas.ai import (
     AIResponse,
     ConversationDetail,
     ConversationSummary,
+    ConversationUpdateRequest,
     GrammarCheckRequest,
     GrammarCheckResponse,
     ProfileOptimizationResponse,
@@ -125,6 +126,23 @@ def get_conversation(
 ):
     conversation = conversation_service.get_conversation_with_messages(db, current_user, conversation_id)
     return conversation
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationSummary)
+def update_conversation(
+    conversation_id: str,
+    request: ConversationUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return conversation_service.update_conversation(
+        db,
+        current_user,
+        conversation_id,
+        title=request.title,
+        is_pinned=request.is_pinned,
+        is_favorite=request.is_favorite,
+    )
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=SendMessageResponse)

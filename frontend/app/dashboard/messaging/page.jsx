@@ -51,8 +51,8 @@ function MessagingRouteContent() {
 
   return (
     <div
-      className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 flex flex-col"
-      style={{ height: 'calc(100vh - 10rem)' }}
+      className="flex h-[100dvh] min-h-[100dvh] min-w-0 w-full flex-1 flex-col"
+      style={{ height: '100vh', minHeight: '100vh' }}
     >
       <MessagingPage currentUser={user} initialConvId={resolvedConvId} />
     </div>

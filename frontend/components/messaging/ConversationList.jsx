@@ -1,28 +1,12 @@
 'use client';
 
-/**
- * ConversationList — left panel showing all conversations.
- *
- * Props:
- *   conversations  {Array}          — list from REST API
- *   selected       {string|null}    — active conversationId
- *   onSelect       (conv) => void   — open a conversation
- *   loading        {boolean}
- *   error          {string|null}
- *   onlineUsers    {Set<string>}    — set of online user IDs
- *   currentUserId  {string}
- *   unreadMap      {Object}         — { [convId]: count } overrides from WS
- */
-
-import React from 'react';
-import { Loader2, MessageSquare, AlertCircle, RefreshCw } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { AlertCircle, Loader2, MessageSquare, RefreshCw, SearchX } from 'lucide-react';
 
 function formatRelativeTime(iso) {
   if (!iso) return '';
   try {
-    const now = Date.now();
-    const then = new Date(iso).getTime();
-    const diff = now - then;
+    const diff = Date.now() - new Date(iso).getTime();
     if (diff < 60_000) return 'now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
     if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
@@ -32,11 +16,14 @@ function formatRelativeTime(iso) {
   }
 }
 
-function AvatarInitials({ user, size = 'md' }) {
+function displayName(user) {
+  return [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Unknown contact';
+}
+
+function AvatarInitials({ user }) {
   const initials = `${user?.first_name?.[0] ?? ''}${user?.last_name?.[0] ?? ''}`.toUpperCase() || '?';
-  const sz = size === 'sm' ? 'h-9 w-9 text-sm' : 'h-10 w-10 text-sm';
   return (
-    <div className={`${sz} rounded-full bg-gradient-to-br from-accent/30 via-accent/10 to-violet/20 border border-accent/20 flex items-center justify-center font-bold text-white flex-shrink-0 select-none`}>
+    <div className="chat-inverse flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold">
       {initials}
     </div>
   );
@@ -45,8 +32,9 @@ function AvatarInitials({ user, size = 'md' }) {
 function OnlineDot({ online }) {
   return (
     <span
-      className={`h-2.5 w-2.5 rounded-full border-2 border-slate-900 flex-shrink-0 ${online ? 'bg-emerald-400' : 'bg-slate-600'}`}
+      aria-label={online ? 'Online' : 'Offline'}
       title={online ? 'Online' : 'Offline'}
+      className={`block h-2.5 w-2.5 rounded-full border-2 border-white ${online ? 'bg-[#22c55e] shadow-[0_0_0_2px_rgba(34,197,94,0.12)]' : 'bg-slate-300'}`}
     />
   );
 }
@@ -61,112 +49,116 @@ export default function ConversationList({
   currentUserId,
   unreadMap = {},
   onRetry,
+  searchQuery = '',
 }) {
+  const filteredConversations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return conversations;
+    return conversations.filter((conversation) => {
+      const other = conversation.other_user;
+      const name = displayName(other).toLowerCase();
+      const username = other?.username?.toLowerCase() || '';
+      const preview = conversation.latest_message_content?.toLowerCase() || '';
+      return name.includes(query) || username.includes(query) || preview.includes(query);
+    });
+  }, [conversations, searchQuery]);
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
-        <Loader2 className="h-6 w-6 text-accent animate-spin" />
-        <p className="text-sm text-slate-400">Loading conversations…</p>
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+        <Loader2 className="h-5 w-5 animate-spin text-brand-500" />
+        <p className="text-sm text-slate-500">Loading conversations…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 py-12 px-4 text-center">
-        <AlertCircle className="h-6 w-6 text-rose-400" />
-        <p className="text-sm text-slate-300">{error}</p>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            className="flex items-center gap-1.5 text-xs text-accent hover:text-accentSoft transition-colors"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Retry
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+        <AlertCircle className="h-5 w-5 text-red-500" />
+        <p className="text-sm text-slate-600">{error}</p>
+        {onRetry ? (
+          <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200">
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
           </button>
-        )}
+        ) : null}
       </div>
     );
   }
 
   if (conversations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 py-12 px-4 text-center">
-        <div className="h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-          <MessageSquare className="h-6 w-6 text-slate-500" />
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <MessageSquare className="h-5 w-5" />
         </div>
-        <p className="text-sm font-medium text-slate-300">No conversations yet</p>
-        <p className="text-xs text-slate-500 leading-relaxed">
-          Connect with someone and send them a message to get started.
-        </p>
+        <p className="text-sm font-semibold text-slate-800">No conversations yet</p>
+        <p className="max-w-[220px] text-xs leading-5 text-slate-500">Connect with someone and send them a message to get started.</p>
+      </div>
+    );
+  }
+
+  if (filteredConversations.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <SearchX className="h-5 w-5 text-slate-400" />
+        <p className="text-sm font-semibold text-slate-700">No matches found</p>
+        <p className="text-xs text-slate-500">Try a different name or message preview.</p>
       </div>
     );
   }
 
   return (
-    <div
-      data-testid="conversation-list"
-      className="flex flex-col overflow-y-auto chat-scroll h-full"
-    >
-      {conversations.map((conv) => {
-        const other = conv.other_user;
+    <div data-testid="conversation-list" className="chat-scroll flex h-full min-h-0 flex-col overflow-y-auto px-2 pb-3">
+      {filteredConversations.map((conversation) => {
+        const other = conversation.other_user;
+        const name = displayName(other);
         const isOnline = other?.id ? onlineUsers.has(other.id) : false;
-        const isActive = selected === conv.conversation_id;
-        const unread = unreadMap[conv.conversation_id] ?? conv.unread_count ?? 0;
-        const preview = conv.latest_message_content;
-        const isMineLatest = conv.latest_message_sender_id === currentUserId;
+        const isActive = selected === conversation.conversation_id;
+        const unread = unreadMap[conversation.conversation_id] ?? conversation.unread_count ?? 0;
+        const preview = conversation.latest_message_content;
+        const isMineLatest = conversation.latest_message_sender_id === currentUserId;
 
         return (
           <button
-            key={conv.conversation_id}
+            key={conversation.conversation_id}
+            type="button"
             data-testid="conversation-item"
-            onClick={() => onSelect(conv)}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3.5 border-b border-white/5 transition-all duration-150 ${
-              isActive
-                ? 'bg-accent/10 border-l-2 border-l-accent'
-                : 'hover:bg-white/[0.04] border-l-2 border-l-transparent'
+            aria-current={isActive ? 'true' : undefined}
+            onClick={() => onSelect(conversation)}
+            className={`group flex min-h-[72px] w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
+              isActive ? 'bg-brand-50' : 'hover:bg-slate-100'
             }`}
           >
-            {/* Avatar + online dot */}
-            <div className="relative flex-shrink-0">
+            <div className="relative shrink-0">
               {other?.profile_photo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={other.profile_photo_url}
-                  alt={`${other.first_name} ${other.last_name}`}
-                  className="h-10 w-10 rounded-full object-cover border border-white/10"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  alt={name}
+                  className="h-10 w-10 rounded-full border border-slate-200 object-cover"
+                  onError={(event) => { event.currentTarget.style.display = 'none'; }}
                 />
-              ) : (
-                <AvatarInitials user={other} />
-              )}
-              <span className="absolute -bottom-0.5 -right-0.5">
+              ) : <AvatarInitials user={other} />}
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center">
                 <OnlineDot online={isOnline} />
               </span>
             </div>
 
-            {/* Text content */}
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-slate-200'}`}>
-                  {other?.first_name} {other?.last_name}
-                </span>
-                <span className="text-[11px] text-slate-500 flex-shrink-0">
-                  {formatRelativeTime(conv.latest_message_at || conv.updated_at)}
-                </span>
+                <span className={`truncate text-sm font-semibold ${isActive ? 'text-brand-700' : 'text-slate-800'}`}>{name}</span>
+                <span className="shrink-0 text-[11px] text-slate-400">{formatRelativeTime(conversation.latest_message_at || conversation.updated_at)}</span>
               </div>
-              <div className="flex items-center justify-between gap-2 mt-0.5">
-                <p className={`text-xs truncate ${unread > 0 ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
-                  {preview
-                    ? `${isMineLatest ? 'You: ' : ''}${preview}`
-                    : <span className="italic text-slate-600">No messages yet</span>
-                  }
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className={`truncate text-xs ${unread > 0 ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>
+                  {preview ? `${isMineLatest ? 'You: ' : ''}${preview}` : <span className="italic text-slate-400">No messages yet</span>}
                 </p>
-                {unread > 0 && (
-                  <span className="flex-shrink-0 h-4.5 min-w-[1.25rem] px-1.5 rounded-full bg-accent text-black text-[10px] font-bold flex items-center justify-center">
+                {unread > 0 ? (
+                  <span className="chat-inverse flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-500 px-1.5 text-[10px] font-bold">
                     {unread > 99 ? '99+' : unread}
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           </button>

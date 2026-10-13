@@ -223,6 +223,11 @@ export const deleteConversation = async (conversationId) => {
   await apiClient.delete(`/api/ai/conversations/${conversationId}`);
 };
 
+export const updateConversation = async (conversationId, changes) => {
+  const response = await apiClient.patch(`/api/ai/conversations/${conversationId}`, changes);
+  return response.data;
+};
+
 export const checkGrammar = async (text) => {
   const response = await apiClient.post(
     '/api/ai/grammar-check',
@@ -755,13 +760,19 @@ export const getConversationById = async (conversationId) => {
  * List messages for a conversation (chronological, oldest first).
  *
  * @param {string} conversationId
- * @param {{ limit?: number, offset?: number }} params
- * @returns {Promise<{ messages: Array, total: number, limit: number, offset: number }>}
+ * @param {{ limit?: number, offset?: number, latest?: boolean, beforeCreatedAt?: string, beforeId?: string }} params
+ * @returns {Promise<{ messages: Array, limit: number, offset: number }>}
  */
-export const listMessages = async (conversationId, { limit = 50, offset = 0 } = {}) => {
+export const listMessages = async (
+  conversationId,
+  { limit = 50, offset = 0, latest = false, beforeCreatedAt, beforeId } = {},
+) => {
+  const params = { limit, offset, latest };
+  if (beforeCreatedAt) params.before_created_at = beforeCreatedAt;
+  if (beforeId) params.before_id = beforeId;
   const response = await apiClient.get(
     `/api/messaging/conversations/${conversationId}/messages`,
-    { params: { limit, offset } }
+    { params },
   );
   return response.data;
 };

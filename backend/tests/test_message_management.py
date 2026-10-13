@@ -26,6 +26,8 @@ Architecture:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -554,6 +556,44 @@ class TestReply:
 # ---------------------------------------------------------------------------
 
 class TestListMessages:
+    def test_latest_and_before_cursor_return_adjacent_chronological_pages(self, db, monkeypatch):
+        _patch_connection(monkeypatch)
+        alice = _user(db, "alice-cursor", "alicecursor")
+        bob = _user(db, "bob-cursor", "bobcursor")
+        conv = _conversation(db, alice, bob)
+        for index in range(5):
+            message = _message(db, conv, alice, f"message-{index}")
+            message.created_at = datetime(
+                2026,
+                1,
+                1,
+                0,
+                0,
+                index,
+                tzinfo=timezone.utc,
+            )
+        db.flush()
+
+        latest = list_messages_for_user(db, conv.id, alice, limit=3, latest=True)
+        assert [message["content"] for message in latest] == [
+            "message-2",
+            "message-3",
+            "message-4",
+        ]
+
+        before = list_messages_for_user(
+            db,
+            conv.id,
+            alice,
+            limit=3,
+            before_created_at=datetime.fromisoformat(latest[0]["created_at"]),
+            before_id=latest[0]["id"],
+        )
+        assert [message["content"] for message in before] == [
+            "message-0",
+            "message-1",
+        ]
+
     def test_deleted_for_me_excluded(self, db, monkeypatch):
         _patch_connection(monkeypatch)
         alice = _user(db, "alice-lm1", "alicelmm1")

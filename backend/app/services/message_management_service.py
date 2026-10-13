@@ -54,6 +54,7 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -679,6 +680,9 @@ def list_messages_for_user(
     current_user: User,
     limit: int = 50,
     offset: int = 0,
+    latest: bool = False,
+    before_created_at: Optional[datetime] = None,
+    before_id: Optional[str] = None,
 ) -> list[dict]:
     """
     Return paginated messages with per-user fields computed.
@@ -689,7 +693,9 @@ def list_messages_for_user(
       - Per-user is_starred, is_pinned, etc. are included in each dict.
 
     Returns a list of serialized message dicts (NOT ORM objects).
-    Uses the existing (conversation_id, created_at) index.
+    Uses the existing (conversation_id, created_at) index. The legacy offset
+    contract remains available for callers that need it; ``latest`` and the
+    ``before_*`` cursor are used by the chat UI to page backwards efficiently.
     """
     # Authorization
     get_direct_conversation_for_user(db, conversation_id, current_user)
@@ -701,17 +707,49 @@ def list_messages_for_user(
         .scalar_subquery()
     )
 
-    msgs = (
-        db.query(DirectMessage)
-        .filter(
-            DirectMessage.conversation_id == conversation_id,
-            DirectMessage.id.notin_(deleted_for_me_sub),
-        )
-        .order_by(DirectMessage.created_at.asc(), DirectMessage.id.asc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    message_query = db.query(DirectMessage).filter(
+        DirectMessage.conversation_id == conversation_id,
+        DirectMessage.id.notin_(deleted_for_me_sub),
     )
+
+    if before_created_at is not None:
+        if before_id:
+            message_query = message_query.filter(
+                or_(
+                    DirectMessage.created_at < before_created_at,
+                    and_(
+                        DirectMessage.created_at == before_created_at,
+                        DirectMessage.id < before_id,
+                    ),
+                )
+            )
+        else:
+            message_query = message_query.filter(
+                DirectMessage.created_at < before_created_at
+            )
+        msgs = (
+            message_query
+            .order_by(DirectMessage.created_at.desc(), DirectMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+        msgs.reverse()
+    elif latest:
+        msgs = (
+            message_query
+            .order_by(DirectMessage.created_at.desc(), DirectMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+        msgs.reverse()
+    else:
+        msgs = (
+            message_query
+            .order_by(DirectMessage.created_at.asc(), DirectMessage.id.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
 
     # Batch-load star state for all fetched messages
     msg_ids = [m.id for m in msgs]

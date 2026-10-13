@@ -64,6 +64,27 @@ def delete_conversation(db: Session, user: User, conversation_id: str) -> None:
     db.commit()
 
 
+def update_conversation(
+    db: Session,
+    user: User,
+    conversation_id: str,
+    *,
+    title: str | None = None,
+    is_pinned: bool | None = None,
+    is_favorite: bool | None = None,
+) -> Conversation:
+    conversation = get_owned_conversation(db, user, conversation_id)
+    if title is not None:
+        conversation.title = title
+    if is_pinned is not None:
+        conversation.is_pinned = is_pinned
+    if is_favorite is not None:
+        conversation.is_favorite = is_favorite
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+
 def _looks_like_id(value: str) -> bool:
     try:
         uuid.UUID(str(value))

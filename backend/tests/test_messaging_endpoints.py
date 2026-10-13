@@ -449,6 +449,37 @@ def test_23_message_history_pagination(open_conversation):
     assert ids1.isdisjoint(ids2)
 
 
+def test_23b_latest_history_cursor_paginates_backwards(open_conversation):
+    conv_id, user_a, user_b = open_conversation
+    for i in range(5):
+        _send_message(user_a, conv_id, f"Cursor {i}")
+
+    latest = client.get(
+        f"/api/messaging/conversations/{conv_id}/messages",
+        params={"limit": 3, "latest": "true"},
+        headers=user_a["headers"],
+    )
+    assert latest.status_code == 200
+    latest_messages = latest.json()["messages"]
+    assert len(latest_messages) == 3
+
+    before = client.get(
+        f"/api/messaging/conversations/{conv_id}/messages",
+        params={
+            "limit": 3,
+            "before_created_at": latest_messages[0]["created_at"],
+            "before_id": latest_messages[0]["id"],
+        },
+        headers=user_a["headers"],
+    )
+    assert before.status_code == 200
+    before_messages = before.json()["messages"]
+    assert len(before_messages) == 2
+    assert {
+        message["id"] for message in latest_messages
+    }.isdisjoint({message["id"] for message in before_messages})
+
+
 def test_24_message_response_contains_expected_fields(open_conversation):
     conv_id, user_a, user_b = open_conversation
     msg = _send_message(user_a, conv_id, "Check fields")

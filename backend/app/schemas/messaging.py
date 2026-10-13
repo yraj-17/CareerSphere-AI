@@ -46,6 +46,7 @@ class MessageParticipantSummary(BaseModel):
     username: str
     first_name: str
     last_name: str
+    profile_photo_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

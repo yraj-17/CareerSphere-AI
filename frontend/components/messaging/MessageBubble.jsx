@@ -18,39 +18,31 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { CheckCheck, Check, ExternalLink, Star, Pin, Share2, Reply } from 'lucide-react';
+import { CheckCheck, Check, ExternalLink, MoreVertical, Star, Pin, Share2, Reply } from 'lucide-react';
 import MessageActionMenu from '@/components/messaging/MessageActionMenu';
+import { formatMessageTime } from '@/components/messaging/messageDateUtils';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function formatTime(iso) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function DeliveryStatus({ message }) {
+function DeliveryStatus({ message, isMine }) {
   if (message.read_at) {
     return (
-      <span className="flex items-center gap-0.5 text-cyan-400" title="Read">
+      <span className={`flex items-center gap-0.5 ${isMine ? 'text-white/80' : 'text-brand-500'}`} title="Read">
         <CheckCheck className="h-3 w-3" />
       </span>
     );
   }
   if (message.delivered_at) {
     return (
-      <span className="flex items-center gap-0.5 text-slate-400" title="Delivered">
+      <span className={`flex items-center gap-0.5 ${isMine ? 'text-white/70' : 'text-slate-400'}`} title="Delivered">
         <CheckCheck className="h-3 w-3" />
       </span>
     );
   }
   return (
-    <span className="flex items-center gap-0.5 text-slate-500" title="Sent">
+    <span className={`flex items-center gap-0.5 ${isMine ? 'text-white/70' : 'text-slate-500'}`} title="Sent">
       <Check className="h-3 w-3" />
     </span>
   );
@@ -70,16 +62,16 @@ function ReplyPreview({ replyTo, isMine, onScrollTo }) {
         mb-1.5 px-2.5 py-1.5 rounded-xl text-left w-full max-w-full
         border-l-2 transition-colors
         ${isMine
-          ? 'bg-black/20 border-black/40 hover:bg-black/30'
-          : 'bg-white/5 border-accent/40 hover:bg-white/10'
+          ? 'bg-white/15 border-white/30 hover:bg-white/20'
+          : 'bg-brand-50 border-brand-200 hover:bg-brand-100'
         }
       `}
     >
-      <p className={`text-[10px] font-semibold mb-0.5 ${isMine ? 'text-black/50' : 'text-accent/80'}`}>
+      <p className={`mb-0.5 text-[10px] font-semibold ${isMine ? 'text-white/75' : 'text-brand-700'}`}>
         <Reply className="h-2.5 w-2.5 inline mr-1" />
         Replied to message
       </p>
-      <p className={`text-[11px] truncate ${isMine ? 'text-black/60' : 'text-slate-400'} ${isDeleted ? 'italic' : ''}`}>
+      <p className={`truncate text-[11px] ${isMine ? 'text-white/80' : 'text-slate-600'} ${isDeleted ? 'italic' : ''}`}>
         {preview}
       </p>
     </button>
@@ -88,7 +80,7 @@ function ReplyPreview({ replyTo, isMine, onScrollTo }) {
 
 function ForwardedBadge({ isMine }) {
   return (
-    <div className={`flex items-center gap-1 mb-1 text-[10px] ${isMine ? 'text-black/40' : 'text-slate-500'}`}>
+    <div className={`mb-1 flex items-center gap-1 text-[10px] ${isMine ? 'text-white/70' : 'text-slate-500'}`}>
       <Share2 className="h-2.5 w-2.5" />
       <span>Forwarded</span>
     </div>
@@ -99,7 +91,7 @@ function ResourceShareCard({ resource, isMine }) {
   if (!resource) {
     return (
       <div className={`mt-2 rounded-2xl border px-3 py-3 text-sm ${
-        isMine ? 'border-black/20 bg-black/10 text-black/70' : 'border-white/10 bg-white/[0.04] text-slate-300'
+        isMine ? 'border-white/25 bg-white/10 text-white/85' : 'border-slate-200 bg-slate-50 text-slate-700'
       }`}>
         <p className="font-semibold">Resource no longer available.</p>
         <p className="mt-1 text-xs opacity-70">The original shared resource was deleted.</p>
@@ -109,30 +101,30 @@ function ResourceShareCard({ resource, isMine }) {
 
   return (
     <div className={`mt-2 min-w-[230px] overflow-hidden rounded-2xl border ${
-      isMine ? 'border-black/20 bg-black/10' : 'border-white/10 bg-slate-950/45'
+      isMine ? 'border-white/25 bg-white/10' : 'border-slate-200 bg-white'
     }`}>
       <div className="p-3">
-        <p className={`text-[10px] font-bold uppercase tracking-[0.16em] ${isMine ? 'text-black/55' : 'text-accent'}`}>
+        <p className={`text-[10px] font-bold uppercase tracking-[0.16em] ${isMine ? 'text-white/80' : 'text-brand-600'}`}>
           {resource.resource_type?.replaceAll('_', ' ') || 'Resource'}
         </p>
-        <h3 className={`mt-1 line-clamp-2 text-sm font-bold ${isMine ? 'text-black' : 'text-white'}`}>
+        <h3 className={`mt-1 line-clamp-2 text-sm font-bold ${isMine ? 'chat-inverse' : 'text-slate-900'}`}>
           {resource.title}
         </h3>
         {resource.description && (
-          <p className={`mt-1 line-clamp-2 text-xs leading-relaxed ${isMine ? 'text-black/65' : 'text-slate-400'}`}>
+          <p className={`mt-1 line-clamp-2 text-xs leading-relaxed ${isMine ? 'text-white/80' : 'text-slate-600'}`}>
             {resource.description}
           </p>
         )}
         <div className="mt-2 flex flex-wrap gap-1.5">
           {(resource.tags || []).slice(0, 3).map((tag) => (
             <span key={tag.toLowerCase()} className={`rounded-full px-2 py-0.5 text-[10px] ${
-              isMine ? 'bg-black/10 text-black/65' : 'bg-white/[0.06] text-slate-300'
+              isMine ? 'bg-white/15 text-white/80' : 'bg-slate-100 text-slate-600'
             }`}>
               {tag}
             </span>
           ))}
         </div>
-        <p className={`mt-2 truncate text-[10px] ${isMine ? 'text-black/50' : 'text-slate-500'}`}>
+        <p className={`mt-2 truncate text-[10px] ${isMine ? 'text-white/70' : 'text-slate-500'}`}>
           {[resource.category, resource.source_domain].filter(Boolean).join(' · ')}
         </p>
       </div>
@@ -140,8 +132,8 @@ function ResourceShareCard({ resource, isMine }) {
         href={`/dashboard/resources/${resource.id}`}
         className={`flex items-center justify-center gap-2 border-t px-3 py-2 text-xs font-bold ${
           isMine
-            ? 'border-black/15 text-black hover:bg-black/10'
-            : 'border-white/10 text-accent hover:bg-white/[0.05]'
+            ? 'border-white/20 text-white hover:bg-white/10'
+            : 'border-slate-200 text-brand-600 hover:bg-brand-50'
         }`}
       >
         Open Resource
@@ -229,7 +221,7 @@ export default function MessageBubble({
           scrollRef.current[message.id] = el;
         }
       }}
-      className={`flex ${isMine ? 'justify-end' : 'justify-start'} px-4 group relative`}
+      className={`group relative flex ${isMine ? 'justify-end' : 'justify-start'} px-4 sm:px-6`}
     >
       <div className={`max-w-[75%] sm:max-w-[65%] flex flex-col ${isMine ? 'items-end' : 'items-start'} relative`}>
         {/* Pinned indicator */}
@@ -248,11 +240,11 @@ export default function MessageBubble({
           className={`relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap ${
             isDeleted
               ? isMine
-                ? 'bg-white/[0.04] border border-white/10 text-slate-500 italic rounded-br-sm'
-                : 'bg-white/[0.04] border border-white/10 text-slate-500 italic rounded-bl-sm'
+                ? 'bg-slate-100 border border-slate-200 text-slate-500 italic rounded-br-sm'
+                : 'bg-slate-100 border border-slate-200 text-slate-500 italic rounded-bl-sm'
               : isMine
-                ? 'bg-accent text-black rounded-br-sm shadow-[0_2px_12px_rgba(255,143,50,0.3)]'
-                : 'bg-white/[0.08] text-slate-100 border border-white/10 rounded-bl-sm'
+                ? 'chat-inverse bg-brand-500 rounded-br-sm shadow-[0_2px_10px_rgba(16,47,107,0.18)]'
+                : 'bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-sm'
           }`}
           onContextMenu={handleContextMenu}
         >
@@ -271,6 +263,23 @@ export default function MessageBubble({
             <ResourceShareCard resource={message.resource} isMine={isMine} />
           )}
 
+          {/* Keep metadata inside the bubble, like WhatsApp. */}
+          <span
+            className={`ml-2 inline-flex translate-y-[2px] items-center gap-1 align-baseline text-[10px] leading-none ${
+              isDeleted ? 'text-slate-400' : isMine ? 'text-white/70' : 'text-slate-500'
+            }`}
+          >
+            {isStarred && !isDeleted && (
+              <Star
+                className="h-3 w-3 fill-yellow-400 text-yellow-500 drop-shadow-[0_1px_1px_rgba(161,98,7,0.25)]"
+                aria-label="Starred"
+                role="img"
+              />
+            )}
+            <span>{formatMessageTime(message.created_at)}</span>
+            {isMine && showStatus && !isDeleted && <DeliveryStatus message={message} isMine={isMine} />}
+          </span>
+
           {/* Hover action button */}
           {!isDeleted && (
             <button
@@ -280,32 +289,22 @@ export default function MessageBubble({
               className={`
                 absolute top-1/2 -translate-y-1/2
                 ${isMine ? '-left-8' : '-right-8'}
-                h-6 w-6 rounded-full bg-slate-800/90 border border-white/10
+                h-6 w-6 rounded-full bg-white border border-slate-200
                 flex items-center justify-center
-                opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                shadow-sm hover:bg-slate-700
+                opacity-100 transition-opacity duration-150
+                md:opacity-0 md:group-hover:opacity-100
+                shadow-sm hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200
               `}
             >
-              <span className="text-[10px] text-slate-300">···</span>
+              <MoreVertical className="h-4 w-4 text-slate-400" aria-hidden="true" />
             </button>
           )}
 
-          {/* Star badge */}
-          {isStarred && !isDeleted && (
-            <span className={`absolute -top-1.5 ${isMine ? '-left-1.5' : '-right-1.5'} text-[10px]`} title="Starred">
-              ⭐
-            </span>
-          )}
         </div>
 
-        {/* Timestamp + status */}
-        <div className={`flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-          <span>{formatTime(message.created_at)}</span>
-          {isMine && showStatus && !isDeleted && <DeliveryStatus message={message} />}
-          {copied && !isDeleted && (
-            <span role="status" className="text-emerald-400">Copied</span>
-          )}
-        </div>
+        {copied && !isDeleted && (
+          <span role="status" className="mt-1 text-[11px] text-emerald-600">Copied</span>
+        )}
 
         {/* Action menu */}
         <MessageActionMenu
