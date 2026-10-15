@@ -29,6 +29,7 @@ import {
   addExperience,
   addProject,
   addSkill,
+  deleteMedia,
   deleteCertification,
   deleteEducation,
   deleteExperience,
@@ -88,9 +89,9 @@ function formatDate(value) {
 }
 
 function Field({ label, value, onChange, type = 'text', required = false, as = 'input', options }) {
-  const base = 'w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20';
+  const base = 'input-base';
   return (
-    <label className="space-y-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+    <label className="space-y-2 text-sm font-medium text-slate-700">
       <span>{label}{required ? ' *' : ''}</span>
       {as === 'textarea' ? (
         <textarea required={required} value={value || ''} onChange={(event) => onChange(event.target.value)} rows={4} className={base} />
@@ -108,10 +109,10 @@ function Field({ label, value, onChange, type = 'text', required = false, as = '
 
 function Section({ title, icon: Icon, action, children }) {
   return (
-    <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6 shadow-glow backdrop-blur-xl">
+    <section className="surface-card">
       <div className="mb-5 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-lg font-bold text-white">
-          <Icon className="h-5 w-5 text-accent" />
+        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <Icon className="h-5 w-5 text-brand-500" />
           <h2>{title}</h2>
         </div>
         {action}
@@ -123,16 +124,16 @@ function Section({ title, icon: Icon, action, children }) {
 
 function ActionButton({ children, onClick, icon: Icon = Plus, variant = 'primary', type = 'button', disabled = false }) {
   const styles = variant === 'danger'
-    ? 'border-rose-500/30 bg-rose-500/10 text-rose-200 hover:border-rose-500/50'
+    ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
     : variant === 'ghost'
-      ? 'border-white/10 bg-white/5 text-slate-200 hover:border-white/20'
-      : 'border-accent/30 bg-accent text-black hover:bg-accentSoft';
+      ? 'border-slate-200 bg-white text-slate-700 hover:border-brand-500 hover:bg-slate-50'
+      : 'border-brand-500 bg-brand-500 text-white hover:bg-brand-600';
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${styles}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-60 ${styles}`}
     >
       <Icon className="h-4 w-4" />
       {children}
@@ -141,11 +142,11 @@ function ActionButton({ children, onClick, icon: Icon = Plus, variant = 'primary
 }
 
 function EmptyState({ text }) {
-  return <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-5 text-sm text-slate-400">{text}</div>;
+  return <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">{text}</div>;
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
+  const { push } = useRouter();
   const { isAuthenticated, isLoading: authLoading, checkAuth } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,9 +177,9 @@ export default function ProfilePage() {
   };
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) router.push('/login');
+    if (!authLoading && !isAuthenticated) push('/login');
     if (!authLoading && isAuthenticated) loadProfile();
-  }, [authLoading, isAuthenticated, router]);
+  }, [authLoading, isAuthenticated, push]);
 
   const save = async (work) => {
     setSaving(true);
@@ -217,7 +218,7 @@ export default function ProfilePage() {
   if (authLoading || loading) {
     return (
       <div className="flex min-h-[60vh] flex-1 flex-col items-center justify-center">
-        <Loader2 className="mb-3 h-8 w-8 animate-spin text-accent" />
+        <Loader2 className="mb-3 h-8 w-8 animate-spin text-brand-500" />
         <p className="text-sm text-slate-400">Loading profile...</p>
       </div>
     );
@@ -232,74 +233,102 @@ export default function ProfilePage() {
     location: profile.location || '',
     about: profile.about || '',
   };
+  const completionPercentage = Math.max(0, Math.min(100, Number(profile.completeness?.percentage) || 0));
+  const hasAboutPlaceholder = /\[[^\]]+\]/.test(profile.about || '');
+
+  const handlePhotoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file.');
+      return;
+    }
+    await save(async () => {
+      const uploaded = await uploadMedia(file, 'profile_image');
+      await updateMyProfile({ profile_photo_media_id: uploaded.id });
+    });
+  };
+
+  const handlePhotoRemove = async () => {
+    const mediaId = profile.profile_photo_media_id || profile.profile_photo?.id;
+    if (!mediaId || !window.confirm('Remove your profile photo?')) return;
+    await save(async () => {
+      await updateMyProfile({ profile_photo_media_id: null });
+      await deleteMedia(mediaId);
+    });
+  };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-      {error ? <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">{error}</div> : null}
+    <div className="mx-auto flex min-h-full w-full max-w-6xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-brand-500">Professional profile</p>
+          <h1 className="page-title mt-1">Your profile</h1>
+          <p className="page-description">Present your experience, skills, and career direction with clarity.</p>
+        </div>
+      </div>
 
-      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-glow backdrop-blur-xl">
-        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-          <div className="flex flex-col gap-5 sm:flex-row">
-            <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950">
+      {error ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+
+      <section className="surface-card">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] lg:items-center">
+          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-brand-50 sm:h-28 sm:w-28">
               {profile.profile_photo?.url ? (
-                <img src={profile.profile_photo.url} alt="" className="h-full w-full object-cover" />
+                <img src={profile.profile_photo.url} alt={`${profile.user.first_name} ${profile.user.last_name}`} className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center bg-accent/15 text-3xl font-extrabold text-accent">{initials}</div>
+                <div className="flex h-full w-full items-center justify-center bg-brand-50 text-2xl font-bold text-brand-500">{initials}</div>
               )}
             </div>
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div>
-                <h1 className="text-3xl font-extrabold text-white">{profile.user.first_name} {profile.user.last_name}</h1>
-                <p className="mt-1 text-base text-accent">{profile.headline || 'Add a professional headline'}</p>
+                <h2 className="truncate text-2xl font-bold text-slate-900 sm:text-3xl">{profile.user.first_name} {profile.user.last_name}</h2>
+                <p className="mt-1 text-base font-medium text-brand-500">{profile.headline || 'Add a professional headline'}</p>
               </div>
-              <p className="flex items-center gap-2 text-sm text-slate-300">
-                <MapPin className="h-4 w-4 text-slate-500" />
+              <p className="flex items-center gap-2 text-sm text-slate-500">
+                <MapPin className="h-4 w-4 text-slate-400" />
                 {profile.location || 'Add your location'}
               </p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/20">
-                <Camera className="h-4 w-4" />
-                Upload Photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    if (!file.type.startsWith('image/')) {
-                      setError('Please choose an image file.');
-                      return;
-                    }
-                    await save(async () => {
-                      const uploaded = await uploadMedia(file, 'profile_image');
-                      await updateMyProfile({ profile_photo_media_id: uploaded.id });
-                    });
-                  }}
-                />
-              </label>
+              <div className="flex flex-wrap gap-2">
+                <label className="btn-outline cursor-pointer">
+                  <Camera className="h-4 w-4" />
+                  {profile.profile_photo?.url ? 'Change photo' : 'Upload photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+                {profile.profile_photo?.url ? <ActionButton icon={Trash2} variant="danger" onClick={handlePhotoRemove} disabled={saving}>Remove photo</ActionButton> : null}
+                <ActionButton icon={Edit3} variant="ghost" onClick={() => setEditingBasic(true)}>Edit profile</ActionButton>
+              </div>
             </div>
           </div>
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-            <div className="mb-3 flex items-center justify-between text-sm">
-              <span className="font-semibold text-white">Profile Completion</span>
-              <span className="font-bold text-accent">{profile.completeness.percentage}%</span>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-900">Profile completion</span>
+              <span className="font-bold text-brand-500">{completionPercentage}%</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${profile.completeness.percentage}%` }} />
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${completionPercentage}%` }} />
             </div>
-            <div className="mt-4 grid gap-2 text-xs text-slate-300">
-              {profile.completeness.completed.map((item) => (
-                <span key={item} className="flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />{item}</span>
+            <div className="mt-4 grid gap-2 text-xs">
+              {profile.completeness.completed.slice(0, 3).map((item) => (
+                <span key={item} className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{item}</span>
               ))}
-              {profile.completeness.missing.map((item) => (
+              {profile.completeness.missing.slice(0, 3).map((item) => (
                 <span key={item} className="flex items-center gap-2 text-slate-500"><X className="h-3.5 w-3.5" />{item}</span>
               ))}
+              {!profile.completeness.missing.length ? <span className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />Profile is complete</span> : null}
             </div>
-            <div className="mt-5 border-t border-white/10 pt-4">
+            <div className="mt-4 border-t border-slate-200 pt-4">
               <ActionButton icon={optimizing ? Loader2 : Sparkles} onClick={runProfileOptimization} disabled={optimizing}>
-                {optimizing ? 'Optimizing...' : 'Optimize My Profile'}
+                {optimizing ? 'Optimizing...' : 'Optimize profile'}
               </ActionButton>
-              {optimizationError ? <p className="mt-3 text-sm text-rose-200">{optimizationError}</p> : null}
+              {optimizationError ? <p className="mt-3 text-sm text-red-700">{optimizationError}</p> : null}
             </div>
           </div>
         </div>
@@ -333,16 +362,19 @@ export default function ProfilePage() {
             <ActionButton type="submit" icon={Save} disabled={saving}>Save Profile</ActionButton>
           </form>
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">{profile.about || 'Add a short bio that explains what you do, what you are learning, and where you want to grow.'}</p>
+          <div>
+            <p className="whitespace-pre-wrap text-sm leading-7 text-slate-600">{profile.about || 'Add a short bio that explains what you do, what you are learning, and where you want to grow.'}</p>
+            {hasAboutPlaceholder ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Your About section contains template text. Replace the bracketed placeholders with your own story.</p> : null}
+          </div>
         )}
       </Section>
 
       <Section title="Skills" icon={Target}>
         <div className="mb-4 flex flex-wrap gap-2">
           {profile.skills.length ? profile.skills.map((skill) => (
-            <span key={skill.id} className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-sm text-accent">
+            <span key={skill.id} className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-500">
               {skill.name}
-              <button type="button" title="Delete skill" onClick={() => confirmDelete(skill.name, () => deleteSkill(skill.id))}>
+              <button type="button" title={`Delete ${skill.name}`} onClick={() => confirmDelete(skill.name, () => deleteSkill(skill.id))} className="rounded-full p-0.5 transition hover:bg-brand-100 hover:text-brand-700">
                 <X className="h-3.5 w-3.5" />
               </button>
             </span>
@@ -353,11 +385,14 @@ export default function ProfilePage() {
           onSubmit={async (event) => {
             event.preventDefault();
             if (!skillName.trim()) return setError('Skill name is required.');
-            const ok = await save(async () => addSkill({ name: skillName }));
+            if (profile.skills.some((skill) => skill.name.trim().toLowerCase() === skillName.trim().toLowerCase())) {
+              return setError('That skill is already on your profile.');
+            }
+            const ok = await save(async () => addSkill({ name: skillName.trim() }));
             if (ok) setSkillName('');
           }}
         >
-          <input value={skillName} onChange={(event) => setSkillName(event.target.value)} placeholder="Python, React, PostgreSQL" className="min-w-0 flex-1 rounded-full border border-white/10 bg-slate-950/70 px-4 py-2 text-sm text-white outline-none focus:border-accent/60" />
+          <input value={skillName} onChange={(event) => setSkillName(event.target.value)} placeholder="Python, React, PostgreSQL" className="input-base min-w-0 flex-1" />
           <ActionButton type="submit" disabled={saving}>Add Skill</ActionButton>
         </form>
       </Section>
@@ -372,7 +407,7 @@ export default function ProfilePage() {
           <Field label="Location" value={values.location} onChange={(v) => setValue('location', v)} />
           <Field label="Start Date" type="date" value={values.start_date} onChange={(v) => setValue('start_date', v)} />
           <Field label="End Date" type="date" value={values.end_date} onChange={(v) => setValue('end_date', v)} />
-          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={values.currently_working} onChange={(e) => setValue('currently_working', e.target.checked)} /> Currently working here</label>
+          <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={values.currently_working} onChange={(e) => setValue('currently_working', e.target.checked)} /> Currently working here</label>
           <Field label="Description" as="textarea" value={values.description} onChange={(v) => setValue('description', v)} />
         </>
       )} />
@@ -433,10 +468,10 @@ export default function ProfilePage() {
 function ScoreRing({ score }) {
   const safeScore = Math.max(0, Math.min(100, Number(score) || 0));
   return (
-    <div className="flex h-32 w-32 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
-      <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-slate-950/80">
-        <span className="text-3xl font-extrabold text-white">{safeScore}</span>
-        <span className="text-xs font-semibold uppercase tracking-wide text-accent">/ 100</span>
+    <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-4 border-brand-100 bg-brand-50">
+      <div className="flex h-16 w-16 flex-col items-center justify-center rounded-full bg-white">
+        <span className="text-2xl font-bold text-brand-500">{safeScore}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">/ 100</span>
       </div>
     </div>
   );
@@ -454,7 +489,7 @@ function CopyButton({ text }) {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
       }}
-      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent/40 hover:text-accent"
+      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-500"
     >
       <Copy className="h-3.5 w-3.5" />
       {copied ? 'Copied' : 'Copy'}
@@ -465,12 +500,12 @@ function CopyButton({ text }) {
 function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
   if (loading && !optimization) {
     return (
-      <section className="rounded-[2rem] border border-accent/20 bg-accent/10 p-6 shadow-glow backdrop-blur-xl">
-        <div className="flex items-center gap-3 text-white">
-          <Loader2 className="h-5 w-5 animate-spin text-accent" />
+      <section className="surface-card border-brand-100 bg-brand-50/50">
+        <div className="flex items-center gap-3 text-slate-900">
+          <Loader2 className="h-5 w-5 animate-spin text-brand-500" />
           <div>
             <h2 className="text-lg font-bold">AI Profile Optimization</h2>
-            <p className="mt-1 text-sm text-slate-300">Analyzing your profile quality and career positioning...</p>
+            <p className="mt-1 text-sm text-slate-600">Analyzing your profile quality and career positioning...</p>
           </div>
         </div>
       </section>
@@ -480,16 +515,16 @@ function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
   if (!optimization) return null;
 
   return (
-    <section className="rounded-[2rem] border border-accent/20 bg-white/[0.04] p-5 shadow-glow backdrop-blur-xl sm:p-6">
+    <section className="surface-card border-brand-100">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           <ScoreRing score={optimization.overall_score} />
           <div>
-            <div className="flex items-center gap-2 text-lg font-bold text-white">
-              <Sparkles className="h-5 w-5 text-accent" />
+            <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+              <Sparkles className="h-5 w-5 text-brand-500" />
               <h2>AI Profile Optimization</h2>
             </div>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{optimization.summary}</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{optimization.summary}</p>
             <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">AI Profile Quality Score</p>
           </div>
         </div>
@@ -499,21 +534,21 @@ function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             Strengths
           </div>
-          <ul className="space-y-2 text-sm text-slate-300">
+          <ul className="space-y-2 text-sm text-slate-600">
             {(optimization.strengths || []).map((item) => <li key={item}>{item}</li>)}
           </ul>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
-            <Zap className="h-4 w-4 text-accent" />
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+            <Zap className="h-4 w-4 text-amber-600" />
             Improvements
           </div>
-          <ul className="space-y-2 text-sm text-slate-300">
+          <ul className="space-y-2 text-sm text-slate-600">
             {(optimization.recommended_improvements || []).map((item) => <li key={item}>{item}</li>)}
           </ul>
         </div>
@@ -521,35 +556,35 @@ function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
 
       <div className="mt-5 space-y-3">
         {(optimization.sections || []).map((section) => (
-          <div key={section.section} className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+          <div key={section.section} className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold capitalize text-white">{section.section.replaceAll('_', ' ')}</h3>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">{section.score}/100</span>
-                  <span className="rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-xs font-semibold capitalize text-accent">{section.status.replaceAll('_', ' ')}</span>
+                  <h3 className="font-semibold capitalize text-slate-900">{section.section.replaceAll('_', ' ')}</h3>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{section.score}/100</span>
+                  <span className="rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-xs font-semibold capitalize text-brand-500">{section.status.replaceAll('_', ' ')}</span>
                 </div>
                 {section.current ? <p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Current</p> : null}
-                {section.current ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-300">{section.current}</p> : null}
+                {section.current ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{section.current}</p> : null}
               </div>
               <CopyButton text={section.suggestion} />
             </div>
             <p className="mt-4 text-xs uppercase tracking-wide text-slate-500">Suggestion</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-white">{section.suggestion}</p>
-            <p className="mt-3 text-sm leading-6 text-slate-400">{section.reason}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{section.suggestion}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-500">{section.reason}</p>
           </div>
         ))}
       </div>
 
       {(optimization.suggested_skills_to_learn || []).length ? (
-        <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          <div className="mb-3 flex items-center gap-2 font-semibold text-white">
-            <Target className="h-4 w-4 text-accent" />
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+            <Target className="h-4 w-4 text-brand-500" />
             Recommended Skills to Learn
           </div>
           <div className="flex flex-wrap gap-2">
             {optimization.suggested_skills_to_learn.map((skill) => (
-              <span key={skill} className="rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-sm text-accent">{skill}</span>
+              <span key={skill} className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-1 text-sm text-brand-500">{skill}</span>
             ))}
           </div>
         </div>
@@ -559,17 +594,32 @@ function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
 }
 
 function Entry({ item, title, subtitle, meta }) {
+  const technologies = Array.isArray(item.technologies) ? item.technologies : [];
   return (
-    <div>
-      <h3 className="font-semibold text-white">{title}</h3>
-      {subtitle ? <p className="mt-1 text-sm text-accent">{subtitle}</p> : null}
-      <p className="mt-1 text-xs text-slate-500">{meta}</p>
-      {item.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{item.description}</p> : null}
+    <div className="min-w-0 flex-1">
+      <h3 className="font-semibold text-slate-900">{title || 'Untitled'}</h3>
+      {subtitle ? <p className="mt-1 text-sm font-medium text-brand-500">{subtitle}</p> : null}
+      {meta ? <p className="mt-1 text-xs text-slate-500">{meta}</p> : null}
+      {item.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.description}</p> : null}
+      {technologies.length ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {technologies.map((technology) => <span key={technology} className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{technology}</span>)}
+        </div>
+      ) : null}
+      {(item.github_url || item.live_url || item.credential_url || item.credential_id) ? (
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold">
+          {item.github_url ? <a href={item.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-brand-500 hover:text-brand-600"><LinkIcon className="h-3.5 w-3.5" />Repository</a> : null}
+          {item.live_url ? <a href={item.live_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-brand-500 hover:text-brand-600"><LinkIcon className="h-3.5 w-3.5" />Live project</a> : null}
+          {item.credential_url ? <a href={item.credential_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-brand-500 hover:text-brand-600"><LinkIcon className="h-3.5 w-3.5" />View credential</a> : null}
+          {item.credential_id ? <span className="text-slate-500">Credential ID: {item.credential_id}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function EditableListSection({ title, icon, items, empty, formKey, emptyForm, forms, setForms, saving, save, addFn, updateFn, deleteFn, renderItem, fields, validate, prepare, hydrate }) {
+  const Icon = icon;
   const active = forms[formKey];
   const setActive = (next) => setForms({ ...forms, [formKey]: next });
   const close = () => {
@@ -592,20 +642,23 @@ function EditableListSection({ title, icon, items, empty, formKey, emptyForm, fo
     <Section title={title} icon={icon} action={<ActionButton onClick={() => setActive({ id: null, values: emptyForm })}>Add</ActionButton>}>
       <div className="space-y-4">
         {items.length ? items.map((item) => (
-          <div key={item.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-            <div className="flex items-start justify-between gap-3">
+          <div key={item.id} className="relative rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 sm:flex"><Icon className="h-4 w-4" /></div>
+              <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
               {renderItem(item)}
-              <div className="flex gap-2">
-                <button type="button" title="Edit" onClick={() => setActive({ id: item.id, values: hydrate ? hydrate(item) : { ...item } })} className="rounded-full border border-white/10 p-2 text-slate-300 hover:border-accent/40 hover:text-accent"><Edit3 className="h-4 w-4" /></button>
-                <button type="button" title="Delete" onClick={() => window.confirm(`Delete ${title.toLowerCase()} item?`) && save(() => deleteFn(item.id))} className="rounded-full border border-white/10 p-2 text-slate-300 hover:border-rose-500/40 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" title={`Edit ${title.toLowerCase()}`} onClick={() => setActive({ id: item.id, values: hydrate ? hydrate(item) : { ...item } })} className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-500"><Edit3 className="h-4 w-4" /></button>
+                <button type="button" title={`Delete ${title.toLowerCase()}`} onClick={() => window.confirm(`Delete ${title.toLowerCase()} item?`) && save(() => deleteFn(item.id))} className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>
+              </div>
               </div>
             </div>
           </div>
         )) : <EmptyState text={empty} />}
       </div>
       {active ? (
-        <form onSubmit={submit} className="mt-5 grid gap-4 rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          {active.error ? <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">{active.error}</div> : null}
+        <form onSubmit={submit} className="mt-5 grid gap-4 rounded-xl border border-brand-100 bg-brand-50/40 p-5">
+          {active.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{active.error}</div> : null}
           <div className="grid gap-4 sm:grid-cols-2">{fields(values, setValue)}</div>
           <div className="flex flex-wrap gap-3">
             <ActionButton type="submit" icon={Save} disabled={saving}>Save</ActionButton>
@@ -644,9 +697,9 @@ function PreferenceForm({ preferences, emptyPreferences, saving, save, setError 
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           {display.map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-              <p className="mt-1 text-sm font-semibold text-white">{value || 'Not set'}</p>
+            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{value || 'Not specified'}</p>
             </div>
           ))}
         </div>

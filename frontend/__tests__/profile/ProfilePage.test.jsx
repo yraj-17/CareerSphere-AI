@@ -22,6 +22,7 @@ jest.mock('@/services/api', () => ({
   addExperience: jest.fn(),
   addProject: jest.fn(),
   addSkill: jest.fn(),
+  deleteMedia: jest.fn(),
   deleteCertification: jest.fn(),
   deleteEducation: jest.fn(),
   deleteExperience: jest.fn(),

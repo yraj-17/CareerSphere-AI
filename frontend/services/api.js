@@ -257,6 +257,10 @@ export const uploadMedia = async (file, purpose = 'general') => {
   return response.data;
 };
 
+export const deleteMedia = async (mediaId) => {
+  await apiClient.delete(`/api/media/${mediaId}`);
+};
+
 export const getMyProfile = async () => {
   const response = await apiClient.get('/api/profile/me');
   return response.data;
