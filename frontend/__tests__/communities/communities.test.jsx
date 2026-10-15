@@ -146,7 +146,8 @@ describe('CommunitiesPage', () => {
       expect(screen.getByRole('link', { name: /^career growth circle$/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /ai & machine learning/i }));
+    fireEvent.click(screen.getByRole('combobox', { name: /community category/i }));
+    fireEvent.click(screen.getByRole('option', { name: /ai & machine learning/i }));
     expect(await screen.findByTestId('communities-empty')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /my communities/i }));

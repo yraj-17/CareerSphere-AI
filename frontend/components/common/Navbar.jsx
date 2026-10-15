@@ -6,15 +6,15 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart2,
   Bell,
-  BookOpen,
   Briefcase,
   ChevronDown,
-  Globe2,
+  FileStack,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquare,
   Search,
+  Settings,
   Sparkles,
   UserRound,
   Users,
@@ -80,13 +80,13 @@ const networkingLinks = [
   {
     label: 'Communities',
     href: '/dashboard/communities',
-    icon: Globe2,
+    icon: UsersRound,
     isActive: (pathname) => pathname.startsWith('/dashboard/communities'),
   },
   {
     label: 'Resources',
     href: '/dashboard/resources',
-    icon: BookOpen,
+    icon: FileStack,
     isActive: (pathname) => pathname.startsWith('/dashboard/resources'),
   },
 ];
@@ -103,6 +103,13 @@ const profileNav = {
   href: '/dashboard/profile',
   icon: UserRound,
   isActive: (pathname) => pathname === '/dashboard/profile',
+};
+
+const settingsNav = {
+  label: 'Settings',
+  href: '/dashboard/settings',
+  icon: Settings,
+  isActive: (pathname) => pathname === '/dashboard/settings',
 };
 
 function getUserName(user) {
@@ -170,15 +177,15 @@ function NotificationDropdown({
 }) {
   return (
     <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_36px_rgba(11,42,91,0.16)]">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div>
-          <p className="text-sm font-bold text-white">Notifications</p>
+          <p className="text-sm font-bold text-slate-900">Notifications</p>
           <p className="text-xs text-slate-500">Connection and platform updates</p>
         </div>
         <button
           type="button"
           onClick={onMarkAllRead}
-          className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-accent/30 hover:text-accent"
+          className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600"
         >
           Mark all read
         </button>
@@ -188,19 +195,19 @@ function NotificationDropdown({
         {loading ? (
           <div className="space-y-2 px-4 py-4">
             {Array.from({ length: 3 }).map((_, idx) => (
-              <div key={idx} className="h-14 animate-pulse rounded-xl bg-white/[0.05]" />
+              <div key={idx} className="h-14 animate-pulse rounded-xl bg-slate-100" />
             ))}
           </div>
         ) : error ? (
-          <div className="px-4 py-5 text-sm text-rose-200">
+          <div className="px-4 py-5 text-sm text-red-700">
             <p>{error}</p>
-            <button type="button" onClick={onRetry} className="mt-3 rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 hover:text-white">
+            <button type="button" onClick={onRetry} className="mt-3 rounded-lg border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50">
               Try again
             </button>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-400">
-            <Bell className="mx-auto mb-2 h-6 w-6 text-slate-600" />
+          <div className="px-4 py-8 text-center text-sm text-slate-500">
+            <Bell className="mx-auto mb-2 h-6 w-6 text-slate-400" />
             No notifications yet.
           </div>
         ) : (
@@ -209,8 +216,8 @@ function NotificationDropdown({
               key={notification.id}
               type="button"
               onClick={() => onNotificationClick(notification)}
-              className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.06] ${
-                notification.is_read ? 'bg-transparent' : 'bg-accent/[0.06]'
+              className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${
+                notification.is_read ? 'bg-transparent' : 'bg-brand-50/60'
               }`}
             >
               <ProfileAvatar
@@ -222,7 +229,7 @@ function NotificationDropdown({
                 className="h-9 w-9"
               />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm leading-snug text-slate-100">{notification.message}</span>
+                <span className="block text-sm leading-snug text-slate-700">{notification.message}</span>
                 <span className="mt-1 block text-xs text-slate-500">{formatRelativeTime(notification.created_at)}</span>
               </span>
               {!notification.is_read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent" aria-label="Unread" />}
@@ -234,7 +241,7 @@ function NotificationDropdown({
       <Link
         href="/dashboard/notifications"
         onClick={onClose}
-        className="block border-t border-white/10 px-4 py-3 text-center text-sm font-semibold text-accent hover:bg-white/[0.04]"
+        className="block border-t border-slate-200 px-4 py-3 text-center text-sm font-semibold text-brand-500 hover:bg-brand-50"
       >
         View all notifications
       </Link>
@@ -246,13 +253,13 @@ function Brand({ compact = false, href = '/dashboard' }) {
   return (
     <Link
       href={href}
-      className="group flex min-w-0 shrink-0 items-center gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+      className="group flex min-w-0 shrink-0 items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
       aria-label="CareerSphere AI dashboard"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-xs font-bold text-white transition-transform duration-200 group-hover:scale-105">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-xs font-bold text-white transition-transform duration-200 group-hover:scale-105">
         CS
       </div>
-      <div className={compact ? 'min-w-0' : 'hidden min-w-0 sm:block'}>
+      <div className={compact ? 'hidden min-w-0 min-[420px]:block' : 'hidden min-w-0 sm:block'}>
         <div className="truncate text-sm font-semibold tracking-wide text-slate-900">CareerSphere AI</div>
         {!compact && (
           <div className="hidden text-[10px] uppercase tracking-[0.22em] text-slate-500 xl:block">
@@ -273,14 +280,15 @@ function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, bad
       href={item.href}
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
+      title={!compact ? item.label : undefined}
+      className={`group flex h-11 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
         active
           ? 'border-brand-200 bg-brand-50 text-brand-600'
           : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
       } ${compact ? 'justify-start' : 'justify-center'}`}
     >
-      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className={compact ? 'truncate' : 'hidden min-[1180px]:inline'}>{item.label}</span>
+      <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+      <span className={compact ? 'truncate' : 'inline'}>{item.label}</span>
       <CountBadge count={badgeCount} label={badgeLabel || `${item.label} unread count`} />
     </Link>
   );
@@ -302,13 +310,10 @@ export default function Navbar() {
   const hasAuthenticatedUser = isAuthenticated && Boolean(userIdentity);
   const [userOpen, setUserOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
   const netRef = useRef(null);
   const notificationDesktopRef = useRef(null);
   const notificationMobileRef = useRef(null);
   const userRef = useRef(null);
-  const searchRef = useRef(null);
 
   const userName = getUserName(user);
   const userInitial = getInitial(user);
@@ -330,9 +335,6 @@ export default function Navbar() {
       if (userRef.current && !userRef.current.contains(event.target)) {
         setUserOpen(false);
       }
-      if (searchRef.current && !searchRef.current.contains(event.target)) {
-        setSearchOpen(false);
-      }
     };
 
     document.addEventListener('mousedown', handlePointerDown);
@@ -347,7 +349,6 @@ export default function Navbar() {
         setNotificationSource(null);
         setUserOpen(false);
         setMobileOpen(false);
-        setSearchOpen(false);
       }
     };
 
@@ -361,7 +362,6 @@ export default function Navbar() {
     setNotificationSource(null);
     setUserOpen(false);
     setMobileOpen(false);
-    setSearchOpen(false);
   }, [pathname]);
 
   const refreshCounts = useCallback(async () => {
@@ -495,10 +495,12 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm">
-      <div className="hidden w-full items-center gap-5 px-4 py-3 lg:grid lg:grid-cols-[minmax(190px,auto)_minmax(0,1fr)_auto] lg:px-6 2xl:px-8">
-        <Brand />
+      <div className="hidden min-h-[76px] w-full items-center gap-3 px-4 py-3 min-[1360px]:flex lg:px-5 2xl:px-8">
+        <div className="flex w-[clamp(220px,16vw,260px)] shrink-0 items-center">
+          <Brand />
+        </div>
 
-        <nav className="flex min-w-0 items-center justify-center gap-1.5" aria-label="Primary navigation">
+        <nav className="flex min-w-0 flex-1 items-center justify-center gap-1" aria-label="Primary navigation">
           {primaryNav.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} />
           ))}
@@ -510,16 +512,16 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={netOpen}
               aria-label="Connect & Explore menu"
-              className={`group flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
+              className={`group flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
                 isNetworkingActive
                   ? 'border-brand-200 bg-brand-50 text-brand-600'
                   : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
               }`}
             >
-              <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="hidden min-[1180px]:inline">Connect & Explore</span>
+              <Users className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+              <span>Connect &amp; Explore</span>
               <ChevronDown
-                className={`hidden h-3.5 w-3.5 transition-transform duration-150 min-[1180px]:block ${
+                className={`h-3.5 w-3.5 transition-transform duration-150 ${
                   netOpen ? 'rotate-180' : ''
                 }`}
                 aria-hidden="true"
@@ -542,7 +544,7 @@ export default function Navbar() {
                       role="menuitem"
                       onClick={() => setNetOpen(false)}
                       aria-current={active ? 'page' : undefined}
-                      className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:bg-white/10 ${
+                      className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:bg-brand-50 ${
                         active ? 'bg-brand-50 text-brand-600' : 'text-slate-700 hover:bg-slate-50 hover:text-brand-600'
                       }`}
                     >
@@ -563,46 +565,7 @@ export default function Navbar() {
           />
         </nav>
 
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <label className="hidden min-[1180px]:flex w-52 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 transition-colors focus-within:border-brand-300 focus-within:bg-white focus-within:text-slate-700 2xl:w-72">
-            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="sr-only">Global search</span>
-            <input
-              type="search"
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search people, skills, careers..."
-              className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-            />
-          </label>
-
-          <div className="relative min-[1180px]:hidden" ref={searchRef}>
-            <button
-              type="button"
-              aria-label="Open global search"
-              aria-expanded={searchOpen}
-              onClick={() => setSearchOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-            >
-              <Search className="h-4 w-4" aria-hidden="true" />
-            </button>
-
-            {searchOpen && (
-              <label className="absolute right-0 top-full z-50 mt-3 flex w-72 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-[0_16px_36px_rgba(11,42,91,0.16)] focus-within:border-brand-300 focus-within:text-slate-700">
-                <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="sr-only">Global search</span>
-                <input
-                  type="search"
-                  value={searchValue}
-                  onChange={(event) => setSearchValue(event.target.value)}
-                  placeholder="Search people, skills, careers..."
-                  className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                  autoFocus
-                />
-              </label>
-            )}
-          </div>
-
+        <div className="flex w-[clamp(200px,14vw,220px)] shrink-0 items-center justify-end gap-2">
           <div className="relative" ref={notificationDesktopRef}>
             <button
               type="button"
@@ -610,7 +573,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={notificationOpen}
               onClick={() => handleToggleNotifications('desktop')}
-              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <Bell className="h-4 w-4" aria-hidden="true" />
               <span className="absolute -right-1 -top-1">
@@ -640,7 +603,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={userOpen}
               aria-label="User profile menu"
-              className="flex max-w-[220px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            className="flex h-11 max-w-[210px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <ProfileAvatar
                 src={profilePhotoUrl}
@@ -650,7 +613,7 @@ export default function Navbar() {
                 fallback={userInitial}
                 className="h-7 w-7"
               />
-              <span className="hidden min-w-0 text-sm font-medium text-slate-100 xl:block">
+              <span className="hidden min-w-0 text-sm font-medium text-slate-700 xl:block">
                 <span className="block truncate">{userName}</span>
               </span>
               <ChevronDown
@@ -675,12 +638,21 @@ export default function Navbar() {
                   <UserRound className="h-4 w-4 shrink-0" aria-hidden="true" />
                   Profile
                 </Link>
-                <div className="my-1 h-px bg-white/10" />
+                <Link
+                  href={settingsNav.href}
+                  role="menuitem"
+                  onClick={() => setUserOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-brand-600 focus:outline-none focus-visible:bg-brand-50"
+                >
+                  <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Settings
+                </Link>
+                <div className="my-1 h-px bg-slate-200" />
                 <button
                   type="button"
                   role="menuitem"
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-rose-200 transition-colors hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:bg-rose-500/10"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:bg-red-50"
                 >
                   <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
                   Logout
@@ -691,12 +663,12 @@ export default function Navbar() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-4 py-3 lg:hidden">
+      <div className="flex min-h-[68px] items-center justify-between gap-3 px-4 py-3 min-[1360px]:hidden">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
           aria-label="Open navigation menu"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -711,7 +683,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={notificationOpen}
               onClick={() => handleToggleNotifications('mobile')}
-              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <Bell className="h-4 w-4" aria-hidden="true" />
               <span className="absolute -right-1 -top-1">
@@ -752,7 +724,7 @@ export default function Navbar() {
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
+        <div className="fixed inset-0 z-50 min-[1360px]:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <button
             type="button"
             className="absolute inset-0 cursor-default bg-slate-950/72 backdrop-blur-sm"
@@ -766,25 +738,13 @@ export default function Navbar() {
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close navigation menu"
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
 
-            <label className="mt-5 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400 focus-within:border-accent/45 focus-within:text-slate-200">
-              <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="sr-only">Global search</span>
-              <input
-                type="search"
-                value={searchValue}
-                onChange={(event) => setSearchValue(event.target.value)}
-                placeholder="Search people, skills, careers..."
-                className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
-              />
-            </label>
-
-            <nav className="mt-5 flex flex-1 flex-col gap-1" aria-label="Mobile primary navigation">
+            <nav className="mt-4 flex flex-1 flex-col gap-1" aria-label="Mobile primary navigation">
               {primaryNav.map((item) => (
                 <NavLink
                   key={item.href}
@@ -819,17 +779,18 @@ export default function Navbar() {
               <Link
                 href="/dashboard/notifications"
                 onClick={() => setMobileOpen(false)}
-                className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium text-slate-300 transition-all hover:border-white/10 hover:bg-white/[0.04] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                className="group flex h-10 items-center gap-2 rounded-lg border border-transparent px-3 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <Bell className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">Notifications</span>
                 <CountBadge count={notificationUnreadCount} label={`${notificationUnreadCount} unread notifications`} />
               </Link>
               <NavLink item={profileNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
+              <NavLink item={settingsNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
             </nav>
 
-            <div className="border-t border-white/10 pt-4">
-              <div className="mb-3 flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+            <div className="border-t border-slate-200 pt-4">
+              <div className="mb-3 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <ProfileAvatar
                   src={profilePhotoUrl}
                   name={userName}
@@ -839,14 +800,14 @@ export default function Navbar() {
                   className="h-8 w-8"
                 />
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-white">{userName}</div>
+                  <div className="truncate text-sm font-medium text-slate-900">{userName}</div>
                   <div className="text-xs text-slate-500">Signed in</div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex w-full items-center gap-3 rounded-lg border border-rose-500/20 px-3 py-2 text-left text-sm font-medium text-rose-200 transition-colors hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70"
+                className="flex w-full items-center gap-3 rounded-lg border border-red-200 px-3 py-2 text-left text-sm font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300/70"
               >
                 <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
                 Logout

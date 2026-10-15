@@ -274,7 +274,7 @@ export default function ProfilePage() {
       <section className="surface-card">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] lg:items-center">
           <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
-            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-brand-50 sm:h-28 sm:w-28">
+            <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-brand-50 sm:h-32 sm:w-32">
               {profile.profile_photo?.url ? (
                 <img src={profile.profile_photo.url} alt={`${profile.user.first_name} ${profile.user.last_name}`} className="h-full w-full object-cover" />
               ) : (

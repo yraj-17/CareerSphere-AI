@@ -369,6 +369,15 @@
   scrollbar-color: #cbd5e1 transparent;
 }
 
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .surface-card {
     @apply rounded-xl p-4;

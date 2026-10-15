@@ -11,6 +11,7 @@ import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_db, get_current_user
@@ -35,6 +36,9 @@ from app.schemas.auth import (
     OtpSendResponse,
     OtpVerifyRequest,
     OtpVerifyResponse,
+    PasswordChangeRequest,
+    UserAccountUpdate,
+    normalize_username,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -291,7 +295,7 @@ def register(
     db: Session = Depends(get_db),
     rdb: redis_lib.Redis = Depends(get_redis),
 ):
-    normalized_username = user_in.username.lower()
+    normalized_username = normalize_username(user_in.username)
     normalized_email = user_in.email.lower()
     key = _otp_key(normalized_email)
 
@@ -359,6 +363,79 @@ def register(
 # ---------------------------------------------------------------------------
 # Login / Me / Logout
 # ---------------------------------------------------------------------------
+
+@router.patch("/me", response_model=UserResponse, summary="Update current account details")
+def update_me(
+    body: UserAccountUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = body.model_dump(exclude_unset=True)
+    next_username = data.get("username")
+
+    if next_username and next_username != current_user.username:
+        duplicate = (
+            db.query(User)
+            .filter(User.username == next_username, User.id != current_user.id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This username is already taken.",
+            )
+
+    previous_username = current_user.username
+    for field in ("first_name", "last_name"):
+        if field in data and data[field] is not None:
+            setattr(current_user, field, data[field])
+    if next_username:
+        current_user.username = next_username
+
+    try:
+        db.commit()
+        db.refresh(current_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This username is already taken.",
+        )
+
+    if next_username and next_username != previous_username:
+        invalidate_availability("username", previous_username)
+        invalidate_availability("username", next_username)
+    return _user_response(current_user)
+
+
+@router.post("/change-password", summary="Change the current user's password")
+def change_password(
+    body: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    if verify_password(body.new_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from your current password.",
+        )
+
+    current_user.password_hash = hash_password(body.new_password)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to update password. Please try again.",
+        )
+    return {"message": "Password updated successfully."}
+
 
 @router.post(
     "/login",

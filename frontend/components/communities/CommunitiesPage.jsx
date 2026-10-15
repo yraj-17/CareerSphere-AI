@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Globe2, Plus, RefreshCw, Search, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ChevronDown, Plus, RefreshCw, Search, UsersRound, X } from 'lucide-react';
 import {
   createCommunity,
   extractErrorMessage,
@@ -19,37 +19,42 @@ function isEndpointMissing(error) {
   return [404, 405, 501].includes(error?.response?.status);
 }
 
-function EmptyState({ activeView, query, category }) {
+function EmptyState({ activeView, query, category, onClear }) {
   const isJoined = activeView === 'joined';
   return (
-    <div data-testid="communities-empty" className="flex flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/[0.035] px-6 py-20 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05]">
-        <Globe2 className="h-8 w-8 text-slate-500" aria-hidden="true" />
+    <div data-testid="communities-empty" className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-brand-100 bg-brand-50">
+        <UsersRound className="h-7 w-7 text-brand-500" aria-hidden="true" />
       </div>
-      <h2 className="text-lg font-bold text-white">
+      <h2 className="text-lg font-semibold text-slate-900">
         {isJoined ? "You haven't joined any communities yet." : 'No communities found.'}
       </h2>
-      <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
         {isJoined
           ? 'Discover communities that match your interests.'
           : query || category !== 'all'
           ? 'Try a different search or category.'
           : 'Communities will appear here once the backend is connected.'}
       </p>
+      {onClear && (query || category !== 'all' || isJoined) && (
+        <button type="button" onClick={onClear} className="btn-outline mt-5">
+          {isJoined ? 'Discover communities' : 'Clear filters'}
+        </button>
+      )}
     </div>
   );
 }
 
 function ErrorState({ message, onRetry }) {
   return (
-    <div data-testid="communities-error" className="flex flex-col items-center justify-center rounded-3xl border border-rose-500/20 bg-rose-500/10 px-6 py-16 text-center">
-      <AlertCircle className="mb-4 h-10 w-10 text-rose-300" aria-hidden="true" />
-      <h2 className="text-lg font-bold text-white">Communities failed to load</h2>
-      <p className="mt-2 max-w-md text-sm leading-relaxed text-rose-100/85">{message}</p>
+    <div data-testid="communities-error" className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-16 text-center">
+      <AlertCircle className="mb-4 h-10 w-10 text-red-600" aria-hidden="true" />
+      <h2 className="text-lg font-semibold text-slate-900">Communities failed to load</h2>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-red-700">{message}</p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgba(255,143,50,0.28)] transition-colors hover:bg-accentSoft"
+        className="btn-primary mt-5"
       >
         <RefreshCw className="h-4 w-4" aria-hidden="true" />
         Try Again
@@ -61,21 +66,21 @@ function ErrorState({ message, onRetry }) {
 function LeaveConfirm({ community, onCancel, onConfirm, busy }) {
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Leave community">
-      <button className="absolute inset-0 cursor-default bg-slate-950/70 backdrop-blur-sm" type="button" aria-label="Cancel leave" onClick={onCancel} />
-      <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.58)]">
-        <h2 className="text-base font-bold text-white">Leave this community?</h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-400">
+      <button className="absolute inset-0 cursor-default bg-black/30 backdrop-blur-sm" type="button" aria-label="Cancel leave" onClick={onCancel} />
+      <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--shadow-popover)]">
+        <h2 className="text-base font-semibold text-slate-900">Leave this community?</h2>
+        <p className="mt-2 text-sm leading-relaxed text-slate-500">
           You can join {community?.name || 'this community'} again later if it remains public.
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={onCancel} className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-200 hover:text-white">
+          <button type="button" onClick={onCancel} className="btn-outline">
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="rounded-full bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-60"
+            className="btn-danger"
           >
             Leave
           </button>
@@ -89,10 +94,13 @@ export default function CommunitiesPage() {
   const [activeView, setActiveView] = useState('discover');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const categoryMenuRef = useRef(null);
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [backendReady, setBackendReady] = useState(true);
+  const [totalCount, setTotalCount] = useState(null);
   const [busyIds, setBusyIds] = useState({});
   const [createOpen, setCreateOpen] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState(null);
@@ -107,10 +115,12 @@ export default function CommunitiesPage() {
         membership: activeView === 'joined' ? 'joined' : 'discover',
       });
       setCommunities(normalizeCommunityList(payload));
+      setTotalCount(Number.isFinite(Number(payload?.total)) ? Number(payload.total) : null);
       setBackendReady(true);
     } catch (err) {
       if (isEndpointMissing(err)) {
         setCommunities([]);
+        setTotalCount(0);
         setBackendReady(false);
         setError('');
       } else {
@@ -124,6 +134,22 @@ export default function CommunitiesPage() {
   useEffect(() => {
     fetchCommunities();
   }, [fetchCommunities]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target)) {
+        setCategoryOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.add('scrollbar-hidden');
+    return () => document.documentElement.classList.remove('scrollbar-hidden');
+  }, []);
 
   const visibleCommunities = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -185,8 +211,17 @@ export default function CommunitiesPage() {
     }
   };
 
+  const clearFilters = () => {
+    setQuery('');
+    setCategory('all');
+    setActiveView('discover');
+  };
+
+  const displayedCount = totalCount ?? visibleCommunities.length;
+  const selectedCategory = COMMUNITY_CATEGORIES.find((item) => item.id === category) || COMMUNITY_CATEGORIES[0];
+
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       <CreateCommunityModal open={createOpen} onClose={() => setCreateOpen(false)} onSubmit={handleCreate} />
       {leaveTarget && (
         <LeaveConfirm
@@ -197,50 +232,48 @@ export default function CommunitiesPage() {
         />
       )}
 
-      <section className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-7 shadow-glow backdrop-blur-2xl sm:p-10">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,143,50,0.14),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(64,217,255,0.09),transparent_40%)]" />
-        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+      <section className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <UsersRound className="h-5 w-5 text-brand-500" aria-hidden="true" />
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-500">Community network</span>
+          </div>
           <div>
-            <div className="mb-3 flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/30 bg-accent/15">
-                <Globe2 className="h-4 w-4 text-accent" aria-hidden="true" />
-              </div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">Communities</h1>
-            </div>
-            <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Communities</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-500">
               Discover communities, connect with people, and share knowledge around your interests.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgba(255,143,50,0.28)] transition-colors hover:bg-accentSoft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Create Community
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="btn-primary shrink-0"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Create Community
+        </button>
       </section>
 
       {!backendReady && (
-        <div className="rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm text-accent" role="status">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
           Communities backend is not connected yet. The UI is ready for real community data.
         </div>
       )}
 
       {error && (
-        <div className="flex items-start gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200" role="alert">
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => setError('')} aria-label="Dismiss error" className="text-rose-200/75 hover:text-white">
+          <button type="button" onClick={() => setError('')} aria-label="Dismiss error" className="text-red-600/75 hover:text-red-800">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      <div className="space-y-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex w-full rounded-2xl border border-white/10 bg-white/[0.04] p-1 lg:w-auto" role="tablist" aria-label="Communities view">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div className="flex w-full gap-1 md:w-auto" role="tablist" aria-label="Communities view">
             {[
               { id: 'discover', label: 'Discover' },
               { id: 'joined', label: 'My Communities' },
@@ -251,8 +284,8 @@ export default function CommunitiesPage() {
                 role="tab"
                 aria-selected={activeView === item.id}
                 onClick={() => setActiveView(item.id)}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors lg:flex-none ${
-                  activeView === item.id ? 'bg-accent text-black' : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
+                className={`min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors md:flex-none ${
+                  activeView === item.id ? 'bg-brand-50 text-brand-600' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
                 {item.label}
@@ -260,22 +293,22 @@ export default function CommunitiesPage() {
             ))}
           </div>
 
-          <label className="relative block w-full lg:max-w-md">
+          <label className="relative block w-full md:max-w-sm md:flex-1">
             <span className="sr-only">Search communities</span>
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search communities..."
-              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-11 text-sm text-white outline-none transition-all placeholder:text-slate-500 focus:border-accent/45 focus:ring-1 focus:ring-accent/25"
+              className="input-base py-2.5 pl-10 pr-10"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
                 aria-label="Clear community search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:text-white"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:text-slate-700"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -283,36 +316,67 @@ export default function CommunitiesPage() {
           </label>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Community categories">
-          {COMMUNITY_CATEGORIES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setCategory(item.id)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                category === item.id
-                  ? 'border-accent/35 bg-accent/15 text-accent'
-                  : 'border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.07] hover:text-white'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div ref={categoryMenuRef} className="relative flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:w-[22rem]">
+          <span className="whitespace-nowrap text-sm font-semibold text-slate-700">Category</span>
+          <button
+            type="button"
+            role="combobox"
+            aria-label="Community category"
+            aria-expanded={categoryOpen}
+            aria-controls="community-category-options"
+            aria-haspopup="listbox"
+            onClick={() => setCategoryOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setCategoryOpen(false);
+              if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setCategoryOpen(true);
+              }
+            }}
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-1 py-1 text-left text-sm font-medium text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-200"
+          >
+            <span className="truncate">{selectedCategory.label}</span>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-600 transition-transform ${categoryOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+          </button>
+
+          {categoryOpen && (
+            <div id="community-category-options" role="listbox" aria-label="Community categories" className="scrollbar-hidden absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-[var(--shadow-popover)]">
+              {COMMUNITY_CATEGORIES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={category === item.id}
+                  onClick={() => {
+                    setCategory(item.id);
+                    setCategoryOpen(false);
+                  }}
+                  className={`w-full rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    category === item.id
+                      ? 'bg-brand-50 font-semibold text-brand-700'
+                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <section className="space-y-4" aria-label="Discover Communities">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-bold text-white">{activeView === 'joined' ? 'My Communities' : 'Discover Communities'}</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{activeView === 'joined' ? 'My Communities' : 'Discover Communities'}</h2>
           {!loading && visibleCommunities.length > 0 && (
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-400">
-              {visibleCommunities.length.toLocaleString()} shown
+            <span className="text-sm text-slate-500">
+              {displayedCount.toLocaleString()} {displayedCount === 1 ? 'community' : 'communities'}
             </span>
           )}
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: SKELETON_COUNT }).map((_, index) => (
               <CommunityCardSkeleton key={index} />
             ))}
@@ -320,9 +384,9 @@ export default function CommunitiesPage() {
         ) : error && communities.length === 0 ? (
           <ErrorState message={error} onRetry={fetchCommunities} />
         ) : visibleCommunities.length === 0 ? (
-          <EmptyState activeView={activeView} query={query} category={category} />
+          <EmptyState activeView={activeView} query={query} category={category} onClear={clearFilters} />
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3" data-testid="communities-grid">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3" data-testid="communities-grid">
             {visibleCommunities.map((community) => {
               const id = community.id ?? community.community_id;
               return (

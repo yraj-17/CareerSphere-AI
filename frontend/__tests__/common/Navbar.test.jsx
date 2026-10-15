@@ -100,13 +100,11 @@ describe('Navbar', () => {
     expect(screen.queryByRole('menuitem', { name: /discover people/i })).not.toBeInTheDocument();
   });
 
-  test('keeps global search local and typeable', () => {
+  test('does not render a global search control in the header', () => {
     render(<Navbar />);
 
-    const searchInput = screen.getByPlaceholderText(/search people, skills, careers/i);
-    fireEvent.change(searchInput, { target: { value: 'mentor' } });
-
-    expect(searchInput).toHaveValue('mentor');
+    expect(screen.queryByPlaceholderText(/search people, skills, careers/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open global search/i })).not.toBeInTheDocument();
   });
 
   test('uses profile dropdown for profile navigation and logout', () => {
@@ -115,6 +113,7 @@ describe('Navbar', () => {
     fireEvent.click(screen.getByRole('button', { name: /user profile menu/i }));
 
     expect(screen.getByRole('link', { name: /^profile$/i })).toHaveAttribute('href', '/dashboard/profile');
+    expect(screen.getByRole('menuitem', { name: /^settings$/i })).toHaveAttribute('href', '/dashboard/settings');
     fireEvent.click(screen.getByRole('menuitem', { name: /logout/i }));
 
     expect(mockLogout).toHaveBeenCalledTimes(1);

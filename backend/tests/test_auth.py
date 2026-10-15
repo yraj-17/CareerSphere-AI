@@ -18,6 +18,7 @@ from app.db.session import SessionLocal, Base, engine
 from app.db.models import User, Profile, MediaObject, Conversation, ChatMessage
 from app.db.redis_client import redis_client
 from app.core.config import settings
+from app.core.security import create_access_token, hash_password
 
 client = TestClient(app)
 
@@ -252,6 +253,76 @@ def test_auth_responses_include_profile_photo_url_without_sensitive_fields(monke
     assert me_user["profile_photo_url"] == "https://cdn.example.com/profiles/test-avatar.png"
     assert "password_hash" not in me_user
     assert "profile_photo_media_id" not in me_user
+
+
+def test_authenticated_account_update_normalizes_username_and_changes_password():
+    db = SessionLocal()
+    try:
+        user = User(
+            first_name="Account",
+            last_name="Owner",
+            username="test_account_owner",
+            email="test_account_owner@example.com",
+            password_hash=hash_password("Password123"),
+        )
+        duplicate = User(
+            first_name="Other",
+            last_name="User",
+            username="test_account_taken",
+            email="test_account_taken@example.com",
+            password_hash=hash_password("Password123"),
+        )
+        db.add_all([user, duplicate])
+        db.commit()
+        db.refresh(user)
+    finally:
+        db.close()
+
+    headers = {"Authorization": f"Bearer {create_access_token(subject=user.id)}"}
+
+    updated = client.patch(
+        "/api/auth/me",
+        headers=headers,
+        json={"first_name": "Updated", "last_name": "Owner", "username": "  Updated.Owner  "},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["id"] == user.id
+    assert updated.json()["username"] == "updated.owner"
+    assert updated.json()["first_name"] == "Updated"
+
+    duplicate_response = client.patch(
+        "/api/auth/me",
+        headers=headers,
+        json={"username": "TEST_ACCOUNT_TAKEN"},
+    )
+    assert duplicate_response.status_code == 409
+
+    invalid_response = client.patch(
+        "/api/auth/me",
+        headers=headers,
+        json={"username": "bad username"},
+    )
+    assert invalid_response.status_code == 422
+
+    wrong_password = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": "WrongPassword123", "new_password": "NewPassword456"},
+    )
+    assert wrong_password.status_code == 400
+
+    changed = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": "Password123", "new_password": "NewPassword456"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    login = client.post(
+        "/api/auth/login",
+        json={"identifier": "updated.owner", "password": "NewPassword456"},
+    )
+    assert login.status_code == 200, login.text
 
 
 def test_media_upload_requires_auth():

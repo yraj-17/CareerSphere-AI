@@ -84,7 +84,7 @@ function Section({ label, icon: Icon, items, activeConversationId, openMenuId, e
                       {formatStamp(conversation.updated_at)}
                     </span>
                   </button>
-                  <div className="flex shrink-0 items-center gap-0.5" data-conversation-menu>
+                  <div className="flex shrink-0 items-start gap-0.5 self-start pt-2" data-conversation-menu>
                     {conversation.is_favorite ? <Star className="h-3 w-3 fill-[#E89B00] text-[#E89B00]" aria-label="Favorite" /> : null}
                     {conversation.is_pinned ? <Pin className="h-3 w-3 text-brand-600" aria-label="Pinned" /> : null}
                     <button

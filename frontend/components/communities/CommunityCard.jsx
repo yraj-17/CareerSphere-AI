@@ -34,22 +34,22 @@ export default function CommunityCard({
   const tags = Array.isArray(community?.tags) ? community.tags.slice(0, 3) : [];
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045] shadow-[0_18px_45px_rgba(0,0,0,0.22)] backdrop-blur-xl transition-all hover:border-accent/25 hover:bg-white/[0.065]">
+    <article className="group flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-brand-200 hover:shadow-md">
       <Link
         href={`/dashboard/communities/${id}`}
-        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
         aria-label={`View ${name}`}
       >
-        <div className="relative h-28 overflow-hidden bg-slate-900">
+        <div className="relative aspect-[16/9] overflow-hidden bg-brand-50">
           {community?.image_url ? (
             <div
-              className="h-full w-full bg-cover bg-center opacity-85"
+              className="h-full w-full bg-cover bg-center"
               style={{ backgroundImage: `url(${community.image_url})` }}
               aria-hidden="true"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_0%,rgba(255,143,50,0.20),transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.95))]">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15 text-sm font-bold text-accent">
+            <div className="flex h-full w-full items-center justify-center bg-brand-50">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-brand-200 bg-white text-sm font-bold text-brand-600 shadow-sm">
                 {getInitials(name)}
               </div>
             </div>
@@ -57,35 +57,35 @@ export default function CommunityCard({
         </div>
       </Link>
 
-      <div className="flex flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
         <div className="space-y-2">
           <div className="flex items-start justify-between gap-3">
             <Link
               href={`/dashboard/communities/${id}`}
-              className="line-clamp-2 text-base font-bold text-white transition-colors hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              className="line-clamp-2 text-base font-semibold text-slate-900 transition-colors hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               {name}
             </Link>
-            <span className="shrink-0 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-1 text-[11px] font-semibold text-accent">
+            <span className="shrink-0 rounded-lg border border-brand-100 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-600">
               {category}
             </span>
           </div>
-          <p className="line-clamp-3 min-h-[3.75rem] text-sm leading-relaxed text-slate-400">
+          <p className="line-clamp-3 min-h-[3.75rem] text-sm leading-relaxed text-slate-600">
             {community?.description || 'Community description will appear here once provided.'}
           </p>
         </div>
 
-        <div className="space-y-2 text-xs text-slate-400">
+        <div className="space-y-2 text-xs text-slate-500">
           <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-slate-500" aria-hidden="true" />
+            <Users className="h-4 w-4 text-slate-400" aria-hidden="true" />
             {formatMembers(community?.member_count)}
           </div>
           {tags.length > 0 && (
             <div className="flex items-center gap-2">
-              <Tag className="h-4 w-4 text-slate-500" aria-hidden="true" />
+              <Tag className="h-4 w-4 text-slate-400" aria-hidden="true" />
               <div className="flex min-w-0 flex-wrap gap-1.5">
                 {tags.map((tag) => (
-                  <span key={tag} className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-slate-300">
+                  <span key={tag} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                     {tag}
                   </span>
                 ))}
@@ -100,7 +100,8 @@ export default function CommunityCard({
               type="button"
               onClick={() => onLeave?.(community)}
               disabled={busy || disabled}
-              className="flex w-full items-center justify-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
+              aria-busy={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Joined
@@ -110,7 +111,8 @@ export default function CommunityCard({
               type="button"
               onClick={() => onJoin?.(community)}
               disabled={busy || disabled}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgba(255,143,50,0.28)] transition-colors hover:bg-accentSoft disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+              aria-busy={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Join Community
@@ -124,15 +126,15 @@ export default function CommunityCard({
 
 export function CommunityCardSkeleton() {
   return (
-    <div data-testid="community-card-skeleton" className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045]">
-      <div className="h-28 animate-pulse bg-white/[0.06]" />
+    <div data-testid="community-card-skeleton" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="aspect-[16/9] animate-pulse bg-slate-100" />
       <div className="space-y-4 p-5">
-        <div className="h-4 w-2/3 animate-pulse rounded bg-white/[0.08]" />
+        <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
         <div className="space-y-2">
-          <div className="h-3 w-full animate-pulse rounded bg-white/[0.06]" />
-          <div className="h-3 w-4/5 animate-pulse rounded bg-white/[0.06]" />
+          <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+          <div className="h-3 w-4/5 animate-pulse rounded bg-slate-100" />
         </div>
-        <div className="h-9 w-full animate-pulse rounded-full bg-white/[0.08]" />
+        <div className="h-10 w-full animate-pulse rounded-lg bg-slate-100" />
       </div>
     </div>
   );

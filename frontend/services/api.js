@@ -140,6 +140,18 @@ export const getCurrentUser = async () => {
   return response.data;
 };
 
+/** Update the authenticated user's name and username without sending an ID. */
+export const updateMyAccount = async (payload) => {
+  const response = await apiClient.patch('/api/auth/me', payload);
+  return response.data;
+};
+
+/** Change the authenticated user's password through the existing auth service. */
+export const changePassword = async (payload) => {
+  const response = await apiClient.post('/api/auth/change-password', payload);
+  return response.data;
+};
+
 /**
  * Log out user
  */

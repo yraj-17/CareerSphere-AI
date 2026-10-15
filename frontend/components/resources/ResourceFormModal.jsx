@@ -126,56 +126,56 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" aria-label="Close resource form" onClick={onClose} className="absolute inset-0 cursor-default bg-slate-950/75 backdrop-blur-sm" />
-      <form onSubmit={handleSubmit} className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/10 bg-slate-950 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.58)]">
+      <button type="button" aria-label="Close resource form" onClick={onClose} className="absolute inset-0 cursor-default bg-black/30 backdrop-blur-sm" />
+      <form onSubmit={handleSubmit} className="scrollbar-hidden relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(16,47,107,0.18)]">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-white">{title}</h2>
-            <p className="mt-1 text-sm text-slate-400">Add a useful article, course, tool, repo, or tutorial for the CareerSphere community.</p>
+            <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+            <p className="mt-1 text-sm text-slate-500">Add a useful article, course, tool, repo, or tutorial for the CareerSphere community.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close">
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 flex items-start gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100" role="alert">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
 
         <div className="grid gap-4">
-          <label className="grid gap-2 text-sm font-semibold text-slate-200">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
             Title
             <input
               value={form.title}
               onChange={(event) => updateField('title', event.target.value)}
               maxLength={180}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none focus:border-accent/45"
+              className="input-base"
               placeholder="e.g. The FastAPI deployment checklist"
               required
             />
           </label>
 
-          <label className="grid gap-2 text-sm font-semibold text-slate-200">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
             URL
             <input
               value={form.url}
               onChange={(event) => updateField('url', event.target.value)}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none focus:border-accent/45"
+              className="input-base"
               placeholder="https://..."
               required
             />
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
               Resource type
               <select
                 value={form.resource_type}
                 onChange={(event) => updateField('resource_type', event.target.value)}
-                className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-accent/45"
+                className="input-base"
               >
                 {RESOURCE_TYPE_OPTIONS.map((item) => (
                   <option key={item.id} value={item.id}>{item.label}</option>
@@ -183,12 +183,12 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
               </select>
             </label>
 
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
               Category
               <select
                 value={form.category}
                 onChange={(event) => updateField('category', event.target.value)}
-                className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-accent/45"
+                className="input-base"
               >
                 {CATEGORY_OPTIONS.map((item) => (
                   <option key={item.id} value={item.id}>{item.label}</option>
@@ -197,26 +197,26 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
             </label>
           </div>
 
-          <label className="grid gap-2 text-sm font-semibold text-slate-200">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
             Description
             <textarea
               value={form.description}
               onChange={(event) => updateField('description', event.target.value)}
               rows={4}
               maxLength={1200}
-              className="resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none focus:border-accent/45"
+              className="input-base resize-none"
               placeholder="What makes this resource useful?"
             />
           </label>
 
-          <div className="grid gap-2 text-sm font-semibold text-slate-200">
+          <div className="grid gap-2 text-sm font-semibold text-slate-700">
             Tags
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 focus-within:border-accent/45">
+            <div className="rounded-xl border border-slate-300 bg-white p-3 focus-within:border-brand-500 focus-within:shadow-[var(--focus-ring)]">
               <div className="flex flex-wrap gap-2">
                 {form.tags.map((tag) => (
-                  <span key={tag.toLowerCase()} className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                  <span key={tag.toLowerCase()} className="inline-flex items-center gap-1 rounded-md border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-600">
                     {tag}
-                    <button type="button" onClick={() => removeTag(tag)} aria-label={`Remove ${tag}`} className="text-accent/70 hover:text-white">
+                    <button type="button" onClick={() => removeTag(tag)} aria-label={`Remove ${tag}`} className="text-brand-500/70 hover:text-brand-700">
                       <X className="h-3 w-3" />
                     </button>
                   </span>
@@ -226,7 +226,7 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
                   onChange={(event) => setTagInput(event.target.value)}
                   onBlur={addTag}
                   onKeyDown={handleTagKeyDown}
-                  className="min-w-[140px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-slate-500"
+                  className="min-w-[140px] flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-400"
                   placeholder="Add tag and press Enter"
                 />
               </div>
@@ -236,13 +236,13 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
         </div>
 
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:text-white">
+          <button type="button" onClick={onClose} className="btn-outline">
             Cancel
           </button>
           <button
             type="submit"
             disabled={!canSubmit || submitting}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-black hover:bg-accentSoft disabled:opacity-60"
+            className="btn-primary"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {submitLabel}

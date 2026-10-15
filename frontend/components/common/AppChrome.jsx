@@ -9,11 +9,13 @@ export default function AppChrome({ children }) {
   const isLanding = pathname === '/';
   const isAIChat = pathname.startsWith('/dashboard/ai');
   const isMessaging = pathname.startsWith('/dashboard/messaging');
+  const isCommunities = pathname === '/dashboard/communities';
+  const isResources = pathname.startsWith('/dashboard/resources');
   const isDedicatedChat = isAIChat || isMessaging;
 
   return (
     <>
-      {isLanding || isDedicatedChat ? null : <BackgroundFX />}
+      {isLanding || isDedicatedChat || isCommunities || isResources ? null : <BackgroundFX />}
       {isLanding || isDedicatedChat ? null : <Navbar />}
       <main
         className={isDedicatedChat

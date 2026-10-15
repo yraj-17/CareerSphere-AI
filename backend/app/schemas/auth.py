@@ -40,31 +40,72 @@ class UserRegisterRequest(BaseModel):
     @field_validator("username", mode="before")
     @classmethod
     def validate_username(cls, v: str) -> str:
-        if not v:
-            raise ValueError("Username cannot be empty.")
-        v = v.strip()
-        if " " in v:
-            raise ValueError("Username must not contain spaces.")
-        if not re.match(r"^[a-zA-Z0-9_.]+$", v):
-            raise ValueError("Username can only contain letters, numbers, underscores, and periods.")
-        if len(v) < 3:
-            raise ValueError("Username must be at least 3 characters long.")
-        if len(v) > 30:
-            raise ValueError("Username must not exceed 30 characters.")
-        return v.lower()
+        return normalize_username(v)
 
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long.")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter.")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter.")
-        if not re.search(r"[0-9]", v):
-            raise ValueError("Password must contain at least one number.")
-        return v
+        return validate_password_strength(v)
+
+
+def normalize_username(value: str) -> str:
+    if not value:
+        raise ValueError("Username cannot be empty.")
+    value = value.strip()
+    if " " in value:
+        raise ValueError("Username must not contain spaces.")
+    if not re.match(r"^[a-zA-Z0-9_.]+$", value):
+        raise ValueError("Username can only contain letters, numbers, underscores, and periods.")
+    if len(value) < 3:
+        raise ValueError("Username must be at least 3 characters long.")
+    if len(value) > 30:
+        raise ValueError("Username must not exceed 30 characters.")
+    return value.lower()
+
+
+def validate_password_strength(value: str) -> str:
+    if len(value) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+    if not re.search(r"[A-Z]", value):
+        raise ValueError("Password must contain at least one uppercase letter.")
+    if not re.search(r"[a-z]", value):
+        raise ValueError("Password must contain at least one lowercase letter.")
+    if not re.search(r"[0-9]", value):
+        raise ValueError("Password must contain at least one number.")
+    return value
+
+
+class UserAccountUpdate(BaseModel):
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    username: Optional[str] = Field(None, min_length=3, max_length=30)
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def validate_optional_names(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Name cannot be empty.")
+        return value
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def validate_account_username(cls, value):
+        if value is None:
+            return None
+        return normalize_username(value)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class UserLoginRequest(BaseModel):
