@@ -33,10 +33,10 @@ import {
 
 const primaryNav = [
   {
-    label: 'Dashboard',
-    href: '/dashboard',
+    label: 'Home',
+    href: '/dashboard/home',
     icon: LayoutDashboard,
-    isActive: (pathname) => pathname === '/dashboard',
+    isActive: (pathname) => pathname === '/dashboard/home',
   },
   {
     label: 'AI Career Assistant',
@@ -249,7 +249,7 @@ function NotificationDropdown({
   );
 }
 
-function Brand({ compact = false, href = '/dashboard' }) {
+function Brand({ compact = false, href = '/dashboard/home' }) {
   return (
     <Link
       href={href}

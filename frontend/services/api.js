@@ -393,6 +393,58 @@ export const getCareerMatching = async (includeAI = true) => {
 
 export default apiClient;
 
+// ---------------------------------------------------------------------------
+// Global Home feed
+// ---------------------------------------------------------------------------
+
+export const listPosts = async ({ limit = 10, offset = 0 } = {}) => {
+  const response = await apiClient.get('/api/posts', { params: { limit, offset } });
+  return response.data;
+};
+
+export const createPost = async (payload) => {
+  const response = await apiClient.post('/api/posts', payload);
+  return response.data;
+};
+
+export const updatePost = async (postId, payload) => {
+  const response = await apiClient.patch(`/api/posts/${postId}`, payload);
+  return response.data;
+};
+
+export const deletePost = async (postId) => {
+  await apiClient.delete(`/api/posts/${postId}`);
+};
+
+export const likePost = async (postId) => {
+  const response = await apiClient.post(`/api/posts/${postId}/like`);
+  return response.data;
+};
+
+export const unlikePost = async (postId) => {
+  const response = await apiClient.delete(`/api/posts/${postId}/like`);
+  return response.data;
+};
+
+export const listPostComments = async (postId, { limit = 20, offset = 0 } = {}) => {
+  const response = await apiClient.get(`/api/posts/${postId}/comments`, { params: { limit, offset } });
+  return response.data;
+};
+
+export const createPostComment = async (postId, content) => {
+  const response = await apiClient.post(`/api/posts/${postId}/comments`, { content });
+  return response.data;
+};
+
+export const updatePostComment = async (commentId, content) => {
+  const response = await apiClient.patch(`/api/posts/comments/${commentId}`, { content });
+  return response.data;
+};
+
+export const deletePostComment = async (commentId) => {
+  await apiClient.delete(`/api/posts/comments/${commentId}`);
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Networking — Phase 5.3 / 5.4
 // ─────────────────────────────────────────────────────────────────────────────

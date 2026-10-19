@@ -78,7 +78,7 @@ describe('Navbar', () => {
 
     const primaryNav = screen.getByRole('navigation', { name: /primary navigation/i });
 
-    expect(within(primaryNav).getByRole('link', { name: /^dashboard$/i })).toHaveAttribute('href', '/dashboard');
+    expect(within(primaryNav).getByRole('link', { name: /^home$/i })).toHaveAttribute('href', '/dashboard/home');
     expect(within(primaryNav).getByRole('link', { name: /ai career assistant/i })).toHaveAttribute('href', '/dashboard/ai');
     expect(within(primaryNav).getByRole('link', { name: /skill analysis/i })).toHaveAttribute('href', '/dashboard/skill-analysis');
     expect(within(primaryNav).getByRole('link', { name: /career matching/i })).toHaveAttribute('href', '/dashboard/career-matching');

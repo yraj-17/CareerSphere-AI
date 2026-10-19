@@ -12,8 +12,20 @@ from app.services import storage_service
 
 router = APIRouter(prefix="/media", tags=["Media"])
 
-ALLOWED_PURPOSES = {"general", "resume", "profile_image", "document"}
+ALLOWED_PURPOSES = {"general", "resume", "profile_image", "document", "post_image"}
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_POST_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _image_content_type(payload: bytes) -> str | None:
+    """Identify the small allow-list of image formats without trusting headers."""
+    if payload.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 @router.post(
@@ -46,6 +58,19 @@ async def upload_media(
 
     filename = file.filename or "upload.bin"
     content_type = file.content_type or "application/octet-stream"
+    if purpose == "post_image":
+        if len(payload) > MAX_POST_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Post images must be 8 MB or smaller.",
+            )
+        detected_type = _image_content_type(payload)
+        if detected_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Post images must be valid JPEG, PNG, or WebP files.",
+            )
+        content_type = detected_type
     object_key = storage_service.build_object_key(current_user.id, purpose, filename)
 
     try:

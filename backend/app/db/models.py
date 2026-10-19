@@ -499,6 +499,93 @@ class SavedResource(Base):
 
 
 # ---------------------------------------------------------------------------
+# Global Home feed posts
+# ---------------------------------------------------------------------------
+
+
+class GlobalPost(Base):
+    """A public professional update for the authenticated Home feed."""
+
+    __tablename__ = "global_posts"
+    __table_args__ = (
+        Index("ix_global_posts_author_created", "author_id", "created_at"),
+        Index("ix_global_posts_created_id", "created_at", "id"),
+        Index("ix_global_posts_resource_id", "resource_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    resource_id = Column(String(36), ForeignKey("resources.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    author = relationship("User")
+    resource = relationship("Resource")
+    media = relationship("GlobalPostMedia", back_populates="post", cascade="all, delete-orphan", order_by="GlobalPostMedia.sort_order.asc()")
+    likes = relationship("GlobalPostLike", back_populates="post", cascade="all, delete-orphan")
+    comments = relationship("GlobalPostComment", back_populates="post", cascade="all, delete-orphan", order_by="GlobalPostComment.created_at.asc()")
+
+
+class GlobalPostMedia(Base):
+    """Image attachment for a global post; binary data remains in MinIO."""
+
+    __tablename__ = "global_post_media"
+    __table_args__ = (
+        Index("ix_global_post_media_post_id", "post_id"),
+        Index("ix_global_post_media_media_id", "media_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("global_posts.id", ondelete="CASCADE"), nullable=False)
+    media_id = Column(String(36), ForeignKey("media_objects.id", ondelete="CASCADE"), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("GlobalPost", back_populates="media")
+    media_object = relationship("MediaObject")
+
+
+class GlobalPostLike(Base):
+    """One active like per user/post, enforced by the database."""
+
+    __tablename__ = "global_post_likes"
+    __table_args__ = (
+        UniqueConstraint("post_id", "user_id", name="uq_global_post_like_user"),
+        Index("ix_global_post_likes_post_id", "post_id"),
+        Index("ix_global_post_likes_user_id", "user_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("global_posts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("GlobalPost", back_populates="likes")
+    user = relationship("User")
+
+
+class GlobalPostComment(Base):
+    """A single-level comment on a global post."""
+
+    __tablename__ = "global_post_comments"
+    __table_args__ = (
+        Index("ix_global_post_comments_post_created", "post_id", "created_at"),
+        Index("ix_global_post_comments_author_id", "author_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    post_id = Column(String(36), ForeignKey("global_posts.id", ondelete="CASCADE"), nullable=False)
+    author_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    post = relationship("GlobalPost", back_populates="comments")
+    author = relationship("User")
+
+
+# ---------------------------------------------------------------------------
 # Communities V1
 # ---------------------------------------------------------------------------
 

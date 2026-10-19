@@ -61,7 +61,7 @@ export default function LoginForm() {
     const result = await login(formData.identifier, formData.password);
 
     if (result.success) {
-      router.push('/dashboard');
+      router.push('/dashboard/home');
     } else {
       setGeneralError(result.error || 'Invalid username/email or password.');
       setIsLoading(false);

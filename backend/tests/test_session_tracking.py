@@ -576,9 +576,9 @@ def test_18_no_new_migration():
         f for f in os.listdir(migration_dir)
         if f.endswith(".py") and not f.startswith("_")
     ]
-    # Later product features legitimately added migrations 011 through 014. Session
-    # tracking itself must not introduce another schema migration beyond the
-    # current application head.
+    # Later product features legitimately added migrations through the current
+    # application head. Session tracking itself must not introduce an extra
+    # migration beyond that head.
     assert "008_message_management.py" in files
     assert "009_communities.py" in files
     assert "010_community_post_interactions.py" in files
@@ -586,12 +586,14 @@ def test_18_no_new_migration():
     assert "012_notifications.py" in files
     assert "013_resources.py" in files
     assert "014_resource_share_messages.py" in files
+    assert "015_ai_conversation_preferences.py" in files
+    assert "016_global_posts.py" in files
     ids = sorted(
         int(f.split("_")[0])
         for f in files
         if f.split("_")[0].isdigit()
     )
-    assert max(ids) == 14
+    assert max(ids) == 16
 
 
 # ===========================================================================
