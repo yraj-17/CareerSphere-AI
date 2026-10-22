@@ -78,8 +78,8 @@ export default function AIEngine() {
               <div className="text-sm uppercase tracking-[0.25em] text-accent/80">Open-Source AI Stack</div>
               <div className="mt-4 text-xl font-semibold text-white">Built with practical, extensible model options</div>
               <p className="mt-4 text-sm leading-7 text-slate-300">
-                The poster architecture references Ollama with model choices such as Qwen, Llama, and Mistral.
-                That keeps the concept credible for student projects, prototypes, and privacy-sensitive deployments.
+                Ollama provides the configured local or remote model runtime for Qwen-powered explanations and career assistance,
+                while Gemini can add a second semantic reranking pass to opportunity matching when enabled.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">

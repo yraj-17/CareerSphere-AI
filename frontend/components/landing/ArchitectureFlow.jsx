@@ -10,8 +10,8 @@ export default function ArchitectureFlow() {
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="System Architecture"
-          title="A Premium Interpretation of the Poster's Architecture"
-          text="The uploaded poster's system flow is transformed into a layered product narrative, making it easier to understand how users, interfaces, services, AI, and storage fit together."
+          title="A connected architecture for career growth"
+          text="The product connects the web experience, FastAPI services, AI retrieval, structured data, object storage, and real-time messaging into one authenticated career platform."
         />
 
         <div className="relative mt-16 space-y-5">

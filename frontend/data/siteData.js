@@ -24,7 +24,6 @@ import {
   Cpu,
   Server,
   MonitorSmartphone,
-  Radio,
   Blocks
 } from 'lucide-react';
 
@@ -179,57 +178,69 @@ export const networkRoles = [
 
 export const techLayers = [
   {
-    title: 'Frontend Layer',
+    title: 'Client Experience',
     icon: MonitorSmartphone,
     items: [
-      { name: 'Next.js', role: 'Modern web app framework for responsive product experience.' },
-      { name: 'Tailwind CSS', role: 'Utility-first styling system for premium UI consistency.' }
+      { name: 'Next.js', role: 'App Router foundation for the public landing page and authenticated product surfaces.' },
+      { name: 'React', role: 'Component model for interactive dashboards, profiles, communities, messaging, and AI workflows.' },
+      { name: 'Tailwind CSS', role: 'Utility-first styling system for the shared CareerSphere visual language.' },
+      { name: 'Framer Motion', role: 'Motion layer for landing-page storytelling and responsive product interactions.' },
+      { name: 'Axios', role: 'Shared HTTP client for authenticated communication with the FastAPI API.' },
+      { name: 'Lucide React', role: 'Consistent icon system used across the marketing and application interfaces.' }
     ]
   },
   {
-    title: 'Backend Layer',
+    title: 'API & Domain Services',
     icon: Server,
     items: [
-      { name: 'FastAPI', role: 'High-performance Python backend for APIs and services.' },
-      { name: 'Python', role: 'Core language powering orchestration and application logic.' }
+      { name: 'FastAPI', role: 'Typed API layer for authentication, profiles, matching, communities, media, and messaging.' },
+      { name: 'Python', role: 'Application language for orchestration, matching pipelines, AI services, and background logic.' },
+      { name: 'Pydantic', role: 'Request, response, and configuration validation at the API boundary.' },
+      { name: 'SQLAlchemy', role: 'ORM and database session layer for the application domain model.' },
+      { name: 'Alembic', role: 'Versioned PostgreSQL schema migrations for repeatable environment setup.' },
+      { name: 'Uvicorn', role: 'ASGI server used to run the FastAPI application.' }
     ]
   },
   {
-    title: 'AI Engine',
+    title: 'AI & Semantic Search',
     icon: Brain,
     items: [
-      { name: 'Ollama', role: 'Local/open-source LLM runtime for model serving.' },
-      { name: 'Qwen / Llama / Mistral', role: 'Open-source model options for question generation and evaluation.' },
-      { name: 'Sentence Transformers', role: 'Embeddings and semantic understanding across user data.' }
+      { name: 'Ollama', role: 'Local or remote model runtime for the career assistant, skill insights, and explanations.' },
+      { name: 'Qwen', role: 'Configured language model for grounded career conversations and AI explanations.' },
+      { name: 'Gemini', role: 'Optional second-stage semantic reranker for career-matching results.' },
+      { name: 'Qdrant', role: 'Vector search layer for profile, career knowledge, and opportunity retrieval.' },
+      { name: 'nomic-embed-text', role: 'Embedding model served through Ollama for semantic indexing and retrieval.' }
     ]
   },
   {
-    title: 'Data & Storage',
+    title: 'Data & Object Storage',
     icon: Database,
     items: [
-      { name: 'PostgreSQL', role: 'Stores user, profile, and community data.' },
-      { name: 'Qdrant', role: 'Vector database for semantic retrieval and embeddings.' },
-      { name: 'Redis', role: 'Caching and session acceleration.' },
-      { name: 'MinIO', role: 'File and media object storage.' }
+      { name: 'PostgreSQL', role: 'Source of truth for users, profiles, communities, conversations, opportunities, and metadata.' },
+      { name: 'Redis', role: 'Short-lived OTP state, availability checks, response caching, presence, and pub/sub.' },
+      { name: 'MinIO', role: 'S3-compatible object storage for resumes, profile images, and shared media.' },
+      { name: 'psycopg', role: 'PostgreSQL driver connecting the Python services to the relational data layer.' }
     ]
   },
   {
-    title: 'Security & Real-Time',
-    icon: Radio,
+    title: 'Auth & Real-Time',
+    icon: ShieldCheck,
     items: [
-      { name: 'Keycloak', role: 'Secure authentication and identity management.' },
-      { name: 'Socket.IO', role: 'Live chat, notifications, and community updates.' },
-      { name: 'Docker', role: 'Portable deployment and scalable infrastructure packaging.' }
+      { name: 'JWT / PyJWT', role: 'Stateless access tokens used to identify authenticated API requests.' },
+      { name: 'bcrypt', role: 'Password hashing and verification for account security.' },
+      { name: 'WebSocket', role: 'Native browser-to-FastAPI channel for real-time direct messaging.' },
+      { name: 'Redis Pub/Sub', role: 'Cross-instance event fanout for presence and messaging updates.' },
+      { name: 'SMTP / OTP', role: 'Email verification flow for new account signup.' }
     ]
   },
   {
-    title: 'Support Services',
+    title: 'Operations & Integrations',
     icon: Blocks,
     items: [
-      { name: 'Faster-Whisper', role: 'Speech-to-text support for interview workflows.' },
-      { name: 'LanguageTool', role: 'Grammar and language assistance.' },
-      { name: 'GitHub', role: 'Project import and portfolio linking.' },
-      { name: 'Email / SMTP', role: 'Notifications and communication events.' }
+      { name: 'Docker Compose', role: 'Reproducible local infrastructure for Redis, Qdrant, MinIO, Ollama, and LanguageTool.' },
+      { name: 'LanguageTool', role: 'Optional grammar and spelling service for writing assistance.' },
+      { name: 'pytest', role: 'Backend test suite covering authentication, matching, messaging, communities, and reliability.' },
+      { name: 'AWS-ready Ollama', role: 'The model endpoint can run locally or on a GPU host without changing the application flow.' }
     ]
   }
 ];
@@ -266,9 +277,9 @@ export const architectureFlow = [
     bullets: ['PostgreSQL', 'Qdrant', 'Redis', 'MinIO']
   },
   {
-    title: 'External Integrations',
+    title: 'Supporting Services',
     icon: GitBranch,
-    bullets: ['GitHub', 'Email / SMTP', 'Keycloak', 'LanguageTool', 'Faster-Whisper']
+    bullets: ['Gemini reranking', 'LanguageTool', 'SMTP email verification', 'Redis Pub/Sub', 'Ollama runtime']
   }
 ];
 
