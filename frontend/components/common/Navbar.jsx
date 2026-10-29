@@ -13,6 +13,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Mic,
   Search,
   Settings,
   Sparkles,
@@ -55,6 +56,12 @@ const primaryNav = [
     href: '/dashboard/career-matching',
     icon: Briefcase,
     isActive: (pathname) => pathname === '/dashboard/career-matching',
+  },
+  {
+    label: 'AI Interviewer',
+    href: '/dashboard/interview',
+    icon: Mic,
+    isActive: (pathname) => pathname === '/dashboard/interview' || pathname.startsWith('/dashboard/interview/'),
   },
 ];
 

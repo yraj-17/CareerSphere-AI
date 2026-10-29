@@ -1022,3 +1022,97 @@ export const getPinnedMessage = async (conversationId) => {
   return response.data;
 };
 
+
+// ---------------------------------------------------------------------------
+// AI Interviewer
+// ---------------------------------------------------------------------------
+// The backend derives the user from the JWT and owns question order, scores,
+// deadlines, and reports — the frontend only sends configuration and answers.
+
+/** Each AI step may make up to two model calls (backend default 120s each). */
+const INTERVIEW_AI_TIMEOUT_MS = 270000;
+/** Report generation may also re-attempt failed evaluations before the narrative. */
+const INTERVIEW_REPORT_TIMEOUT_MS = 600000;
+const INTERVIEW_TRANSCRIBE_TIMEOUT_MS = 120000;
+
+export const getInterviewOptions = async () => {
+  const response = await apiClient.get('/api/interviews/options');
+  return response.data;
+};
+
+export const getInterviewSuggestions = async () => {
+  const response = await apiClient.get('/api/interviews/suggestions');
+  return response.data;
+};
+
+export const createInterview = async (payload) => {
+  const response = await apiClient.post('/api/interviews', payload, { timeout: INTERVIEW_AI_TIMEOUT_MS });
+  return response.data;
+};
+
+export const listInterviews = async ({ limit = 10, offset = 0 } = {}) => {
+  const response = await apiClient.get('/api/interviews', { params: { limit, offset } });
+  return response.data;
+};
+
+export const getInterview = async (interviewId) => {
+  const response = await apiClient.get(`/api/interviews/${interviewId}`);
+  return response.data;
+};
+
+export const requestNextInterviewQuestion = async (interviewId) => {
+  const response = await apiClient.post(
+    `/api/interviews/${interviewId}/next-question`,
+    {},
+    { timeout: INTERVIEW_AI_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const submitInterviewAnswer = async (interviewId, { questionId, answerText, answerSource = 'TEXT' }) => {
+  const response = await apiClient.post(
+    `/api/interviews/${interviewId}/answers`,
+    { question_id: questionId, answer_text: answerText, answer_source: answerSource },
+    { timeout: INTERVIEW_AI_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const retryInterviewEvaluation = async (interviewId, answerId) => {
+  const response = await apiClient.post(
+    `/api/interviews/${interviewId}/answers/${answerId}/evaluate`,
+    {},
+    { timeout: INTERVIEW_AI_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const completeInterview = async (interviewId) => {
+  const response = await apiClient.post(`/api/interviews/${interviewId}/complete`);
+  return response.data;
+};
+
+export const getInterviewReport = async (interviewId) => {
+  const response = await apiClient.get(`/api/interviews/${interviewId}/report`);
+  return response.data;
+};
+
+export const generateInterviewReport = async (interviewId) => {
+  const response = await apiClient.post(
+    `/api/interviews/${interviewId}/report/generate`,
+    {},
+    { timeout: INTERVIEW_REPORT_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const transcribeInterviewAudio = async (interviewId, audioBlob) => {
+  const formData = new FormData();
+  const extension = audioBlob.type?.includes('ogg') ? 'ogg' : audioBlob.type?.includes('mp4') ? 'm4a' : 'webm';
+  formData.append('audio', audioBlob, `answer.${extension}`);
+  const response = await apiClient.post(`/api/interviews/${interviewId}/transcribe`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: INTERVIEW_TRANSCRIBE_TIMEOUT_MS,
+  });
+  return response.data;
+};

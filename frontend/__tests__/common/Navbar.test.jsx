@@ -82,6 +82,7 @@ describe('Navbar', () => {
     expect(within(primaryNav).getByRole('link', { name: /ai career assistant/i })).toHaveAttribute('href', '/dashboard/ai');
     expect(within(primaryNav).getByRole('link', { name: /skill analysis/i })).toHaveAttribute('href', '/dashboard/skill-analysis');
     expect(within(primaryNav).getByRole('link', { name: /career matching/i })).toHaveAttribute('href', '/dashboard/career-matching');
+    expect(within(primaryNav).getByRole('link', { name: /ai interviewer/i })).toHaveAttribute('href', '/dashboard/interview');
     expect(within(primaryNav).getByRole('link', { name: /messages/i })).toHaveAttribute('href', '/dashboard/messaging');
   });
 

@@ -1132,3 +1132,167 @@ class Connection(Base):
     def canonical_pair(user_a: str, user_b: str) -> tuple[str, str]:
         """Return (min_id, max_id) — the canonical ordering for the pair."""
         return (min(user_a, user_b), max(user_a, user_b))
+
+
+# ---------------------------------------------------------------------------
+# AI Interviewer V1
+# ---------------------------------------------------------------------------
+# Enum member names equal their values so the persisted Postgres enum labels
+# are unambiguous regardless of whether SQLAlchemy stores names or values.
+
+
+class InterviewType(str, enum.Enum):
+    TECHNICAL = "TECHNICAL"
+    BEHAVIORAL = "BEHAVIORAL"
+    MIXED = "MIXED"
+
+
+class InterviewMode(str, enum.Enum):
+    TEXT = "TEXT"
+    VOICE = "VOICE"
+
+
+class InterviewDifficulty(str, enum.Enum):
+    BEGINNER = "BEGINNER"
+    INTERMEDIATE = "INTERMEDIATE"
+    ADVANCED = "ADVANCED"
+
+
+class InterviewStatus(str, enum.Enum):
+    """Session lifecycle. IN_PROGRESS is the only non-terminal state."""
+
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    ABANDONED = "ABANDONED"
+    EXPIRED = "EXPIRED"
+
+
+class InterviewAIStatus(str, enum.Enum):
+    """Status of an AI-produced artifact (answer evaluation or final report)."""
+
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class InterviewSession(Base):
+    """A timed practice interview owned by one user. The deadline is authoritative."""
+
+    __tablename__ = "interview_sessions"
+    __table_args__ = (
+        Index("ix_interview_sessions_user_created", "user_id", "created_at"),
+        Index("ix_interview_sessions_user_status", "user_id", "status"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_role = Column(String(120), nullable=False)
+    interview_type = Column(Enum(InterviewType, name="interviewtype", create_constraint=True), nullable=False)
+    interaction_mode = Column(Enum(InterviewMode, name="interviewmode", create_constraint=True), nullable=False)
+    difficulty = Column(Enum(InterviewDifficulty, name="interviewdifficulty", create_constraint=True), nullable=False)
+    duration_minutes = Column(Integer, nullable=False, default=15)
+    max_questions = Column(Integer, nullable=False)
+    focus_areas = Column(JSON, nullable=False, default=list)
+    instructions = Column(Text, nullable=True)
+    status = Column(
+        Enum(InterviewStatus, name="interviewstatus", create_constraint=True),
+        nullable=False,
+        default=InterviewStatus.IN_PROGRESS,
+    )
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    deadline_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    final_score = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User")
+    questions = relationship(
+        "InterviewQuestion",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="InterviewQuestion.question_order",
+    )
+    report = relationship("InterviewReport", back_populates="session", cascade="all, delete-orphan", uselist=False)
+
+    def __repr__(self) -> str:
+        return f"<InterviewSession id={self.id} user={self.user_id} status={self.status}>"
+
+
+class InterviewQuestion(Base):
+    """A single server-sequenced question within an interview session."""
+
+    __tablename__ = "interview_questions"
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_order", name="uq_interview_question_order"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    session_id = Column(String(36), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_order = Column(Integer, nullable=False)
+    question_text = Column(Text, nullable=False)
+    category = Column(String(20), nullable=False)  # TECHNICAL | BEHAVIORAL
+    competency = Column(String(120), nullable=False)
+    difficulty = Column(Enum(InterviewDifficulty, name="interviewdifficulty", create_constraint=True), nullable=False)
+    interviewer_context = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    session = relationship("InterviewSession", back_populates="questions")
+    answer = relationship("InterviewAnswer", back_populates="question", cascade="all, delete-orphan", uselist=False)
+
+
+class InterviewAnswer(Base):
+    """
+    The candidate's submitted answer (typed or approved transcript) for one question.
+    Persisted before evaluation so an AI failure never loses the candidate's work.
+    """
+
+    __tablename__ = "interview_answers"
+    __table_args__ = (
+        UniqueConstraint("question_id", name="uq_interview_answer_question"),
+        Index("ix_interview_answers_session_submitted", "session_id", "submitted_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    session_id = Column(String(36), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(String(36), ForeignKey("interview_questions.id", ondelete="CASCADE"), nullable=False)
+    answer_text = Column(Text, nullable=False)
+    answer_source = Column(Enum(InterviewMode, name="interviewmode", create_constraint=True), nullable=False)
+    submitted_at = Column(DateTime(timezone=True), nullable=False)
+    evaluation_status = Column(
+        Enum(InterviewAIStatus, name="interviewaistatus", create_constraint=True),
+        nullable=False,
+        default=InterviewAIStatus.PENDING,
+    )
+    evaluation_attempts = Column(Integer, nullable=False, default=0)
+    score = Column(Integer, nullable=True)
+    evaluation = Column(JSON, nullable=True)
+    evaluated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    question = relationship("InterviewQuestion", back_populates="answer")
+
+
+class InterviewReport(Base):
+    """Final report. Deterministic aggregates plus an AI narrative, persisted for revisits."""
+
+    __tablename__ = "interview_reports"
+    __table_args__ = (UniqueConstraint("session_id", name="uq_interview_report_session"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    session_id = Column(String(36), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False)
+    status = Column(
+        Enum(InterviewAIStatus, name="interviewaistatus", create_constraint=True),
+        nullable=False,
+        default=InterviewAIStatus.PENDING,
+    )
+    attempts = Column(Integer, nullable=False, default=0)
+    overall_score = Column(Integer, nullable=True)
+    aggregates = Column(JSON, nullable=True)
+    narrative = Column(JSON, nullable=True)
+    generated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    session = relationship("InterviewSession", back_populates="report")

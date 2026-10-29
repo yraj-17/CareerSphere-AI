@@ -74,6 +74,21 @@ class Settings(BaseSettings):
     AI_CONTEXT_CHARS: int = 16000
     OLLAMA_TIMEOUT_SECONDS: float = 240.0
     OLLAMA_SKILL_GAP_TIMEOUT_SECONDS: float = 360.0
+    # AI Interviewer — per-call model budget; each call is retried at most once.
+    OLLAMA_INTERVIEW_TIMEOUT_SECONDS: float = 120.0
+    INTERVIEW_AI_MAX_CONCURRENCY: int = 2
+    # Answers that reach the backend within this window after the deadline are
+    # still accepted (covers request latency); later submissions are rejected.
+    INTERVIEW_SUBMISSION_GRACE_SECONDS: int = 15
+    # Optional local Faster-Whisper transcription for voice interviews.
+    # Empty model name disables transcription (voice mode is then unavailable).
+    # Requires `pip install faster-whisper`; e.g. INTERVIEW_WHISPER_MODEL=base.en
+    INTERVIEW_WHISPER_MODEL: str = ""
+    INTERVIEW_WHISPER_DEVICE: str = "cpu"
+    INTERVIEW_WHISPER_COMPUTE_TYPE: str = "int8"
+    INTERVIEW_TRANSCRIPTION_TIMEOUT_SECONDS: float = 90.0
+    INTERVIEW_MAX_AUDIO_BYTES: int = 8 * 1024 * 1024
+    INTERVIEW_MAX_AUDIO_SECONDS: int = 180
     # Gemini (semantic reranking only; deterministic scores remain authoritative)
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.1-flash-lite"
