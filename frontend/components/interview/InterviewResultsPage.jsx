@@ -14,6 +14,7 @@ import {
   formatDateTime,
   modeLabel,
   scoreBand,
+  slotKindLabel,
   typeLabel,
 } from '@/components/interview/interviewConstants';
 
@@ -221,6 +222,69 @@ export default function InterviewResultsPage({ interviewId }) {
             </div>
           </section>
 
+          {aggregates?.sections && (
+            <section className="surface-card space-y-5" aria-labelledby="sections-heading">
+              <h2 id="sections-heading" className="text-base font-semibold">Assessment breakdown</h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ['Conceptual knowledge', aggregates.sections.conceptual],
+                  ['Behavioral', aggregates.sections.behavioral],
+                  ['Communication', aggregates.sections.communication],
+                  ['Problem solving', aggregates.sections.problem_solving],
+                ]
+                  .filter(([, section]) => section && section.score !== null && section.score !== undefined)
+                  .map(([label, section]) => (
+                    <div key={label} className="surface-card-subtle">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {section.score}
+                        <span className="text-sm font-medium text-slate-400">/100</span>
+                      </p>
+                    </div>
+                  ))}
+              </div>
+
+              {aggregates.sections.practical?.reserved > 0 && (
+                <div aria-labelledby="practical-heading">
+                  <h3 id="practical-heading" className="text-sm font-semibold text-slate-900">Practical assessment</h3>
+                  {aggregates.sections.practical.score !== null && aggregates.sections.practical.score !== undefined ? (
+                    <p className="mt-1 text-sm text-slate-700">Score: {aggregates.sections.practical.score}/100 (scored separately from conceptual answers)</p>
+                  ) : (
+                    <p className="mt-1 text-sm text-amber-900">
+                      Not assessed in this interview. Practical slots were reserved, but the assessment environment isn&apos;t enabled yet, so
+                      they are excluded from every score above.
+                    </p>
+                  )}
+                  <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                    {aggregates.sections.practical.items.map((item) => (
+                      <li key={item.position} className="flex justify-between gap-3">
+                        <span>
+                          Q{item.position}. {slotKindLabel(item.kind)} · {item.competency}
+                        </span>
+                        <span className="shrink-0 text-xs font-semibold text-slate-500">
+                          {{ not_available: 'Not available yet', not_reached: 'Not reached', assessed: 'Assessed', not_assessed: 'Not assessed' }[item.status] || item.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {aggregates.competency_scores?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Role competencies</h3>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {aggregates.competency_scores
+                      .filter((item) => item.score !== null && item.score !== undefined)
+                      .map((item) => (
+                        <ScoreBar key={`${item.category}-${item.competency}`} label={item.competency} value={item.score} />
+                      ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           <section className="surface-card space-y-5" aria-labelledby="summary-heading">
             <h2 id="summary-heading" className="text-base font-semibold">Performance summary</h2>
             {isGenerating ? (
@@ -311,7 +375,11 @@ export default function InterviewResultsPage({ interviewId }) {
                   <span className="mt-1 block text-sm font-medium text-slate-900">{question.question_text}</span>
                 </span>
                 <span className="shrink-0 text-sm font-semibold text-slate-700">
-                  {!question.answer
+                  {question.assessment_available === false
+                    ? 'Not assessed'
+                    : !question.answer && question.draft_text
+                    ? 'Draft, not submitted'
+                    : !question.answer
                     ? 'Not answered'
                     : question.answer.score !== null && question.answer.score !== undefined
                       ? `${question.answer.score}/100`
@@ -325,6 +393,18 @@ export default function InterviewResultsPage({ interviewId }) {
                     <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">{question.answer.answer_text}</p>
                   </div>
                   <AnswerFeedback answer={question.answer} />
+                </div>
+              ) : question.assessment_available === false ? (
+                <p className="mt-3 text-sm text-amber-900">
+                  This {slotKindLabel(question.kind).toLowerCase()} slot was reserved for a practical assessment. The assessment environment
+                  isn&apos;t enabled yet, so it was skipped and is not included in any score.
+                </p>
+              ) : question.draft_text ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-slate-500">This draft was saved but never submitted, so it was not evaluated or scored.</p>
+                  <p className="whitespace-pre-wrap rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
+                    {question.draft_text}
+                  </p>
                 </div>
               ) : (
                 <p className="mt-3 text-sm text-slate-500">This question was not answered and is not included in the score.</p>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
@@ -10,6 +10,9 @@ from app.core.config import settings
 from app.db.models import User
 from app.schemas.interviews import (
     AnswerSubmitResponse,
+    BlueprintPreviewResponse,
+    DraftSaveRequest,
+    DraftSaveResponse,
     InterviewAnswerOut,
     InterviewAnswerSubmitRequest,
     InterviewCreateRequest,
@@ -19,6 +22,10 @@ from app.schemas.interviews import (
     InterviewReportOut,
     InterviewSessionOut,
     InterviewSuggestionsResponse,
+    NavigateRequest,
+    RoleAnalyzeRequest,
+    RoleCatalogResponse,
+    RoleSummaryOut,
     TranscriptionResponse,
 )
 from app.services import interview_service as svc
@@ -36,19 +43,48 @@ def get_options(current_user: User = Depends(get_current_user)) -> InterviewOpti
 
 @router.get("/suggestions", response_model=InterviewSuggestionsResponse, summary="Role and skill suggestions from the profile")
 def get_suggestions(
+    role: Optional[str] = Query(None, max_length=120, description="Only return profile skills relevant to this role"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InterviewSuggestionsResponse:
-    return svc.get_suggestions(db, current_user)
+    return svc.get_suggestions(db, current_user, role)
+
+
+@router.get("/roles", response_model=RoleCatalogResponse, summary="Interview role catalog")
+def list_roles(current_user: User = Depends(get_current_user)) -> RoleCatalogResponse:
+    return svc.list_roles()
+
+
+@router.post("/roles/analyze", response_model=RoleSummaryOut, summary="Resolve or analyse a job title")
+async def analyze_role(
+    payload: RoleAnalyzeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RoleSummaryOut:
+    return await svc.analyze_role_title(db, current_user, payload.title)
+
+
+@router.post("/blueprint/preview", response_model=BlueprintPreviewResponse, summary="Preview the interview blueprint")
+async def preview_blueprint(
+    payload: InterviewCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BlueprintPreviewResponse:
+    return await svc.preview_blueprint(db, current_user, payload)
 
 
 @router.post("", response_model=InterviewSessionOut, status_code=status.HTTP_201_CREATED, summary="Start an interview")
 async def create_interview(
     payload: InterviewCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InterviewSessionOut:
-    return await svc.create_interview(db, current_user, payload)
+    interview = await svc.create_interview(db, current_user, payload)
+    # The first question is ready; the rest of the plan is prepared after the response.
+    if interview.preparing:
+        background_tasks.add_task(svc.prepare_remaining_questions, interview.id, current_user.id)
+    return interview
 
 
 @router.get("", response_model=InterviewListResponse, summary="Interview history")
@@ -86,6 +122,31 @@ async def next_question(
     current_user: User = Depends(get_current_user),
 ) -> InterviewSessionOut:
     return await svc.request_next_question(db, current_user, interview_id)
+
+
+@router.post("/{interview_id}/navigate", response_model=InterviewSessionOut, summary="Open a question (no submission or evaluation)")
+def navigate(
+    interview_id: str,
+    payload: NavigateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> InterviewSessionOut:
+    interview, needs_preparation = svc.navigate(db, current_user, interview_id, payload.position, payload.seq)
+    if needs_preparation:
+        background_tasks.add_task(svc.prepare_remaining_questions, interview.id, current_user.id)
+    return interview
+
+
+@router.put("/{interview_id}/questions/{question_id}/draft", response_model=DraftSaveResponse, summary="Autosave an unsubmitted answer")
+def save_draft(
+    interview_id: str,
+    question_id: str,
+    payload: DraftSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DraftSaveResponse:
+    return svc.save_draft(db, current_user, interview_id, question_id, payload)
 
 
 @router.post("/{interview_id}/answers", response_model=AnswerSubmitResponse, status_code=status.HTTP_201_CREATED, summary="Submit an answer")

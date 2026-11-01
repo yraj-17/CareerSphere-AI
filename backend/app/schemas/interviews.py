@@ -10,10 +10,11 @@ Two groups live here:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 INTERVIEW_TYPES = ("TECHNICAL", "BEHAVIORAL", "MIXED")
@@ -28,6 +29,8 @@ MAX_FOCUS_AREAS = 8
 MAX_FOCUS_AREA_LENGTH = 60
 MAX_INSTRUCTIONS_LENGTH = 500
 MAX_ANSWER_LENGTH = 5000
+MAX_JOB_DESCRIPTION_LENGTH = 4000
+MIN_QUESTIONS = 3
 
 SCORE_SCALE_EXPLANATION = (
     "Scores are 0-100 AI-generated practice feedback: 85+ strong, 70-84 solid, "
@@ -69,6 +72,9 @@ class InterviewCreateRequest(BaseModel):
     duration_minutes: int = DEFAULT_DURATION_MINUTES
     focus_areas: list[str] = Field(default_factory=list)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS_LENGTH)
+    job_description: Optional[str] = Field(None, max_length=MAX_JOB_DESCRIPTION_LENGTH)
+    # Defaults to the duration's question budget; may be lowered, never raised past it.
+    question_count: Optional[int] = None
 
     @field_validator("target_role")
     @classmethod
@@ -102,13 +108,24 @@ class InterviewCreateRequest(BaseModel):
             raise ValueError(f"Each focus area must be at most {MAX_FOCUS_AREA_LENGTH} characters.")
         return cleaned
 
-    @field_validator("instructions")
+    @field_validator("instructions", "job_description")
     @classmethod
     def clean_instructions(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @model_validator(mode="after")
+    def resolve_question_count(self) -> "InterviewCreateRequest":
+        limit = DURATION_QUESTION_LIMITS[self.duration_minutes]
+        if self.question_count is None:
+            self.question_count = limit
+        elif not MIN_QUESTIONS <= self.question_count <= limit:
+            raise ValueError(
+                f"A {self.duration_minutes}-minute interview supports {MIN_QUESTIONS} to {limit} questions."
+            )
+        return self
 
 
 class InterviewAnswerSubmitRequest(BaseModel):
@@ -165,11 +182,20 @@ class InterviewQuestionOut(BaseModel):
     question_order: int
     question_text: str
     category: str
+    kind: str = "question"
+    # False for reserved practical slots whose assessment engine is not enabled yet.
+    assessment_available: bool = True
     competency: str
     difficulty: str
     interviewer_context: Optional[str] = None
     created_at: datetime
     answer: Optional[InterviewAnswerOut] = None
+    # NOT_STARTED | SKIPPED | IN_PROGRESS | SUBMITTED | ANSWERED | UNAVAILABLE
+    status: str = "NOT_STARTED"
+    draft_text: Optional[str] = None
+    draft_meta: Optional[dict] = None
+    draft_revision: int = 0
+    draft_updated_at: Optional[datetime] = None
 
 
 class InterviewSessionSummary(BaseModel):
@@ -198,6 +224,11 @@ class InterviewSessionOut(InterviewSessionSummary):
     current_question: Optional[InterviewQuestionOut] = None
     can_request_next_question: bool
     questions: list[InterviewQuestionOut]
+    job_description: Optional[str] = None
+    blueprint: Optional[dict] = None
+    current_position: Optional[int] = None
+    # True while planned questions are still being prepared in the background.
+    preparing: bool = False
 
 
 class InterviewListResponse(BaseModel):
@@ -235,6 +266,8 @@ class ReportAggregatesOut(BaseModel):
     evaluated_count: int
     dimension_scores: DimensionScores
     category_scores: dict[str, Optional[int]]
+    competency_scores: list[dict] = Field(default_factory=list)
+    sections: dict = Field(default_factory=dict)
     strongest: list[ReportQuestionRef]
     weakest: list[ReportQuestionRef]
     methodology: str
@@ -264,6 +297,9 @@ class InterviewOptionsResponse(BaseModel):
     default_duration_minutes: int
     max_answer_length: int
     max_focus_areas: int
+    min_questions: int = MIN_QUESTIONS
+    question_limits: dict[int, int] = Field(default_factory=lambda: dict(DURATION_QUESTION_LIMITS))
+    max_job_description_length: int = MAX_JOB_DESCRIPTION_LENGTH
     transcription_available: bool
     max_audio_seconds: int
     max_audio_bytes: int
@@ -287,11 +323,11 @@ class TranscriptionResponse(BaseModel):
 
 
 class GeneratedQuestion(BaseModel):
+    # The competency is not part of the model output: the blueprint assigns it.
     question_text: str = Field(..., min_length=15, max_length=700)
-    competency: str = Field(..., min_length=2, max_length=120)
     interviewer_context: Optional[str] = Field(None, max_length=400)
 
-    @field_validator("question_text", "competency")
+    @field_validator("question_text")
     @classmethod
     def collapse_whitespace(cls, value: str) -> str:
         return " ".join(value.split())
@@ -341,3 +377,118 @@ class GeneratedNarrative(BaseModel):
     @classmethod
     def clean_lists(cls, value) -> list[str]:
         return _clean_text_list(value, max_items=6, max_len=300)
+
+
+# ---------------------------------------------------------------------------
+# Roles
+# ---------------------------------------------------------------------------
+
+
+class RoleSummaryOut(BaseModel):
+    slug: Optional[str] = None
+    title: str
+    family: str
+    source: str
+    summary: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    focus_areas: list[str]
+    competencies: list[dict] = Field(default_factory=list)
+    practical_kinds: list[str]
+    languages: list[str] = Field(default_factory=list)
+
+
+class RoleCatalogResponse(BaseModel):
+    roles: list[RoleSummaryOut]
+
+
+class RoleAnalyzeRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=MAX_ROLE_LENGTH)
+
+
+class BlueprintPreviewResponse(BaseModel):
+    role: RoleSummaryOut
+    blueprint: dict
+    assessment_kinds_available: list[str]
+
+
+class AnalyzedCompetency(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+    focus: str = Field(..., min_length=2, max_length=60)
+    weight: int = Field(..., ge=1, le=5)
+    practical: Literal["coding", "sql", "scenario", "none"]
+    description: str = Field("", max_length=240)
+    keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("name", "focus")
+    @classmethod
+    def collapse(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def clean_keywords(cls, value) -> list[str]:
+        return [k.lower() for k in _clean_text_list(value, max_items=8, max_len=30)]
+
+
+class RoleAnalysis(BaseModel):
+    """LLM analysis of a custom job title (validated before use)."""
+
+    family: str = Field(..., min_length=2, max_length=60)
+    summary: str = Field(..., min_length=10, max_length=400)
+    competencies: list[AnalyzedCompetency] = Field(..., min_length=4, max_length=8)
+    coding_languages: list[str] = Field(default_factory=list)
+
+    @field_validator("coding_languages", mode="before")
+    @classmethod
+    def clean_languages(cls, value) -> list[str]:
+        aliases = {"C++": "CPP", "CPP": "CPP", "JAVA": "JAVA", "PYTHON": "PYTHON", "JAVASCRIPT": "JAVASCRIPT", "JS": "JAVASCRIPT", "NODE.JS": "JAVASCRIPT"}
+        if not isinstance(value, list):
+            return []
+        cleaned = []
+        for item in value:
+            code = aliases.get(str(item).strip().upper())
+            if code and code not in cleaned:
+                cleaned.append(code)
+        return cleaned
+
+    @model_validator(mode="after")
+    def unique_competencies(self) -> "RoleAnalysis":
+        names = [c.name.lower() for c in self.competencies]
+        if len(set(names)) != len(names):
+            raise ValueError("Competency names must be unique.")
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Navigation and drafts
+# ---------------------------------------------------------------------------
+
+MAX_DRAFT_META_BYTES = 64 * 1024
+
+
+class NavigateRequest(BaseModel):
+    position: int = Field(..., ge=1, le=12)
+    # Client sequence (e.g. a millisecond timestamp). A navigation older than the
+    # stored one is ignored, so rapid clicks resolve to the latest.
+    seq: int = Field(..., ge=1)
+
+
+class DraftSaveRequest(BaseModel):
+    text: str = Field("", max_length=MAX_ANSWER_LENGTH)
+    meta: Optional[dict] = None
+    # Must increase with every save from the client (e.g. a millisecond timestamp).
+    revision: int = Field(..., ge=1)
+
+    @field_validator("meta")
+    @classmethod
+    def bounded_meta(cls, value: Optional[dict]) -> Optional[dict]:
+        if value is not None and len(json.dumps(value)) > MAX_DRAFT_META_BYTES:
+            raise ValueError("Draft is too large.")
+        return value
+
+
+class DraftSaveResponse(BaseModel):
+    question_id: str
+    saved: bool  # False when a newer draft is already stored (this one was stale)
+    revision: int
+    updated_at: Optional[datetime] = None

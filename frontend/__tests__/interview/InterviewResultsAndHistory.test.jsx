@@ -148,6 +148,44 @@ describe('InterviewResultsPage', () => {
   });
 });
 
+describe('InterviewResultsPage role engine', () => {
+  test('separates conceptual, practical and role competency scores', async () => {
+    const reserved = {
+      id: 'q3', question_order: 3, question_text: 'SQL assessment: SQL Queries', category: 'TECHNICAL', kind: 'sql',
+      assessment_available: false, competency: 'SQL Queries', difficulty: 'INTERMEDIATE', created_at: '', answer: null,
+    };
+    getInterview.mockResolvedValue({ ...INTERVIEW, questions: [...INTERVIEW.questions, reserved] });
+    getInterviewReport.mockResolvedValue({
+      ...REPORT,
+      aggregates: {
+        ...REPORT.aggregates,
+        competency_scores: [{ competency: 'SQL', category: 'TECHNICAL', score: 72, questions: 1, evaluated: 1 }],
+        sections: {
+          conceptual: { score: 72, evaluated: 1, questions: 1 },
+          behavioral: { score: null, evaluated: 0, questions: 1 },
+          communication: { score: 70 },
+          problem_solving: { score: 60 },
+          practical: {
+            reserved: 1, reached: 1, assessed: 0, score: null, available: false, kinds: ['sql'],
+            items: [{ position: 3, kind: 'sql', competency: 'SQL Queries', status: 'not_available' }],
+          },
+        },
+      },
+    });
+    render(<InterviewResultsPage interviewId="iv-1" />);
+    expect(await screen.findByRole('heading', { name: 'Assessment breakdown' })).toBeInTheDocument();
+    expect(screen.getByText('Conceptual knowledge')).toBeInTheDocument();
+    expect(screen.getByText('Problem solving')).toBeInTheDocument();
+    expect(screen.queryByText('Behavioral', { selector: 'p' })).not.toBeInTheDocument(); // no behavioral score, not shown
+    expect(screen.getByText(/excluded from every score above/i)).toBeInTheDocument();
+    expect(screen.getByText('Q3. SQL · SQL Queries')).toBeInTheDocument();
+    expect(screen.getByText('Not available yet')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Role competencies' })).toBeInTheDocument();
+    expect(screen.getByText('Not assessed')).toBeInTheDocument();
+    expect(screen.getByText(/was reserved for a practical assessment/i)).toBeInTheDocument();
+  });
+});
+
 describe('InterviewHistoryPage', () => {
   const item = (overrides) => ({
     id: 'x',

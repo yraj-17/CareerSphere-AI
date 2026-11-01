@@ -158,6 +158,18 @@ class FakeModel:
                 "repeated_gaps": [], "improvement_plan": ["Practice trade-off analysis"],
                 "topics_to_revise": ["Caching"],
             }
+        if kind == "RoleAnalysis":
+            return {
+                "family": "Custom",
+                "summary": "A custom role used in tests.",
+                "competencies": [
+                    {"name": "Core Practice", "focus": "Core", "weight": 5, "practical": "scenario", "description": "", "keywords": []},
+                    {"name": "Planning", "focus": "Core", "weight": 3, "practical": "none", "description": "", "keywords": []},
+                    {"name": "Tooling", "focus": "Tools", "weight": 2, "practical": "none", "description": "", "keywords": []},
+                    {"name": "Quality", "focus": "Quality", "weight": 2, "practical": "none", "description": "", "keywords": []},
+                ],
+                "coding_languages": [],
+            }
         raise AssertionError(f"unexpected schema {kind}")
 
     async def __call__(self, messages, schema, num_predict):
@@ -168,6 +180,20 @@ class FakeModel:
         if isinstance(response, Exception):
             raise response
         return response if isinstance(response, str) else json.dumps(response)
+
+
+@pytest.fixture(autouse=True)
+def sequential_preparation(monkeypatch):
+    """
+    These tests exercise lifecycle rules (evaluation, deadlines, reports, roles) one
+    question at a time through the sequential next-question endpoint, so background
+    preparation of the remaining plan is switched off here. It is covered with the
+    real preparer in test_interview_navigation.py.
+    """
+    async def _noop(session_id, user_id):
+        return None
+
+    monkeypatch.setattr(svc, "prepare_remaining_questions", _noop)
 
 
 @pytest.fixture
@@ -366,22 +392,28 @@ def test_is_duplicate_question_similarity():
 
 
 def test_next_question_is_idempotent_and_bounded(user, model):
-    interview = _create(user, duration_minutes=10)  # 4 questions
+    # 10 minutes -> 4 questions; technical -> ceil(4/3) = 2 practical slots at positions 2 and 4.
+    interview = _create(user, duration_minutes=10)
     first = client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"]).json()
     assert first["current_question"]["id"] == interview["current_question"]["id"]
     assert model.count("GeneratedQuestion") == 1  # existing unanswered question returned, no model call
 
     state = interview
-    for _ in range(4):
+    answered = 0
+    while state["current_question"]:
         assert _answer(user, state).status_code == 201
+        answered += 1
         res = client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"])
-        if res.status_code == 409:
-            break
+        assert res.status_code == 200, res.text
         state = res.json()
+    assert answered == 2  # only the conceptual slots are answerable until the assessment engine exists
+    res = client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"])
     assert res.status_code == 409
     assert res.json()["detail"]["status"] == "LIMIT_REACHED"
     detail = client.get(f"/api/interviews/{interview['id']}", headers=user["headers"]).json()
-    assert detail["question_count"] == 4 and detail["answered_count"] == 4
+    assert detail["question_count"] == 4 and detail["answered_count"] == 2
+    assert [q["kind"] for q in detail["questions"]] == ["question", "coding", "question", "coding"]
+    assert [q["assessment_available"] for q in detail["questions"]] == [True, False, True, False]
     assert detail["can_request_next_question"] is False
 
 
@@ -581,7 +613,9 @@ def test_report_generation_persistence_and_retrieval(user, model):
     _answer(user, interview)  # technical
     nxt = client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"]).json()
     _answer(user, nxt, "We disagreed on scope, so I organised a review and we shipped on time.")  # behavioral
-    client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"])  # left unanswered
+    # Mixed 6: technical slots 1, 3, 5 with one practical slot (position 3, reserved);
+    # this records the reserved practical row and generates Q4, which is left unanswered.
+    client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"])
     client.post(f"/api/interviews/{interview['id']}/complete", headers=user["headers"])
 
     pending = client.get(f"/api/interviews/{interview['id']}/report", headers=user["headers"]).json()
@@ -593,7 +627,11 @@ def test_report_generation_persistence_and_retrieval(user, model):
     assert report["status"] == "COMPLETED"
     assert report["overall_score"] == round((tech + beh) / 2)
     agg = report["aggregates"]
-    assert agg["question_count"] == 3 and agg["answered_count"] == 2 and agg["evaluated_count"] == 2
+    assert agg["question_count"] == 4 and agg["answered_count"] == 2 and agg["evaluated_count"] == 2
+    practical = agg["sections"]["practical"]
+    assert practical["reserved"] == 1 and practical["reached"] == 1 and practical["assessed"] == 0
+    assert practical["score"] is None and practical["items"][0]["status"] == "not_available"
+    assert agg["sections"]["conceptual"]["score"] == tech and agg["sections"]["behavioral"]["score"] == beh
     assert agg["category_scores"] == {"TECHNICAL": tech, "BEHAVIORAL": beh}
     assert agg["dimension_scores"]["accuracy"] == 90 and agg["dimension_scores"]["structure"] == 60
     assert agg["dimension_scores"]["relevance"] == 80
@@ -662,15 +700,15 @@ def test_report_with_no_evaluated_answers_fails_without_inventing_scores(user, m
 
 def test_history_pagination(user, model):
     ids = []
-    for role in ("Role A", "Role B", "Role C"):
+    for role in ("QA Engineer", "Data Analyst", "Network Engineer"):
         interview = _create(user, target_role=role)
         client.post(f"/api/interviews/{interview['id']}/complete", headers=user["headers"])
         ids.append(interview["id"])
     page1 = client.get("/api/interviews?limit=2&offset=0", headers=user["headers"]).json()
     page2 = client.get("/api/interviews?limit=2&offset=2", headers=user["headers"]).json()
     assert page1["total"] == 3 and page1["limit"] == 2
-    assert [i["target_role"] for i in page1["interviews"]] == ["Role C", "Role B"]
-    assert [i["target_role"] for i in page2["interviews"]] == ["Role A"]
+    assert [i["target_role"] for i in page1["interviews"]] == ["Network Engineer", "Data Analyst"]
+    assert [i["target_role"] for i in page2["interviews"]] == ["QA Engineer"]
     assert page1["interviews"][0]["status"] == "ABANDONED"
     assert client.get("/api/interviews?limit=51", headers=user["headers"]).status_code == 422
 
@@ -845,7 +883,7 @@ def test_aggregate_with_no_evaluations():
 def test_migration_head_and_schema():
     with engine.connect() as conn:
         version = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "017_ai_interviews"
+    assert version == "019_interview_navigation"
     inspector = sa.inspect(engine)
     tables = set(inspector.get_table_names())
     assert {"interview_sessions", "interview_questions", "interview_answers", "interview_reports"} <= tables

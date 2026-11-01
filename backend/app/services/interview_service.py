@@ -29,6 +29,7 @@ Reliability
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -45,6 +46,7 @@ from app.db.models import (
     InterviewMode,
     InterviewQuestion,
     InterviewReport,
+    InterviewRoleProfile,
     InterviewSession,
     InterviewStatus,
     InterviewType,
@@ -60,6 +62,9 @@ from app.schemas.interviews import (
     MAX_ANSWER_LENGTH,
     MAX_FOCUS_AREAS,
     AnswerSubmitResponse,
+    BlueprintPreviewResponse,
+    DraftSaveRequest,
+    DraftSaveResponse,
     InterviewAnswerOut,
     InterviewAnswerSubmitRequest,
     InterviewCreateRequest,
@@ -70,8 +75,15 @@ from app.schemas.interviews import (
     InterviewSessionOut,
     InterviewSessionSummary,
     InterviewSuggestionsResponse,
+    RoleCatalogResponse,
+    RoleSummaryOut,
 )
+from app.data.interview_roles import ROLES as ROLE_CATALOG
+from app.db.redis_client import redis_client
+from app.db.session import SessionLocal
 from app.services import interview_ai_service as ai
+from app.services import interview_blueprint as blueprints
+from app.services import interview_role_service as roles
 from app.services import interview_scoring as scoring
 from app.services import transcription_service
 
@@ -79,6 +91,7 @@ logger = logging.getLogger(__name__)
 
 MAX_EVALUATION_ATTEMPTS = 3
 MAX_REPORT_ATTEMPTS = 5
+ROLE_ANALYSIS_PER_MINUTE = 10
 TERMINAL_STATUSES = {InterviewStatus.COMPLETED, InterviewStatus.EXPIRED, InterviewStatus.ABANDONED}
 
 
@@ -107,11 +120,26 @@ def _error(code: int, message: str, **extra) -> HTTPException:
     return HTTPException(status_code=code, detail=message)
 
 
-def category_for(interview_type: InterviewType, question_order: int) -> str:
-    """Server-decided question category. MIXED alternates, starting with technical."""
-    if interview_type == InterviewType.MIXED:
-        return "TECHNICAL" if question_order % 2 == 1 else "BEHAVIORAL"
-    return interview_type.value
+# Practical assessment engines that are enabled in this build. Slots of any other
+# practical kind are reserved by the blueprint, shown to the candidate as
+# "not available yet", and excluded from scoring — never replaced by a
+# theoretical question. Later phases add "coding", "sql", "calculation", "scenario".
+AVAILABLE_PRACTICAL_KINDS: frozenset[str] = frozenset()
+
+PRACTICAL_KIND_LABELS = {
+    "coding": "Coding assessment",
+    "sql": "SQL assessment",
+    "calculation": "Practical calculation",
+    "scenario": "Practical scenario",
+}
+
+
+def practical_available(kind: str) -> bool:
+    return kind == "question" or kind in AVAILABLE_PRACTICAL_KINDS
+
+
+def _answerable(question: InterviewQuestion) -> bool:
+    return practical_available(question.kind or "question")
 
 
 # ---------------------------------------------------------------------------
@@ -165,10 +193,41 @@ def _refresh_expiry(db: Session, session: InterviewSession, now: Optional[dateti
 
 
 def _current_question(session: InterviewSession) -> Optional[InterviewQuestion]:
-    for question in reversed(session.questions):
-        if question.answer is None:
+    """
+    The next question to answer: the first unanswered, answerable question in order.
+    Reserved practical slots are skipped. (Where the candidate currently *is* is
+    tracked separately in session.current_position — candidates may answer in any order.)
+    """
+    for question in session.questions:
+        if question.answer is None and _answerable(question):
             return question
     return None
+
+
+def _missing_positions(session: InterviewSession) -> list[int]:
+    """Blueprint positions whose question has not been prepared yet."""
+    have = {q.question_order for q in session.questions}
+    return [p for p in range(1, session.max_questions + 1) if p not in have]
+
+
+def question_status(question: InterviewQuestion) -> str:
+    """
+    NOT_STARTED  never opened, nothing typed
+    SKIPPED      opened and left without a draft or answer
+    IN_PROGRESS  an autosaved draft exists but nothing was submitted
+    SUBMITTED    submitted; feedback pending or not available
+    ANSWERED     submitted and evaluated
+    UNAVAILABLE  reserved practical slot whose assessment engine is not enabled
+    """
+    if not _answerable(question):
+        return "UNAVAILABLE"
+    if question.answer is not None:
+        return "ANSWERED" if question.answer.evaluation_status == InterviewAIStatus.COMPLETED else "SUBMITTED"
+    if (question.draft_text or "").strip() or question.draft_meta:
+        return "IN_PROGRESS"
+    if question.first_viewed_at is not None:
+        return "SKIPPED"
+    return "NOT_STARTED"
 
 
 # ---------------------------------------------------------------------------
@@ -202,11 +261,18 @@ def _question_out(question: InterviewQuestion, report_completed: bool) -> Interv
         question_order=question.question_order,
         question_text=question.question_text,
         category=question.category,
+        kind=question.kind or "question",
+        assessment_available=_answerable(question),
         competency=question.competency,
         difficulty=question.difficulty.value,
         interviewer_context=question.interviewer_context,
         created_at=question.created_at,
         answer=_answer_out(question.answer, report_completed) if question.answer else None,
+        status=question_status(question),
+        draft_text=question.draft_text if question.answer is None else None,
+        draft_meta=question.draft_meta if question.answer is None else None,
+        draft_revision=question.draft_revision or 0,
+        draft_updated_at=question.draft_updated_at,
     )
 
 
@@ -235,12 +301,8 @@ def serialize_session(session: InterviewSession, now: Optional[datetime] = None)
     in_progress = session.status == InterviewStatus.IN_PROGRESS
     remaining = max(0, int((_aware(session.deadline_at) - now).total_seconds())) if in_progress else 0
     current = _current_question(session) if in_progress else None
-    can_next = (
-        in_progress
-        and current is None
-        and remaining > 0
-        and len(session.questions) < session.max_questions
-    )
+    missing = _missing_positions(session)
+    can_next = in_progress and current is None and remaining > 0 and bool(missing)
     return InterviewSessionOut(
         **_summary_fields(session),
         focus_areas=list(session.focus_areas or []),
@@ -251,6 +313,10 @@ def serialize_session(session: InterviewSession, now: Optional[datetime] = None)
         current_question=_question_out(current, report_completed) if current else None,
         can_request_next_question=can_next,
         questions=[_question_out(q, report_completed) for q in session.questions],
+        job_description=session.job_description,
+        blueprint=session.blueprint,
+        current_position=session.current_position,
+        preparing=in_progress and remaining > 0 and bool(missing),
     )
 
 
@@ -300,8 +366,11 @@ def _load_profile(db: Session, user: User) -> Optional[Profile]:
     )
 
 
-def get_suggestions(db: Session, user: User) -> InterviewSuggestionsResponse:
-    """Suggestions come only from data the user saved in their profile — nothing is inferred."""
+def get_suggestions(db: Session, user: User, role_title: Optional[str] = None) -> InterviewSuggestionsResponse:
+    """
+    Suggestions come only from data the user saved in their profile — nothing is inferred.
+    When a role is given, only profile skills that belong to that role are suggested.
+    """
     profile = _load_profile(db, user)
     if profile is None:
         return InterviewSuggestionsResponse(target_role=None, skills=[], has_profile=False)
@@ -310,24 +379,132 @@ def get_suggestions(db: Session, user: User) -> InterviewSuggestionsResponse:
         role = profile.career_preferences.target_job_role.strip()[:120] or None
     if not role and profile.experience:
         role = profile.experience[0].job_title.strip()[:120] or None
-    skills = [skill.name for skill in profile.skills][:12]
-    return InterviewSuggestionsResponse(target_role=role, skills=skills, has_profile=True)
+    skills = [skill.name for skill in profile.skills]
+    if role_title:
+        catalog_role = roles.resolve_catalog_role(role_title)
+        skills = roles.relevant_profile_skills(skills, roles.from_catalog(catalog_role, role_title)) if catalog_role else []
+    return InterviewSuggestionsResponse(target_role=role, skills=skills[:12], has_profile=True)
 
 
-def _profile_summary(db: Session, user: User) -> Optional[str]:
-    """Compact, non-identifying profile context for question generation."""
+def _relevant_profile_skills(db: Session, user: User, role: roles.ResolvedRole, focus_areas: list[str]) -> list[str]:
+    """Profile skills personalise questions only when they belong to the selected role."""
     profile = _load_profile(db, user)
     if profile is None:
-        return None
-    lines = []
-    if profile.headline:
-        lines.append(f"Headline: {profile.headline}")
-    if profile.skills:
-        lines.append("Listed skills: " + ", ".join(s.name for s in profile.skills[:15]))
-    titles = [f"{e.job_title} at {e.company}" for e in profile.experience[:3]]
-    if titles:
-        lines.append("Listed experience: " + "; ".join(titles))
-    return "\n".join(lines)[:1200] or None
+        return []
+    return roles.relevant_profile_skills([s.name for s in profile.skills], role, focus_areas)
+
+
+# ---------------------------------------------------------------------------
+# Roles and blueprints
+# ---------------------------------------------------------------------------
+
+
+def _role_summary_out(role: roles.ResolvedRole, aliases: list[str] | None = None) -> RoleSummaryOut:
+    return RoleSummaryOut(
+        slug=role.slug,
+        title=role.canonical_title if role.source == "catalog" else role.title,
+        family=role.family,
+        source=role.source,
+        summary=role.summary,
+        aliases=aliases or [],
+        focus_areas=role.focus_areas,
+        competencies=[
+            {k: c[k] for k in ("id", "name", "focus", "practical", "description")} for c in role.competencies
+        ],
+        practical_kinds=role.practical_kinds,
+        languages=role.languages,
+    )
+
+
+def list_roles() -> RoleCatalogResponse:
+    return RoleCatalogResponse(
+        roles=[_role_summary_out(roles.from_catalog(r, r.title), list(r.aliases)) for r in ROLE_CATALOG]
+    )
+
+
+def _check_analysis_rate(user: User) -> None:
+    """Bound LLM role analyses per user. Fails open if Redis is unavailable."""
+    key = f"interview:role-analysis:{user.id}:{int(utcnow().timestamp() // 60)}"
+    try:
+        count = redis_client.incr(key)
+        if count == 1:
+            redis_client.expire(key, 120)
+    except Exception:
+        logger.warning("[Interview] role-analysis rate limit unavailable (Redis)")
+        return
+    if count > ROLE_ANALYSIS_PER_MINUTE:
+        raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "Too many role analyses. Please wait a minute and try again.")
+
+
+async def resolve_role(
+    db: Session, user: User, title: str, job_description: Optional[str] = None
+) -> roles.ResolvedRole:
+    """
+    Catalog roles resolve by exact title or alias. Anything else is analysed as a
+    custom role — never silently mapped to a different catalog role. Title-only
+    analyses are cached; job-description analyses are specific to one session.
+    """
+    catalog_role = roles.resolve_catalog_role(title)
+    if catalog_role is not None:
+        return roles.from_catalog(catalog_role, title)
+
+    normalized = roles.title_key(title)[:160]
+    if not job_description:
+        cached = db.query(InterviewRoleProfile).filter(InterviewRoleProfile.normalized_title == normalized).first()
+        if cached is not None:
+            return roles.from_analysis(title, cached.analysis)
+
+    _check_analysis_rate(user)
+    try:
+        analysis = await ai.analyze_role(roles.clean_title(title), job_description)
+    except ai.InterviewAIError:
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "The AI interviewer couldn't analyse this job title right now. Please try again.",
+            stage="role_analysis",
+        )
+    data = analysis.model_dump()
+    if not job_description:
+        db.add(
+            InterviewRoleProfile(
+                normalized_title=normalized,
+                title=roles.clean_title(title)[:120],
+                analysis=data,
+                model_name=settings.OLLAMA_MODEL[:120],
+            )
+        )
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # another request cached the same title concurrently; either analysis is valid
+    return roles.from_analysis(title, data)
+
+
+async def analyze_role_title(db: Session, user: User, title: str) -> RoleSummaryOut:
+    role = await resolve_role(db, user, title)
+    return _role_summary_out(role)
+
+
+def _build_blueprint(role: roles.ResolvedRole, payload: InterviewCreateRequest) -> dict:
+    try:
+        return blueprints.build_blueprint(
+            role,
+            interview_type=payload.interview_type,
+            difficulty=payload.difficulty,
+            total_questions=payload.question_count,
+            focus_areas=payload.focus_areas,
+        )
+    except ValueError as exc:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
+
+
+async def preview_blueprint(db: Session, user: User, payload: InterviewCreateRequest) -> BlueprintPreviewResponse:
+    role = await resolve_role(db, user, payload.target_role, payload.job_description)
+    return BlueprintPreviewResponse(
+        role=_role_summary_out(role),
+        blueprint=_build_blueprint(role, payload),
+        assessment_kinds_available=sorted(AVAILABLE_PRACTICAL_KINDS),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -349,19 +526,37 @@ def _active_session_id(db: Session, user: User) -> Optional[str]:
     return None
 
 
-async def _generate_question(db: Session, user: User, session_like: dict, order: int, previous: list[str]):
-    category = category_for(session_like["interview_type"], order)
+async def _generate_for_slot(
+    db: Session,
+    user: User,
+    *,
+    blueprint: dict,
+    slot: dict,
+    instructions: Optional[str],
+    job_description: Optional[str],
+    previous: list[str],
+) -> InterviewQuestion:
+    """Generate the question text for one conceptual blueprint slot (competency fixed by the slot)."""
+    role = blueprints.role_from_blueprint(blueprint)
+    competency = blueprints.competency_detail(blueprint, slot["competency_id"]) or {}
+    focus_areas = list(blueprint.get("focus_areas", []))
+    allowed_context = [*focus_areas, instructions or "", job_description or "", slot["competency"], competency.get("description", "")]
     try:
         generated = await ai.generate_question(
-            role=session_like["target_role"],
-            category=category,
-            difficulty=session_like["difficulty"].value,
-            question_number=order,
-            max_questions=session_like["max_questions"],
-            focus_areas=session_like["focus_areas"],
-            instructions=session_like["instructions"],
-            profile_summary=_profile_summary(db, user),
+            role_title=role.title,
+            role_summary=role.summary,
+            category=slot["category"],
+            competency=slot["competency"],
+            competency_description=competency.get("description", ""),
+            difficulty=blueprint["difficulty"],
+            question_number=slot["position"],
+            max_questions=blueprint["total_questions"],
+            focus_areas=focus_areas,
+            instructions=instructions,
+            job_description=job_description,
+            relevant_skills=_relevant_profile_skills(db, user, role, focus_areas),
             previous_questions=previous,
+            off_role_check=lambda text: roles.off_role_terms(text, role, allowed_context),
         )
     except ai.InterviewAIError:
         raise _error(
@@ -369,7 +564,32 @@ async def _generate_question(db: Session, user: User, session_like: dict, order:
             "The AI interviewer couldn't prepare a question right now. Please try again.",
             stage="generation",
         )
-    return category, generated
+    return InterviewQuestion(
+        question_order=slot["position"],
+        question_text=generated.question_text,
+        category=slot["category"],
+        kind="question",
+        competency=slot["competency"],
+        difficulty=InterviewDifficulty(blueprint["difficulty"]),
+        interviewer_context=generated.interviewer_context,
+    )
+
+
+def _reserved_practical_question(blueprint: dict, slot: dict) -> InterviewQuestion:
+    """A practical slot whose assessment engine is not enabled yet: recorded, shown, and not scored."""
+    label = PRACTICAL_KIND_LABELS.get(slot["kind"], "Practical assessment")
+    return InterviewQuestion(
+        question_order=slot["position"],
+        question_text=f"{label}: {slot['competency']}",
+        category=slot["category"],
+        kind=slot["kind"],
+        competency=slot["competency"],
+        difficulty=InterviewDifficulty(blueprint["difficulty"]),
+        interviewer_context=(
+            "This practical slot is reserved for this interview. The assessment environment is not "
+            "enabled yet, so it is skipped and not scored."
+        ),
+    )
 
 
 async def create_interview(db: Session, user: User, payload: InterviewCreateRequest) -> InterviewSessionOut:
@@ -387,17 +607,20 @@ async def create_interview(db: Session, user: User, payload: InterviewCreateRequ
             interview_id=existing,
         )
 
-    config = dict(
-        target_role=payload.target_role,
-        interview_type=InterviewType(payload.interview_type),
-        difficulty=InterviewDifficulty(payload.difficulty),
-        max_questions=DURATION_QUESTION_LIMITS[payload.duration_minutes],
-        focus_areas=payload.focus_areas,
+    role = await resolve_role(db, user, payload.target_role, payload.job_description)
+    blueprint = _build_blueprint(role, payload)
+    # The first slot is always conceptual (practical slots are never placed first).
+    # Generate it before persisting anything, so a model failure never leaves
+    # behind a session whose clock is already running.
+    first_question = await _generate_for_slot(
+        db,
+        user,
+        blueprint=blueprint,
+        slot=blueprints.slot_at(blueprint, 1),
         instructions=payload.instructions,
+        job_description=payload.job_description,
+        previous=[],
     )
-    # Generate the first question before persisting anything, so a model failure
-    # never leaves behind a session whose clock is already running.
-    category, generated = await _generate_question(db, user, config, 1, [])
 
     # Serialize concurrent creates for the same user, then re-check.
     db.query(User).filter(User.id == user.id).with_for_update().first()
@@ -413,26 +636,26 @@ async def create_interview(db: Session, user: User, payload: InterviewCreateRequ
     now = utcnow()
     session = InterviewSession(
         user_id=user.id,
+        target_role=role.title,
+        interview_type=InterviewType(payload.interview_type),
         interaction_mode=InterviewMode(payload.interaction_mode),
+        difficulty=InterviewDifficulty(payload.difficulty),
         duration_minutes=payload.duration_minutes,
+        max_questions=blueprint["total_questions"],
+        focus_areas=payload.focus_areas,
+        instructions=payload.instructions,
+        role_slug=role.slug,
+        role_source=role.source,
+        job_description=payload.job_description,
+        blueprint=blueprint,
         status=InterviewStatus.IN_PROGRESS,
         started_at=now,
         deadline_at=now + timedelta(minutes=payload.duration_minutes),
-        **config,
     )
     db.add(session)
     db.flush()
-    db.add(
-        InterviewQuestion(
-            session_id=session.id,
-            question_order=1,
-            question_text=generated.question_text,
-            category=category,
-            competency=generated.competency,
-            difficulty=session.difficulty,
-            interviewer_context=generated.interviewer_context,
-        )
-    )
+    first_question.session_id = session.id
+    db.add(first_question)
     db.commit()
     return get_interview(db, user, session.id)
 
@@ -484,51 +707,227 @@ def _require_in_progress(session: InterviewSession) -> None:
         )
 
 
+async def _ensure_blueprint(db: Session, user: User, session: InterviewSession) -> dict:
+    """Sessions created before the role engine get a blueprint the first time they need one."""
+    if session.blueprint:
+        return session.blueprint
+    role = await resolve_role(db, user, session.target_role)
+    blueprint = blueprints.build_blueprint(
+        role,
+        interview_type=session.interview_type.value,
+        difficulty=session.difficulty.value,
+        total_questions=max(blueprints.MIN_QUESTIONS, min(blueprints.MAX_QUESTIONS, session.max_questions)),
+        focus_areas=list(session.focus_areas or []),
+    )
+    session.blueprint = blueprint
+    session.role_slug, session.role_source = role.slug, role.source
+    db.commit()
+    return blueprint
+
+
+async def _prepare_position(db: Session, user: User, session: InterviewSession, position: int) -> Optional[InterviewQuestion]:
+    """Build (but do not insert) the question row for one planned position."""
+    blueprint = session.blueprint
+    slot = blueprints.slot_at(blueprint, position)
+    if slot is None:
+        return None
+    if not practical_available(slot["kind"]):
+        return _reserved_practical_question(blueprint, slot)
+    return await _generate_for_slot(
+        db,
+        user,
+        blueprint=blueprint,
+        slot=slot,
+        instructions=session.instructions,
+        job_description=session.job_description,
+        previous=[q.question_text for q in session.questions if (q.kind or "question") == "question"],
+    )
+
+
+def _insert_question(db: Session, session_id: str, row: InterviewQuestion) -> bool:
+    """Insert a prepared question; the unique (session, order) constraint makes this idempotent."""
+    row.session_id = session_id
+    db.add(row)
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()  # another request prepared this position first
+        return False
+
+
+_PREPARE_LOCK_SECONDS = 600
+
+
+async def prepare_remaining_questions(session_id: str, user_id: str) -> None:
+    """
+    Background task: prepare every planned question that does not exist yet, in order.
+
+    Runs after the interview is created (and again after navigation if anything is
+    still missing). A Redis lock keeps one preparer per session; the unique
+    (session, question_order) constraint guarantees no position is ever duplicated
+    even without the lock. Stops at the deadline, when the interview ends, or on the
+    first model failure (navigating to an unprepared question restarts it).
+    """
+    lock_key = f"interview:prepare:{session_id}"
+    token = str(uuid.uuid4())
+    try:
+        if not redis_client.set(lock_key, token, nx=True, ex=_PREPARE_LOCK_SECONDS):
+            return
+    except Exception:
+        logger.warning("[Interview] preparation lock unavailable (Redis); continuing without it")
+        token = None
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        while user is not None:
+            db.expire_all()
+            session = _session_query(db).filter(InterviewSession.id == session_id, InterviewSession.user_id == user_id).first()
+            if session is None or session.status != InterviewStatus.IN_PROGRESS or utcnow() >= _aware(session.deadline_at):
+                break
+            if not session.blueprint:
+                break
+            missing = _missing_positions(session)
+            if not missing:
+                break
+            try:
+                row = await _prepare_position(db, user, session, missing[0])
+            except HTTPException:
+                logger.warning("[Interview] background preparation stopped at position %s (model unavailable)", missing[0])
+                break
+            if row is None:
+                break
+            _insert_question(db, session.id, row)
+    except Exception:
+        logger.exception("[Interview] background preparation failed for session %s", session_id)
+    finally:
+        db.close()
+        if token:
+            try:
+                if redis_client.get(lock_key) == token:
+                    redis_client.delete(lock_key)
+            except Exception:
+                pass
+
+
 async def request_next_question(db: Session, user: User, interview_id: str) -> InterviewSessionOut:
-    """Idempotent: returns the existing unanswered question if there is one."""
+    """
+    Legacy sequential flow: return the next unanswered question, preparing the next
+    missing planned question synchronously if none is ready. Navigation does not use
+    this endpoint and never generates questions.
+    """
     session = _get_owned_session(db, user, interview_id)
     _require_in_progress(session)
     if _current_question(session) is not None:
         return serialize_session(session)
     if utcnow() >= _aware(session.deadline_at):
         raise _error(status.HTTP_409_CONFLICT, "Time is up. No more questions can be asked.", status="TIME_UP")
-    if len(session.questions) >= session.max_questions:
+    blueprint = await _ensure_blueprint(db, user, session)
+    if not _missing_positions(session):
         raise _error(status.HTTP_409_CONFLICT, "All questions for this interview have been asked.", status="LIMIT_REACHED")
 
-    order = len(session.questions) + 1
-    config = dict(
-        target_role=session.target_role,
-        interview_type=session.interview_type,
-        difficulty=session.difficulty,
-        max_questions=session.max_questions,
-        focus_areas=list(session.focus_areas or []),
-        instructions=session.instructions,
-    )
-    previous = [q.question_text for q in session.questions]
-    category, generated = await _generate_question(db, user, config, order, previous)
+    # Prepare missing positions in order until an answerable one exists (reserved practical
+    # slots are recorded on the way).
+    for position in _missing_positions(session):
+        row = await _prepare_position(db, user, session, position)
+        if row is None:
+            break
+        answerable = _answerable(row)
+        _insert_question(db, session.id, row)
+        db.expire_all()
+        session = _get_owned_session(db, user, interview_id)
+        _require_in_progress(session)
+        if answerable or _current_question(session) is not None:
+            break
+    return get_interview(db, user, interview_id)
 
-    # Re-read: the interview may have ended or another request may have added a question meanwhile.
-    db.expire_all()
+
+# ---------------------------------------------------------------------------
+# Navigation and drafts
+# ---------------------------------------------------------------------------
+
+
+def navigate(db: Session, user: User, interview_id: str, position: int, seq: int) -> tuple[InterviewSessionOut, bool]:
+    """
+    Record which question the candidate has open. Navigation never submits, evaluates,
+    or generates anything. Returns (session, needs_preparation) so the caller can
+    restart background preparation if planned questions are still missing.
+    """
     session = _get_owned_session(db, user, interview_id)
     _require_in_progress(session)
-    if len(session.questions) >= order:
-        return serialize_session(session)
-    db.add(
-        InterviewQuestion(
-            session_id=session.id,
-            question_order=order,
-            question_text=generated.question_text,
-            category=category,
-            competency=generated.competency,
-            difficulty=session.difficulty,
-            interviewer_context=generated.interviewer_context,
+    if position > session.max_questions:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, f"This interview has {session.max_questions} questions.")
+
+    db.execute(
+        update(InterviewSession)
+        .where(
+            InterviewSession.id == session.id,
+            or_(InterviewSession.position_seq.is_(None), InterviewSession.position_seq < seq),
         )
+        .values(current_position=position, position_seq=seq)
+        .execution_options(synchronize_session=False)
     )
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-    return get_interview(db, user, interview_id)
+    question = next((q for q in session.questions if q.question_order == position), None)
+    if question is not None and question.first_viewed_at is None:
+        db.execute(
+            update(InterviewQuestion)
+            .where(InterviewQuestion.id == question.id, InterviewQuestion.first_viewed_at.is_(None))
+            .values(first_viewed_at=utcnow())
+            .execution_options(synchronize_session=False)
+        )
+    db.commit()
+    out = get_interview(db, user, interview_id)
+    return out, out.preparing
+
+
+def save_draft(
+    db: Session, user: User, interview_id: str, question_id: str, payload: DraftSaveRequest
+) -> DraftSaveResponse:
+    """
+    Autosave unsubmitted work. Applied only when payload.revision is newer than the
+    stored revision and the question has no submitted answer, so a delayed older save
+    can never overwrite newer text and a draft can never touch a submitted answer.
+    """
+    session = _get_owned_session(db, user, interview_id)
+    if session.status != InterviewStatus.IN_PROGRESS:
+        raise _error(status.HTTP_409_CONFLICT, "This interview has ended.", status=session.status.value)
+    question = next((q for q in session.questions if q.id == question_id), None)
+    if question is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "Question not found in this interview.")
+    if not _answerable(question):
+        raise _error(status.HTTP_409_CONFLICT, "This practical assessment is not available yet.", status="ASSESSMENT_UNAVAILABLE")
+    if question.answer is not None:
+        raise _error(status.HTTP_409_CONFLICT, "This question has already been submitted.", status="ALREADY_SUBMITTED")
+
+    now = utcnow()
+    answer_exists = db.query(InterviewAnswer.id).filter(InterviewAnswer.question_id == question_id).exists()
+    result = db.execute(
+        update(InterviewQuestion)
+        .where(
+            InterviewQuestion.id == question_id,
+            InterviewQuestion.session_id == session.id,
+            InterviewQuestion.draft_revision < payload.revision,
+            ~answer_exists,
+        )
+        .values(
+            draft_text=payload.text,
+            draft_meta=payload.meta,
+            draft_revision=payload.revision,
+            draft_updated_at=now,
+            first_viewed_at=func.coalesce(InterviewQuestion.first_viewed_at, now),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    db.expire_all()
+    stored = db.get(InterviewQuestion, question_id)
+    return DraftSaveResponse(
+        question_id=question_id,
+        saved=result.rowcount == 1,
+        revision=stored.draft_revision or 0,
+        updated_at=stored.draft_updated_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +972,11 @@ async def _run_evaluation(db: Session, session: InterviewSession, answer_id: str
     """Evaluate one claimed answer and persist the outcome. Never raises for model failures."""
     answer = db.get(InterviewAnswer, answer_id)
     question = answer.question
+    role_summary, competency_description = "", ""
+    if session.blueprint:
+        role_summary = session.blueprint.get("role", {}).get("summary", "")
+        detail = next((c for c in session.blueprint.get("competencies", []) if c["name"] == question.competency), None)
+        competency_description = (detail or {}).get("description", "")
     try:
         result = await ai.evaluate_answer(
             role=session.target_role,
@@ -581,6 +985,8 @@ async def _run_evaluation(db: Session, session: InterviewSession, answer_id: str
             question_text=question.question_text,
             competency=question.competency,
             answer_text=answer.answer_text,
+            role_summary=role_summary,
+            competency_description=competency_description,
         )
     except ai.InterviewAIError:
         db.refresh(answer)
@@ -620,6 +1026,13 @@ async def submit_answer(
         raise _error(status.HTTP_404_NOT_FOUND, "Question not found in this interview.")
     if question.answer is not None:
         raise _error(status.HTTP_409_CONFLICT, "This question has already been answered.", answer_id=question.answer.id)
+    if not _answerable(question):
+        # A typed answer must never stand in for a coding/SQL/practical assessment.
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "This practical assessment is not available yet, so it can't be answered as text.",
+            status="ASSESSMENT_UNAVAILABLE",
+        )
     if payload.answer_source == "VOICE" and session.interaction_mode != InterviewMode.VOICE:
         raise _error(status.HTTP_400_BAD_REQUEST, "Voice answers are only accepted in voice interviews.")
 
@@ -633,6 +1046,9 @@ async def submit_answer(
         evaluation_attempts=0,
     )
     db.add(answer)
+    # The submitted answer now holds this text; the draft is no longer needed.
+    question.draft_text = None
+    question.draft_meta = None
     try:
         db.commit()  # the answer is durable before any model call
     except IntegrityError:
@@ -702,6 +1118,7 @@ def _report_rows(session: InterviewSession) -> list[dict]:
                 "question_order": q.question_order,
                 "competency": q.competency,
                 "category": q.category,
+                "kind": q.kind or "question",
                 "answered": a is not None,
                 "score": a.score if evaluated else None,
                 "dimensions": (a.evaluation or {}).get("dimensions") if evaluated else None,
@@ -751,7 +1168,7 @@ async def generate_report(db: Session, user: User, interview_id: str) -> Intervi
     session = _session_query(db).filter(InterviewSession.id == interview_id).first()
     report = session.report
     rows = _report_rows(session)
-    computed = scoring.aggregate(rows)
+    computed = scoring.aggregate(rows, blueprint=session.blueprint, available_practical_kinds=AVAILABLE_PRACTICAL_KINDS)
 
     # Persist deterministic results first so they survive a narrative failure.
     report.overall_score = computed["overall_score"]

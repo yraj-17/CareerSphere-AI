@@ -1040,8 +1040,25 @@ export const getInterviewOptions = async () => {
   return response.data;
 };
 
-export const getInterviewSuggestions = async () => {
-  const response = await apiClient.get('/api/interviews/suggestions');
+/** Profile suggestions. With a role, only profile skills relevant to that role are returned. */
+export const getInterviewSuggestions = async (role) => {
+  const response = await apiClient.get('/api/interviews/suggestions', { params: role ? { role } : {} });
+  return response.data;
+};
+
+export const getInterviewRoles = async () => {
+  const response = await apiClient.get('/api/interviews/roles');
+  return response.data;
+};
+
+/** Resolve a title against the catalog, or analyse it as a custom role (may call the LLM). */
+export const analyzeInterviewRole = async (title) => {
+  const response = await apiClient.post('/api/interviews/roles/analyze', { title }, { timeout: INTERVIEW_AI_TIMEOUT_MS });
+  return response.data;
+};
+
+export const previewInterviewBlueprint = async (payload) => {
+  const response = await apiClient.post('/api/interviews/blueprint/preview', payload, { timeout: INTERVIEW_AI_TIMEOUT_MS });
   return response.data;
 };
 
@@ -1066,6 +1083,21 @@ export const requestNextInterviewQuestion = async (interviewId) => {
     {},
     { timeout: INTERVIEW_AI_TIMEOUT_MS }
   );
+  return response.data;
+};
+
+/**
+ * Record which question is open. Navigation never submits, evaluates or generates.
+ * `seq` must increase with every navigation so a late, older request cannot win.
+ */
+export const navigateInterview = async (interviewId, position, seq) => {
+  const response = await apiClient.post(`/api/interviews/${interviewId}/navigate`, { position, seq });
+  return response.data;
+};
+
+/** Autosave an unsubmitted answer. The server keeps only the highest `revision`. */
+export const saveInterviewDraft = async (interviewId, questionId, { text, meta = null, revision }) => {
+  const response = await apiClient.put(`/api/interviews/${interviewId}/questions/${questionId}/draft`, { text, meta, revision });
   return response.data;
 };
 

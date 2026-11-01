@@ -32,10 +32,13 @@ CATEGORY_WEIGHTS: dict[str, dict[str, float]] = {
 ALL_DIMENSIONS = ("relevance", "clarity", "accuracy", "reasoning", "structure", "reflection")
 
 METHODOLOGY = (
-    "Each answer is scored from AI-rated dimensions using fixed weights for its category "
-    "(technical: accuracy 40%, reasoning 25%, relevance 20%, clarity 15%; behavioral: "
-    "structure 30%, relevance 25%, clarity 25%, reflection 20%). The overall score is the "
-    "mean of evaluated answer scores. Unanswered or unevaluated questions are excluded."
+    "Conceptual and behavioral answers are each scored from AI-rated dimensions using fixed weights "
+    "for their category (technical: accuracy 40%, reasoning 25%, relevance 20%, clarity 15%; "
+    "behavioral: structure 30%, relevance 25%, clarity 25%, reflection 20%). The overall interview "
+    "score is the mean of evaluated answer scores. Practical assessments are scored separately "
+    "(coding: 70% weighted test results + 30% AI code review) and are only combined once they are "
+    "assessed; practical slots that were not assessed are reported but never scored. Unanswered or "
+    "unevaluated questions are excluded."
 )
 
 
@@ -57,14 +60,59 @@ def answer_score(category: str, dimensions: dict[str, int]) -> int:
     return int(round(total))
 
 
-def aggregate(rows: list[dict]) -> dict:
+def _competency_scores(conceptual_rows: list[dict]) -> list[dict]:
+    """Role-specific competency breakdown, in the order competencies were asked."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in conceptual_rows:
+        groups.setdefault((row["category"], row["competency"]), []).append(row)
+    return [
+        {
+            "competency": competency,
+            "category": category,
+            "score": _mean(r["score"] for r in items if r.get("score") is not None),
+            "questions": len(items),
+            "evaluated": sum(1 for r in items if r.get("score") is not None),
+        }
+        for (category, competency), items in groups.items()
+    ]
+
+
+def _practical_section(rows: list[dict], blueprint: Optional[dict], available: Iterable[str]) -> dict:
+    available = set(available)
+    planned = [s for s in (blueprint or {}).get("question_slots", []) if s.get("kind", "question") != "question"]
+    reached = {row["question_order"]: row for row in rows if row.get("kind", "question") != "question"}
+    items = []
+    for slot in planned:
+        row = reached.get(slot["position"])
+        if slot["kind"] not in available:
+            item_status = "not_available"
+        elif row is None:
+            item_status = "not_reached"
+        else:
+            item_status = "assessed" if row.get("score") is not None else "not_assessed"
+        items.append({"position": slot["position"], "kind": slot["kind"], "competency": slot["competency"], "status": item_status})
+    assessed = [reached[i["position"]]["score"] for i in items if i["status"] == "assessed"]
+    return {
+        "reserved": len(planned),
+        "reached": len(reached),
+        "assessed": len(assessed),
+        "score": _mean(assessed),
+        "available": bool(planned) and all(slot["kind"] in available for slot in planned),
+        "kinds": sorted({slot["kind"] for slot in planned}),
+        "items": items,
+    }
+
+
+def aggregate(rows: list[dict], blueprint: Optional[dict] = None, available_practical_kinds: Iterable[str] = ()) -> dict:
     """
     Build report aggregates from saved question/answer rows.
 
-    Each row: {question_id, question_order, competency, category,
+    Each row: {question_id, question_order, competency, category, kind,
                answered: bool, score: int|None, dimensions: dict|None}
+    Rows with kind != "question" are practical slots and are scored separately.
     """
-    evaluated = [row for row in rows if row.get("score") is not None]
+    conceptual = [row for row in rows if row.get("kind", "question") == "question"]
+    evaluated = [row for row in conceptual if row.get("score") is not None]
 
     dimension_scores: dict[str, Optional[int]] = {}
     for name in ALL_DIMENSIONS:
@@ -93,6 +141,23 @@ def aggregate(rows: list[dict]) -> dict:
     strongest_ids = {row["question_id"] for row in strongest}
     weakest = [row for row in reversed(ranked) if row["question_id"] not in strongest_ids][:2]
 
+    technical_evaluated = sum(1 for row in evaluated if row["category"] == "TECHNICAL")
+    sections = {
+        "conceptual": {
+            "score": category_scores["TECHNICAL"],
+            "evaluated": technical_evaluated,
+            "questions": sum(1 for row in conceptual if row["category"] == "TECHNICAL"),
+        },
+        "behavioral": {
+            "score": category_scores["BEHAVIORAL"],
+            "evaluated": len(evaluated) - technical_evaluated,
+            "questions": sum(1 for row in conceptual if row["category"] == "BEHAVIORAL"),
+        },
+        "communication": {"score": dimension_scores["clarity"]},
+        "problem_solving": {"score": dimension_scores["reasoning"]},
+        "practical": _practical_section(rows, blueprint, available_practical_kinds),
+    }
+
     return {
         "overall_score": _mean(row["score"] for row in evaluated),
         "aggregates": {
@@ -101,6 +166,8 @@ def aggregate(rows: list[dict]) -> dict:
             "evaluated_count": len(evaluated),
             "dimension_scores": dimension_scores,
             "category_scores": category_scores,
+            "competency_scores": _competency_scores(conceptual),
+            "sections": sections,
             "strongest": [ref(row) for row in strongest],
             "weakest": [ref(row) for row in weakest],
             "methodology": METHODOLOGY,

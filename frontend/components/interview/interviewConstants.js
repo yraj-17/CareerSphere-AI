@@ -113,3 +113,55 @@ export function apiErrorDetail(error) {
   if (detail && typeof detail === 'object' && !Array.isArray(detail)) return detail;
   return {};
 }
+
+export const MAX_JOB_DESCRIPTION_LENGTH = 4000;
+export const MIN_QUESTIONS = 3;
+
+export const PRACTICAL_KIND_LABELS = {
+  coding: 'Coding',
+  sql: 'SQL',
+  calculation: 'Practical calculation',
+  scenario: 'Practical scenario',
+};
+
+export function slotKindLabel(kind) {
+  return kind === 'question' ? 'Conceptual' : PRACTICAL_KIND_LABELS[kind] || 'Practical';
+}
+
+/** Mirrors the backend rule: technical = ceil(n/3) practical; mixed reserves inside the technical half. */
+export function practicalCount(interviewType, total) {
+  if (interviewType === 'TECHNICAL') return Math.ceil(total / 3);
+  if (interviewType === 'MIXED') return Math.ceil(Math.ceil(total / 2) / 3);
+  return 0;
+}
+
+const SENIORITY_WORDS = new Set([
+  'senior', 'sr', 'junior', 'jr', 'lead', 'principal', 'staff', 'associate', 'intern', 'trainee',
+  'graduate', 'fresher', 'entry', 'level', 'mid', 'chief', 'head', 'experienced',
+]);
+const LEVEL_SUFFIX = new Set(['i', 'ii', 'iii', 'iv', '1', '2', '3', '4']);
+
+export function titleKey(title) {
+  return (title || '')
+    .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/[^a-z0-9+#/]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** Client-side preview of the backend's exact/alias role match (the backend stays authoritative). */
+export function matchCatalogRole(title, roles = []) {
+  const words = titleKey(title).split(' ').filter(Boolean);
+  const stripped = words.filter((word) => !SENIORITY_WORDS.has(word));
+  const candidates = [words.join(' '), stripped.join(' ')];
+  if (stripped.length && LEVEL_SUFFIX.has(stripped[stripped.length - 1])) candidates.push(stripped.slice(0, -1).join(' '));
+  for (const key of candidates) {
+    if (!key) continue;
+    const found = roles.find((role) => [role.title, ...(role.aliases || [])].some((name) => titleKey(name) === key));
+    if (found) return found;
+  }
+  return null;
+}

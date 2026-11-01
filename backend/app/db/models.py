@@ -1194,6 +1194,15 @@ class InterviewSession(Base):
     max_questions = Column(Integer, nullable=False)
     focus_areas = Column(JSON, nullable=False, default=list)
     instructions = Column(Text, nullable=True)
+    # Role engine. Sessions created before the role engine have no blueprint.
+    role_slug = Column(String(80), nullable=True)  # catalog slug; null for custom roles
+    role_source = Column(String(10), nullable=True)  # catalog | custom
+    job_description = Column(Text, nullable=True)
+    blueprint = Column(JSON, nullable=True)
+    # Question the candidate last had open (1-based slot position) and the client sequence
+    # of that navigation, so out-of-order navigation requests cannot move it backwards.
+    current_position = Column(Integer, nullable=True)
+    position_seq = Column(BigInteger, nullable=True)
     status = Column(
         Enum(InterviewStatus, name="interviewstatus", create_constraint=True),
         nullable=False,
@@ -1232,9 +1241,19 @@ class InterviewQuestion(Base):
     question_order = Column(Integer, nullable=False)
     question_text = Column(Text, nullable=False)
     category = Column(String(20), nullable=False)  # TECHNICAL | BEHAVIORAL
+    # question | coding | sql | calculation | scenario (practical kinds come from the blueprint)
+    kind = Column(String(20), nullable=False, default="question", server_default="question")
     competency = Column(String(120), nullable=False)
     difficulty = Column(Enum(InterviewDifficulty, name="interviewdifficulty", create_constraint=True), nullable=False)
     interviewer_context = Column(Text, nullable=True)
+    # Autosaved, unsubmitted work. draft_revision only moves forward: an autosave is applied
+    # only if its revision is newer, so a delayed older save never overwrites a newer one.
+    # draft_meta is reserved for structured drafts (e.g. per-language code in coding slots).
+    draft_text = Column(Text, nullable=True)
+    draft_meta = Column(JSON, nullable=True)
+    draft_revision = Column(BigInteger, nullable=False, default=0, server_default="0")
+    draft_updated_at = Column(DateTime(timezone=True), nullable=True)
+    first_viewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     session = relationship("InterviewSession", back_populates="questions")
@@ -1296,3 +1315,20 @@ class InterviewReport(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     session = relationship("InterviewSession", back_populates="report")
+
+
+class InterviewRoleProfile(Base):
+    """
+    Cached LLM analysis of a custom (non-catalog) job title, keyed by its normalized
+    title so the same title always yields the same competencies. Analyses that use
+    a job description are session-specific and live only in that session's blueprint.
+    """
+
+    __tablename__ = "interview_role_profiles"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    normalized_title = Column(String(160), nullable=False, unique=True, index=True)
+    title = Column(String(120), nullable=False)
+    analysis = Column(JSON, nullable=False)
+    model_name = Column(String(120), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

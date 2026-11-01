@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
-  ArrowRight,
-  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Flag,
-  History,
   Loader2,
+  RotateCcw,
   Send,
   Volume2,
   VolumeX,
@@ -19,8 +19,9 @@ import {
   completeInterview,
   extractErrorMessage,
   getInterview,
-  requestNextInterviewQuestion,
+  navigateInterview,
   retryInterviewEvaluation,
+  saveInterviewDraft,
   submitInterviewAnswer,
 } from '@/services/api';
 import AnswerFeedback from '@/components/interview/AnswerFeedback';
@@ -34,26 +35,30 @@ import {
   difficultyLabel,
   formatClock,
   modeLabel,
+  slotKindLabel,
   typeLabel,
 } from '@/components/interview/interviewConstants';
 
-const DRAFT_PREFIX = 'careersphere:interview-draft:';
+const AUTOSAVE_DELAY_MS = 800;
+const PREPARING_POLL_MS = 2500;
 
-function readDraft(questionId) {
-  try {
-    return window.localStorage.getItem(DRAFT_PREFIX + questionId) || '';
-  } catch {
-    return '';
-  }
-}
+export const QUESTION_STATUS = {
+  NOT_STARTED: { label: 'Not started', className: 'border-slate-200 bg-white text-slate-600' },
+  SKIPPED: { label: 'Skipped', className: 'border-amber-300 bg-amber-50 text-amber-800' },
+  IN_PROGRESS: { label: 'In progress', className: 'border-brand-300 bg-brand-50 text-brand-600' },
+  SUBMITTED: { label: 'Submitted', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' },
+  ANSWERED: { label: 'Answered', className: 'border-emerald-600 bg-emerald-600 text-white' },
+  UNAVAILABLE: { label: 'Not available', className: 'border-dashed border-slate-300 bg-slate-50 text-slate-400' },
+  PREPARING: { label: 'Preparing', className: 'border-dashed border-slate-300 bg-white text-slate-400' },
+};
 
-function writeDraft(questionId, value) {
-  try {
-    if (value) window.localStorage.setItem(DRAFT_PREFIX + questionId, value);
-    else window.localStorage.removeItem(DRAFT_PREFIX + questionId);
-  } catch {
-    // Draft persistence is a convenience only.
-  }
+/** Monotonic per-tab sequence: never repeats or goes backwards, even within one millisecond. */
+function makeSequencer() {
+  let last = 0;
+  return () => {
+    last = Math.max(last + 1, Date.now());
+    return last;
+  };
 }
 
 function Badge({ children }) {
@@ -64,7 +69,7 @@ function Badge({ children }) {
   );
 }
 
-function ConfirmEndDialog({ answeredCount, hasDraft, ending, error, onCancel, onConfirm }) {
+function FinishDialog({ summary, ending, error, onCancel, onConfirm, onGoTo }) {
   const cancelRef = useRef(null);
   useEffect(() => {
     cancelRef.current?.focus();
@@ -77,16 +82,47 @@ function ConfirmEndDialog({ answeredCount, hasDraft, ending, error, onCancel, on
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="end-title" aria-describedby="end-description" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 id="end-title" className="text-lg font-semibold">End this interview?</h2>
-        <div id="end-description" className="mt-2 space-y-2 text-sm text-slate-600">
-          <p>
-            {answeredCount > 0
-              ? `Your ${answeredCount} submitted answer${answeredCount === 1 ? '' : 's'} will be included in the final report. Unanswered questions are not scored.`
-              : 'You have not submitted any answers, so no report will be generated.'}
+      <div role="dialog" aria-modal="true" aria-labelledby="finish-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h2 id="finish-title" className="text-lg font-semibold">Finish this interview?</h2>
+        <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-lg bg-emerald-50 p-2">
+            <dt className="text-xs text-emerald-700">Answered</dt>
+            <dd className="text-lg font-semibold text-emerald-800">{summary.answered}</dd>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <dt className="text-xs text-slate-600">Unanswered</dt>
+            <dd className="text-lg font-semibold text-slate-800">{summary.unanswered}</dd>
+          </div>
+        </dl>
+        {summary.drafts.length > 0 && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-medium">Saved drafts that were not submitted (they will not be scored):</p>
+            <ul className="mt-1 space-y-1">
+              {summary.drafts.map((q) => (
+                <li key={q.id} className="flex items-center justify-between gap-2">
+                  <span>Question {q.question_order}</span>
+                  <button type="button" onClick={() => onGoTo(q.question_order)} className="text-xs font-semibold underline">
+                    Go to question {q.question_order}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {summary.unansweredQuestions.length > 0 && (
+          <p className="mt-3 text-sm text-slate-600">
+            Unanswered:{' '}
+            {summary.unansweredQuestions.map((q, i) => (
+              <React.Fragment key={q.id}>
+                {i > 0 && ', '}
+                <button type="button" onClick={() => onGoTo(q.question_order)} className="font-medium text-brand-600 underline">
+                  Q{q.question_order}
+                </button>
+              </React.Fragment>
+            ))}
           </p>
-          {hasDraft && <p className="font-medium text-amber-800">Your unsubmitted draft answer will not be saved.</p>}
-        </div>
+        )}
+        <p className="mt-3 text-xs text-slate-500">After you finish, answers can no longer be changed.</p>
         {error && (
           <p className="mt-3 text-sm text-red-700" role="alert">
             {error}
@@ -98,7 +134,7 @@ function ConfirmEndDialog({ answeredCount, hasDraft, ending, error, onCancel, on
           </button>
           <button type="button" onClick={onConfirm} disabled={ending} className="btn-danger">
             {ending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-            End interview
+            Finish interview
           </button>
         </div>
       </div>
@@ -121,7 +157,7 @@ function EndedState({ interview }) {
       <h1 className="mt-3 text-xl font-semibold">{interview.target_role}</h1>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
       <p className="mt-1 text-sm text-slate-500">
-        {interview.answered_count} of {interview.question_count} question{interview.question_count === 1 ? '' : 's'} answered
+        {interview.answered_count} of {interview.max_questions} question{interview.max_questions === 1 ? '' : 's'} answered
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {hasReport && (
@@ -151,26 +187,44 @@ export default function InterviewRoom({ interviewId }) {
   const [clockOffset, setClockOffset] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const [draft, setDraft] = useState('');
-  const [draftSource, setDraftSource] = useState('TEXT');
-  const [submitting, setSubmitting] = useState(false);
+  const [position, setPosition] = useState(null);
+  // Local drafts keyed by question ID: { text, source, revision, savedRevision, saving, error }
+  const [drafts, setDrafts] = useState({});
+  const [submittingId, setSubmittingId] = useState(null);
   const [submitError, setSubmitError] = useState('');
-  const [reviewQuestionId, setReviewQuestionId] = useState(null);
-  const [nextState, setNextState] = useState('idle');
-  const [nextError, setNextError] = useState('');
   const [retryingAnswerId, setRetryingAnswerId] = useState(null);
-  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState('');
   const [timeUp, setTimeUp] = useState(false);
+
+  const [nextSeq] = useState(makeSequencer);
+  const latestNavSeq = useRef(0);
+  const saveTimers = useRef({});
+  const draftsRef = useRef(drafts);
   const timeUpHandled = useRef(false);
-  const draftQuestionRef = useRef(null);
+
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
 
   const applyInterview = useCallback((data) => {
     const clientNow = Date.now();
     setInterview(data);
     setClockOffset(new Date(data.server_time).getTime() - clientNow);
     setNowMs(clientNow);
+    // Seed local drafts from the server only for questions without local edits.
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const q of data.questions || []) {
+        if (q.answer) {
+          delete next[q.id];
+        } else if (!next[q.id] && q.draft_text) {
+          next[q.id] = { text: q.draft_text, source: 'TEXT', revision: q.draft_revision, savedRevision: q.draft_revision };
+        }
+      }
+      return next;
+    });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -184,7 +238,10 @@ export default function InterviewRoom({ interviewId }) {
     (async () => {
       try {
         const data = await getInterview(interviewId);
-        if (!cancelled) applyInterview(data);
+        if (cancelled) return;
+        applyInterview(data);
+        const firstOpen = data.current_question?.question_order;
+        setPosition(data.current_position || firstOpen || 1);
       } catch (error) {
         if (cancelled) return;
         if (error?.response?.status === 404) setNotFound(true);
@@ -206,154 +263,190 @@ export default function InterviewRoom({ interviewId }) {
     return () => window.clearInterval(timer);
   }, [inProgress]);
 
+  // While planned questions are still being prepared, refresh periodically.
+  useEffect(() => {
+    if (!inProgress || !interview?.preparing) return undefined;
+    const timer = window.setTimeout(() => {
+      refresh().catch(() => {});
+    }, PREPARING_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [inProgress, interview, refresh]);
+
   const remainingSeconds = inProgress
     ? Math.max(0, Math.floor((new Date(interview.deadline_at).getTime() - (nowMs + clockOffset)) / 1000))
     : 0;
 
-  const currentQuestion = interview?.current_question || null;
-  const answeredQuestions = useMemo(() => (interview?.questions || []).filter((q) => q.answer), [interview]);
-  const lastAnswered = answeredQuestions[answeredQuestions.length - 1] || null;
-  const reviewQuestion = useMemo(() => {
-    if (!interview) return null;
-    if (reviewQuestionId) return interview.questions.find((q) => q.id === reviewQuestionId) || null;
-    if (!currentQuestion) return lastAnswered;
-    return null;
-  }, [currentQuestion, interview, lastAnswered, reviewQuestionId]);
+  const total = interview?.max_questions || 0;
+  const questionsByPosition = useMemo(() => {
+    const map = {};
+    for (const q of interview?.questions || []) map[q.question_order] = q;
+    return map;
+  }, [interview]);
+  const selected = position ? questionsByPosition[position] : null;
 
-  // Load the saved draft whenever a new question becomes active.
-  useEffect(() => {
-    if (!currentQuestion || draftQuestionRef.current === currentQuestion.id) return;
-    draftQuestionRef.current = currentQuestion.id;
-    setDraft(readDraft(currentQuestion.id));
-    setDraftSource('TEXT');
-    setSubmitError('');
-    speech.stop();
-  }, [currentQuestion, speech]);
+  // ---------------------------------------------------------------------------
+  // Drafts: local first, autosaved to the server; the highest revision wins there.
+  // ---------------------------------------------------------------------------
 
-  const updateDraft = (value, source = 'TEXT') => {
-    setDraft(value);
-    if (source === 'VOICE') setDraftSource('VOICE');
-    if (currentQuestion) writeDraft(currentQuestion.id, value);
+  const persistDraft = useCallback(
+    async (questionId) => {
+      window.clearTimeout(saveTimers.current[questionId]);
+      delete saveTimers.current[questionId];
+      const draft = draftsRef.current[questionId];
+      if (!draft || draft.savedRevision === draft.revision) return;
+      const { revision } = draft;
+      setDrafts((prev) => (prev[questionId] ? { ...prev, [questionId]: { ...prev[questionId], saving: true } } : prev));
+      try {
+        const result = await saveInterviewDraft(interviewId, questionId, { text: draft.text, revision });
+        setDrafts((prev) => {
+          const current = prev[questionId];
+          if (!current) return prev;
+          // saved === false: a newer draft (e.g. from another tab) is stored; keep ours marked unsaved.
+          const savedRevision = result.saved ? Math.max(current.savedRevision || 0, revision) : current.savedRevision;
+          return { ...prev, [questionId]: { ...current, saving: false, error: false, savedRevision } };
+        });
+      } catch {
+        // Keep the text locally and retry on the next change or navigation.
+        setDrafts((prev) => (prev[questionId] ? { ...prev, [questionId]: { ...prev[questionId], saving: false, error: true } } : prev));
+      }
+    },
+    [interviewId]
+  );
+
+  const updateDraft = (questionId, text, source = 'TEXT') => {
+    setDrafts((prev) => ({
+      ...prev,
+      [questionId]: {
+        ...(prev[questionId] || {}),
+        text,
+        source: source === 'VOICE' || prev[questionId]?.source === 'VOICE' ? 'VOICE' : 'TEXT',
+        revision: nextSeq(),
+      },
+    }));
+    window.clearTimeout(saveTimers.current[questionId]);
+    saveTimers.current[questionId] = window.setTimeout(() => persistDraft(questionId), AUTOSAVE_DELAY_MS);
   };
 
-  const prefetchNext = useCallback(async () => {
-    setNextState('loading');
-    setNextError('');
-    try {
-      const data = await requestNextInterviewQuestion(interviewId);
-      applyInterview(data);
-      setNextState('idle');
-      return data;
-    } catch (error) {
-      setNextState('error');
-      setNextError(extractErrorMessage(error));
-      if (error?.response?.status === 409) {
-        try {
-          await refresh();
-        } catch {
-          // keep the existing state; the error message is shown
-        }
-      }
-      return null;
-    }
-  }, [applyInterview, interviewId, refresh]);
+  useEffect(
+    () => () => {
+      Object.values(saveTimers.current).forEach((timer) => window.clearTimeout(timer));
+    },
+    []
+  );
 
-  const maxAnswerLength = DEFAULT_MAX_ANSWER_LENGTH;
-  const trimmedDraft = draft.trim();
-  const overLimit = draft.length > maxAnswerLength;
+  // ---------------------------------------------------------------------------
+  // Navigation: moves between questions only — never submits, evaluates or generates.
+  // ---------------------------------------------------------------------------
 
-  const submitAnswer = useCallback(
-    async ({ silent = false } = {}) => {
-      if (!currentQuestion || !trimmedDraft || overLimit || submitting) return;
-      const questionId = currentQuestion.id;
-      setSubmitting(true);
+  const goTo = useCallback(
+    (target) => {
+      if (!interview || target < 1 || target > total) return;
+      if (selected?.id) persistDraft(selected.id);
+      speech.stop();
       setSubmitError('');
+      setPosition(target);
+      if (!inProgress) return;
+      const seq = nextSeq();
+      latestNavSeq.current = seq;
+      navigateInterview(interviewId, target, seq)
+        .then((data) => {
+          if (latestNavSeq.current === seq) applyInterview(data);
+        })
+        .catch(() => {});
+    },
+    [applyInterview, inProgress, interview, interviewId, nextSeq, persistDraft, selected, speech, total]
+  );
+
+  // Record the restored position as visited once the room opens.
+  const initialNavDone = useRef(false);
+  useEffect(() => {
+    if (!inProgress || !position || initialNavDone.current) return;
+    initialNavDone.current = true;
+    const seq = nextSeq();
+    latestNavSeq.current = seq;
+    navigateInterview(interviewId, position, seq)
+      .then((data) => {
+        if (latestNavSeq.current === seq) applyInterview(data);
+      })
+      .catch(() => {});
+  }, [applyInterview, inProgress, interviewId, nextSeq, position]);
+
+  // ---------------------------------------------------------------------------
+  // Submission (separate from navigation)
+  // ---------------------------------------------------------------------------
+
+  const submitQuestion = useCallback(
+    async (question, { silent = false } = {}) => {
+      const draft = draftsRef.current[question.id];
+      const text = draft?.text || '';
+      if (!text.trim() || text.length > DEFAULT_MAX_ANSWER_LENGTH) return;
+      window.clearTimeout(saveTimers.current[question.id]);
+      setSubmittingId(question.id);
+      if (!silent) setSubmitError('');
       try {
         const result = await submitInterviewAnswer(interviewId, {
-          questionId,
-          answerText: draft,
-          answerSource: draftSource,
+          questionId: question.id,
+          answerText: text,
+          answerSource: draft?.source || 'TEXT',
         });
         applyInterview(result.interview);
-        writeDraft(questionId, '');
-        setDraft('');
-        setReviewQuestionId(questionId);
         speech.stop();
-        if (result.interview.can_request_next_question && !silent) prefetchNext();
       } catch (error) {
         // The answer may have been saved even if the response was lost; recover from the server.
         try {
           const fresh = await refresh();
-          const saved = fresh.questions.find((q) => q.id === questionId)?.answer;
-          if (saved) {
-            writeDraft(questionId, '');
-            setDraft('');
-            setReviewQuestionId(questionId);
-            return;
-          }
+          if (fresh.questions.find((q) => q.id === question.id)?.answer) return;
         } catch {
-          // fall through to the original error
+          // fall through
         }
         if (!silent) setSubmitError(extractErrorMessage(error));
       } finally {
-        setSubmitting(false);
+        setSubmittingId(null);
       }
     },
-    [applyInterview, currentQuestion, draft, draftSource, interviewId, overLimit, prefetchNext, refresh, speech, submitting, trimmedDraft]
+    [applyInterview, interviewId, refresh, speech]
   );
 
-  const goToResults = useCallback(
-    (data) => {
-      if (data.answered_count > 0) router.push(`/dashboard/interview/${interviewId}/results`);
-    },
-    [interviewId, router]
-  );
-
-  const endInterview = useCallback(async () => {
+  const finishInterview = useCallback(async () => {
     setEnding(true);
     setEndError('');
     try {
+      await Promise.allSettled(Object.keys(saveTimers.current).map((id) => persistDraft(id)));
       const data = await completeInterview(interviewId);
       applyInterview(data);
-      setConfirmEnd(false);
-      goToResults(data);
+      setFinishOpen(false);
+      if (data.answered_count > 0) router.push(`/dashboard/interview/${interviewId}/results`);
     } catch (error) {
       setEndError(extractErrorMessage(error));
     } finally {
       setEnding(false);
     }
-  }, [applyInterview, goToResults, interviewId]);
+  }, [applyInterview, interviewId, persistDraft, router]);
 
-  // Server-enforced deadline: when local time runs out, save any draft (within the
-  // server's grace window), then end the interview and move to the report.
+  // Server-enforced deadline: when time runs out, submit every non-empty draft
+  // (accepted within the server's grace window), then end the interview.
   useEffect(() => {
     if (inProgress && remainingSeconds === 0 && !timeUp) setTimeUp(true);
   }, [inProgress, remainingSeconds, timeUp]);
 
   useEffect(() => {
-    if (!timeUp || timeUpHandled.current || submitting) return;
+    if (!timeUp || timeUpHandled.current || submittingId) return;
     timeUpHandled.current = true;
     (async () => {
-      if (currentQuestion && trimmedDraft && !overLimit) await submitAnswer({ silent: true });
-      await endInterview();
+      const pending = (interview?.questions || []).filter(
+        (q) => !q.answer && q.assessment_available !== false && (draftsRef.current[q.id]?.text || '').trim()
+      );
+      await Promise.allSettled(pending.map((q) => submitQuestion(q, { silent: true })));
+      await finishInterview();
     })();
-  }, [currentQuestion, endInterview, overLimit, submitAnswer, submitting, timeUp, trimmedDraft]);
-
-  const handleNext = async () => {
-    if (interview?.current_question) {
-      setReviewQuestionId(null);
-      return;
-    }
-    const data = await prefetchNext();
-    if (data?.current_question) setReviewQuestionId(null);
-  };
+  }, [finishInterview, interview, submitQuestion, submittingId, timeUp]);
 
   const handleRetryEvaluation = async (answerId) => {
     setRetryingAnswerId(answerId);
     try {
       await retryInterviewEvaluation(interviewId, answerId);
     } catch {
-      // the refreshed state below shows whether a retry is still possible
+      // the refreshed state shows whether a retry is still possible
     }
     try {
       await refresh();
@@ -361,6 +454,31 @@ export default function InterviewRoom({ interviewId }) {
       setRetryingAnswerId(null);
     }
   };
+
+  const statusOf = useCallback(
+    (q) => {
+      if (!q) return 'PREPARING';
+      if (q.status === 'NOT_STARTED' || q.status === 'SKIPPED') {
+        if ((drafts[q.id]?.text || '').trim()) return 'IN_PROGRESS';
+      }
+      if (q.status === 'IN_PROGRESS' && drafts[q.id] && !(drafts[q.id].text || '').trim()) return 'NOT_STARTED';
+      return q.status || 'NOT_STARTED';
+    },
+    [drafts]
+  );
+
+  const finishSummary = useMemo(() => {
+    const questions = interview?.questions || [];
+    const answerable = questions.filter((q) => q.assessment_available !== false);
+    const answered = answerable.filter((q) => q.answer);
+    const open = answerable.filter((q) => !q.answer);
+    return {
+      answered: answered.length,
+      unanswered: open.length + Math.max(0, total - questions.length),
+      drafts: open.filter((q) => statusOf(q) === 'IN_PROGRESS'),
+      unansweredQuestions: open.filter((q) => statusOf(q) !== 'IN_PROGRESS'),
+    };
+  }, [interview, statusOf, total]);
 
   if (loading) {
     return (
@@ -397,9 +515,21 @@ export default function InterviewRoom({ interviewId }) {
   if (!inProgress) return <EndedState interview={interview} />;
 
   const isVoice = interview.interaction_mode === 'VOICE';
-  const progressPct = Math.round((interview.answered_count / interview.max_questions) * 100);
+  const progressPct = Math.round((interview.answered_count / Math.max(1, total)) * 100);
   const timerTone = remainingSeconds <= 60 ? 'text-red-700' : remainingSeconds <= 120 ? 'text-amber-700' : 'text-slate-900';
-  const displayedOrder = (reviewQuestion || currentQuestion)?.question_order ?? interview.question_count;
+  const draft = selected ? drafts[selected.id] : null;
+  const draftText = draft?.text || '';
+  const overLimit = draftText.length > DEFAULT_MAX_ANSWER_LENGTH;
+  const isLast = position === total;
+  const plannedSlot = interview.blueprint?.question_slots?.[(position || 1) - 1];
+
+  let saveState = null;
+  if (draft && draftText) {
+    if (draft.saving) saveState = 'Saving draft...';
+    else if (draft.error) saveState = 'Draft not saved — will retry';
+    else if (draft.savedRevision === draft.revision) saveState = 'Draft saved';
+    else saveState = 'Unsaved changes';
+  }
 
   return (
     <div className="space-y-5">
@@ -419,249 +549,259 @@ export default function InterviewRoom({ interviewId }) {
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               Time remaining
             </p>
-            <p
-              className={`font-mono text-2xl font-bold tabular-nums ${timerTone}`}
-              role="timer"
-              aria-label={`Time remaining ${formatClock(remainingSeconds)}`}
-            >
+            <p className={`font-mono text-2xl font-bold tabular-nums ${timerTone}`} role="timer" aria-label={`Time remaining ${formatClock(remainingSeconds)}`}>
               {formatClock(remainingSeconds)}
             </p>
           </div>
-          <button type="button" onClick={() => setConfirmEnd(true)} disabled={timeUp} className="btn-outline">
+          <button type="button" onClick={() => setFinishOpen(true)} disabled={timeUp} className="btn-outline">
             <Flag className="h-4 w-4" aria-hidden="true" />
             End interview
           </button>
         </div>
       </section>
 
-      <div>
+      <section className="surface-card space-y-3 p-4 sm:p-5" aria-label="Question navigator">
         <div className="flex justify-between text-xs font-medium text-slate-600">
           <span>
-            Question {displayedOrder} of {interview.max_questions}
+            Question {position} of {total}
           </span>
-          <span>{interview.answered_count} answered</span>
+          <span>
+            {interview.answered_count} of {total} answered
+          </span>
         </div>
         <div
-          className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200"
+          className="h-2 overflow-hidden rounded-full bg-slate-200"
           role="progressbar"
           aria-label="Interview progress"
           aria-valuemin={0}
-          aria-valuemax={interview.max_questions}
+          aria-valuemax={total}
           aria-valuenow={interview.answered_count}
         >
           <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progressPct}%` }} />
         </div>
-      </div>
+        <ol className="flex flex-wrap gap-2" aria-label="Questions">
+          {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
+            const status = statusOf(questionsByPosition[n]);
+            const meta = QUESTION_STATUS[status] || QUESTION_STATUS.NOT_STARTED;
+            const current = n === position;
+            return (
+              <li key={n}>
+                <button
+                  type="button"
+                  onClick={() => goTo(n)}
+                  aria-current={current ? 'step' : undefined}
+                  aria-label={`Question ${n}, ${meta.label}`}
+                  title={`Question ${n}: ${meta.label}`}
+                  className={`flex h-10 min-w-10 items-center justify-center rounded-lg border px-2 text-sm font-semibold transition-colors ${meta.className} ${
+                    current ? 'ring-2 ring-brand-500 ring-offset-2' : 'hover:border-brand-400'
+                  }`}
+                >
+                  {n}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500" aria-label="Status legend">
+          {['NOT_STARTED', 'IN_PROGRESS', 'SKIPPED', 'SUBMITTED', 'ANSWERED'].map((key) => (
+            <li key={key} className="flex items-center gap-1">
+              <span className={`inline-block h-2.5 w-2.5 rounded-sm border ${QUESTION_STATUS[key].className}`} aria-hidden="true" />
+              {QUESTION_STATUS[key].label}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {timeUp && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900" role="alert">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Time&apos;s up. Saving your work and preparing your report...
+          Time&apos;s up. Submitting your saved drafts and preparing your report...
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-5">
-          {reviewQuestion ? (
-            <section className="surface-card space-y-5" aria-labelledby="review-heading">
-              <div>
-                <p id="review-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Question {reviewQuestion.question_order} · Feedback
+      <section className="surface-card space-y-5" aria-labelledby="question-heading">
+        {!selected ? (
+          <div className="flex items-center gap-2 text-sm text-slate-600" role="status">
+            {interview.preparing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin text-brand-500" aria-hidden="true" />
+                <span id="question-heading">
+                  Preparing question {position}
+                  {plannedSlot ? ` (${plannedSlot.competency})` : ''}...
+                </span>
+              </>
+            ) : (
+              <>
+                <span id="question-heading">Question {position} couldn&apos;t be prepared yet.</span>
+                <button type="button" onClick={() => goTo(position)} className="btn-outline px-3 py-1 text-xs">
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Try again
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p id="question-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Question {selected.question_order} ·{' '}
+                  {selected.assessment_available === false ? slotKindLabel(selected.kind) : categoryLabel(selected.category)} · {selected.competency}
                 </p>
-                <p className="mt-2 text-base font-medium leading-7 text-slate-900">{reviewQuestion.question_text}</p>
+                <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${QUESTION_STATUS[statusOf(selected)].className}`}>
+                  {QUESTION_STATUS[statusOf(selected)].label}
+                </span>
               </div>
-              <div className="surface-card-subtle">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
-                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">{reviewQuestion.answer?.answer_text}</p>
-              </div>
-              <AnswerFeedback
-                answer={reviewQuestion.answer}
-                onRetry={() => handleRetryEvaluation(reviewQuestion.answer.id)}
-                retrying={retryingAnswerId === reviewQuestion.answer?.id}
-              />
-              <p className="text-xs text-slate-500">{SCORE_DISCLAIMER} Your full report is available when the interview ends.</p>
-
-              {nextError && (
-                <p className="text-sm text-red-700" role="alert">
-                  {nextError}
-                </p>
+              {selected.interviewer_context && selected.assessment_available !== false && (
+                <p className="mt-2 text-sm text-slate-500">{selected.interviewer_context}</p>
               )}
-              <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
-                {interview.current_question || interview.can_request_next_question ? (
-                  <button type="button" onClick={handleNext} disabled={nextState === 'loading' || timeUp} className="btn-primary">
-                    {nextState === 'loading' ? (
+              {selected.assessment_available !== false && (
+                <p className="mt-2 text-lg font-medium leading-8 text-slate-900">{selected.question_text}</p>
+              )}
+              {isVoice && speech.supported && !selected.answer && selected.assessment_available !== false && (
+                <button
+                  type="button"
+                  onClick={() => (speech.speaking ? speech.stop() : speech.speak(selected.question_text))}
+                  className="btn-ghost mt-2 px-2 py-1 text-xs"
+                >
+                  {speech.speaking ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+                  {speech.speaking ? 'Stop reading' : 'Read question aloud'}
+                </button>
+              )}
+            </div>
+
+            {selected.assessment_available === false ? (
+              <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">{slotKindLabel(selected.kind)} assessment · {selected.competency}</p>
+                <p className="mt-1">
+                  This practical slot is reserved in your interview plan. The assessment environment isn&apos;t enabled yet, so it can&apos;t be
+                  answered and is not scored. It is never replaced with a theoretical question.
+                </p>
+              </div>
+            ) : selected.answer ? (
+              <>
+                <div className="surface-card-subtle">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your submitted answer</p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">{selected.answer.answer_text}</p>
+                </div>
+                <AnswerFeedback
+                  answer={selected.answer}
+                  onRetry={() => handleRetryEvaluation(selected.answer.id)}
+                  retrying={retryingAnswerId === selected.answer.id}
+                />
+                <p className="text-xs text-slate-500">{SCORE_DISCLAIMER} Your full report is available when the interview ends.</p>
+              </>
+            ) : (
+              <>
+                {isVoice && (
+                  <VoiceAnswerPanel
+                    key={selected.id}
+                    interviewId={interviewId}
+                    disabled={Boolean(submittingId) || timeUp}
+                    onTranscript={(text) => updateDraft(selected.id, text, 'VOICE')}
+                  />
+                )}
+                <div>
+                  <label htmlFor="answer" className="text-sm font-medium text-slate-700">
+                    {isVoice ? 'Transcript — review and edit before submitting' : 'Your answer'}
+                  </label>
+                  <textarea
+                    id="answer"
+                    rows={isVoice ? 6 : 9}
+                    value={draftText}
+                    onChange={(event) => updateDraft(selected.id, event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                        event.preventDefault();
+                        submitQuestion(selected);
+                      }
+                    }}
+                    disabled={submittingId === selected.id || timeUp}
+                    placeholder={isVoice ? 'Your transcript will appear here. You can also type.' : 'Type your answer. Your draft is saved automatically.'}
+                    className="input-base mt-1.5 resize-y leading-6"
+                    aria-describedby="answer-count answer-save-state"
+                    aria-invalid={overLimit}
+                  />
+                  <div className="mt-1 flex flex-wrap justify-between gap-2 text-xs">
+                    <span id="answer-save-state" className="text-slate-500" aria-live="polite">
+                      {saveState || 'Drafts are saved automatically. Submitted answers can’t be edited.'}
+                    </span>
+                    <span id="answer-count" className={overLimit ? 'font-semibold text-red-700' : 'text-slate-400'}>
+                      {draftText.length}/{DEFAULT_MAX_ANSWER_LENGTH}
+                    </span>
+                  </div>
+                </div>
+                {submitError && (
+                  <p className="text-sm text-red-700" role="alert">
+                    {submitError}
+                  </p>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => submitQuestion(selected)}
+                    disabled={!draftText.trim() || overLimit || Boolean(submittingId) || timeUp}
+                    className="btn-primary"
+                  >
+                    {submittingId === selected.id ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        Preparing next question...
+                        Evaluating your answer...
                       </>
                     ) : (
                       <>
-                        {nextState === 'error' ? 'Try again' : 'Next question'}
-                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                        <Send className="h-4 w-4" aria-hidden="true" />
+                        Submit answer
                       </>
                     )}
                   </button>
-                ) : (
-                  <button type="button" onClick={endInterview} disabled={ending || timeUp} className="btn-primary">
-                    {ending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-                    Finish and view report
-                  </button>
-                )}
-              </div>
-              {!interview.current_question && !interview.can_request_next_question && (
-                <p className="text-right text-xs text-slate-500">
-                  {interview.question_count >= interview.max_questions
-                    ? 'You have reached the last question for this interview.'
-                    : 'No more questions can be asked in the remaining time.'}
-                </p>
-              )}
-              {endError && (
-                <p className="text-right text-sm text-red-700" role="alert">
-                  {endError}
-                </p>
-              )}
-            </section>
-          ) : currentQuestion ? (
-            <section className="surface-card space-y-5" aria-labelledby="question-heading">
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p id="question-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Question {currentQuestion.question_order} · {categoryLabel(currentQuestion.category)} · {currentQuestion.competency}
-                  </p>
-                  {isVoice && speech.supported && (
-                    <button
-                      type="button"
-                      onClick={() => (speech.speaking ? speech.stop() : speech.speak(currentQuestion.question_text))}
-                      className="btn-ghost px-2 py-1 text-xs"
-                    >
-                      {speech.speaking ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
-                      {speech.speaking ? 'Stop reading' : 'Read question aloud'}
-                    </button>
-                  )}
                 </div>
-                {currentQuestion.interviewer_context && (
-                  <p className="mt-2 text-sm text-slate-500">{currentQuestion.interviewer_context}</p>
-                )}
-                <p className="mt-2 text-lg font-medium leading-8 text-slate-900">{currentQuestion.question_text}</p>
-              </div>
+              </>
+            )}
+          </>
+        )}
 
-              {isVoice && (
-                <VoiceAnswerPanel
-                  key={currentQuestion.id}
-                  interviewId={interviewId}
-                  disabled={submitting || timeUp}
-                  onTranscript={(text) => updateDraft(text, 'VOICE')}
-                />
-              )}
-
-              <div>
-                <label htmlFor="answer" className="text-sm font-medium text-slate-700">
-                  {isVoice ? 'Transcript — review and edit before submitting' : 'Your answer'}
-                </label>
-                <textarea
-                  id="answer"
-                  rows={isVoice ? 6 : 9}
-                  value={draft}
-                  onChange={(event) => updateDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                      event.preventDefault();
-                      submitAnswer();
-                    }
-                  }}
-                  disabled={submitting || timeUp}
-                  placeholder={isVoice ? 'Your transcript will appear here. You can also type.' : 'Type your answer. Explain your reasoning as you would in a real interview.'}
-                  className="input-base mt-1.5 resize-y leading-6"
-                  aria-describedby="answer-count"
-                  aria-invalid={overLimit}
-                />
-                <div className="mt-1 flex justify-between text-xs">
-                  <span className="text-slate-400">Ctrl + Enter to submit. Submitted answers can&apos;t be edited.</span>
-                  <span id="answer-count" className={overLimit ? 'font-semibold text-red-700' : 'text-slate-400'}>
-                    {draft.length}/{maxAnswerLength}
-                  </span>
-                </div>
-              </div>
-
-              {submitError && (
-                <p className="text-sm text-red-700" role="alert">
-                  {submitError}
-                </p>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => submitAnswer()}
-                  disabled={!trimmedDraft || overLimit || submitting || timeUp}
-                  className="btn-primary"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Evaluating your answer...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4" aria-hidden="true" />
-                      Submit answer
-                    </>
-                  )}
-                </button>
-              </div>
-            </section>
+        <nav className="flex items-center justify-between gap-2 border-t border-slate-100 pt-4" aria-label="Question navigation">
+          <button type="button" onClick={() => goTo(position - 1)} disabled={position <= 1} className="btn-outline">
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            Previous question
+          </button>
+          <span className="hidden text-xs text-slate-500 sm:inline">
+            {position} / {total}
+          </span>
+          {isLast ? (
+            <div className="flex gap-2">
+              <button type="button" disabled className="btn-outline hidden sm:inline-flex">
+                Next question
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => setFinishOpen(true)} disabled={timeUp} className="btn-primary">
+                Finish interview
+              </button>
+            </div>
           ) : (
-            <section className="surface-card text-sm text-slate-600">Preparing your interview...</section>
+            <button type="button" onClick={() => goTo(position + 1)} disabled={position >= total} className="btn-outline">
+              Next question
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
           )}
-        </div>
+        </nav>
+      </section>
 
-        <aside className="space-y-3" aria-labelledby="previous-heading">
-          <h2 id="previous-heading" className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <History className="h-4 w-4" aria-hidden="true" />
-            Previous questions
-          </h2>
-          {answeredQuestions.length === 0 ? (
-            <p className="surface-card-subtle text-sm text-slate-500">Your submitted answers will appear here.</p>
-          ) : (
-            <ul className="space-y-2">
-              {answeredQuestions.map((question) => (
-                <li key={question.id}>
-                  <details className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                    <summary className="flex cursor-pointer items-center justify-between gap-2 font-medium text-slate-800">
-                      <span className="truncate">
-                        Q{question.question_order}. {question.competency}
-                      </span>
-                      <span className="shrink-0 text-xs font-semibold text-slate-500">
-                        {question.answer.score !== null && question.answer.score !== undefined
-                          ? `${question.answer.score}/100`
-                          : question.answer.evaluation_status === 'FAILED'
-                            ? 'Not scored'
-                            : '...'}
-                      </span>
-                    </summary>
-                    <p className="mt-2 text-slate-700">{question.question_text}</p>
-                    <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">
-                      {question.answer.answer_text}
-                    </p>
-                  </details>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
-      </div>
-
-      {confirmEnd && (
-        <ConfirmEndDialog
-          answeredCount={interview.answered_count}
-          hasDraft={Boolean(trimmedDraft)}
+      {finishOpen && (
+        <FinishDialog
+          summary={finishSummary}
           ending={ending}
           error={endError}
           onCancel={() => {
-            setConfirmEnd(false);
+            setFinishOpen(false);
             setEndError('');
           }}
-          onConfirm={endInterview}
+          onConfirm={finishInterview}
+          onGoTo={(n) => {
+            setFinishOpen(false);
+            goTo(n);
+          }}
         />
       )}
     </div>

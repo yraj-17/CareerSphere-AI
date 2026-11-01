@@ -1,0 +1,31 @@
+# Isolated Judge0 CE execution VM for local development.
+#
+# Runs in VirtualBox with its own Linux kernel, so Judge0's required cgroup v1 is
+# configured inside this VM only — WSL2 and Docker Desktop are not modified.
+# Candidate code never runs on the application host or the Qwen/GPU server.
+#
+#   cd infra/judge0
+#   vagrant up            # first boot provisions, reboots into cgroup v1, installs Judge0
+#   vagrant ssh -c "sudo cat /opt/judge0/credentials.env"   # copy JUDGE0_* into the backend .env
+#
+# The VM is reachable only from this host on a VirtualBox host-only network.
+
+JUDGE0_IP = ENV.fetch("JUDGE0_VM_IP", "192.168.56.20")
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "careersphere-judge0"
+  config.vm.network "private_network", ip: JUDGE0_IP
+  config.vm.synced_folder ".", "/vagrant", disabled: false
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "careersphere-judge0"
+    vb.memory = Integer(ENV.fetch("JUDGE0_VM_MEMORY_MB", "3072"))
+    vb.cpus = Integer(ENV.fetch("JUDGE0_VM_CPUS", "2"))
+  end
+
+  # Stage 1: switch the VM kernel to cgroup v1 (required by Judge0 CE 1.13.x), then reboot.
+  config.vm.provision "cgroup-v1", type: "shell", path: "provision-cgroup.sh", reboot: true
+  # Stage 2: install Docker and Judge0, bound to the private IP only.
+  config.vm.provision "judge0", type: "shell", path: "provision-judge0.sh", env: { "JUDGE0_BIND_IP" => JUDGE0_IP }
+end
