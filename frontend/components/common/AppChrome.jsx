@@ -12,11 +12,14 @@ export default function AppChrome({ children }) {
   const isMessaging = pathname.startsWith('/dashboard/messaging');
   const isCommunities = pathname === '/dashboard/communities';
   const isResources = pathname.startsWith('/dashboard/resources');
+  const isSignup = pathname === '/signup';
+  const isLogin = pathname === '/login';
+  const isAuthPage = isSignup || isLogin;
   const isDedicatedChat = isAIChat || isMessaging;
 
   return (
     <>
-      {isLanding || isDedicatedChat || isCommunities || isResources ? null : <BackgroundFX />}
+      {isLanding || isDedicatedChat || isCommunities || isResources || isAuthPage ? null : <BackgroundFX />}
       {isLanding || isDedicatedChat ? null : (
         <Suspense fallback={<div className="h-[68px] border-b border-slate-200 bg-white min-[1360px]:h-[76px]" aria-hidden="true" />}>
           <Navbar />

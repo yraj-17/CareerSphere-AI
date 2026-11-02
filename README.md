@@ -1,654 +1,775 @@
 # CareerSphere AI
 
-**AI-powered career and professional networking platform.**
+CareerSphere AI is an AI-assisted career development platform that combines profile intelligence, skill analysis, career matching, interview practice, professional networking, communities, resources, messaging, notifications, and a social feed in one workspace.
 
-CareerSphere AI helps users build professional profiles, analyze their skills, prepare for interviews, discover suitable opportunities, and receive personalized AI guidance.
+The repository contains a Next.js frontend and a FastAPI backend backed by PostgreSQL, Redis, Qdrant, and MinIO. Ollama/Qwen, Gemini reranking, and LanguageTool integrations are optional capabilities configured through environment variables.
 
-## Table of Contents
+## Project status
 
-1. [Features](#features)
-2. [Architecture](#architecture)
-3. [Tech Stack](#tech-stack)
-4. [Repository Structure](#repository-structure)
-5. [Getting Started](#getting-started)
-6. [Configuration](#configuration)
-7. [Docker Services](#docker-services)
-8. [API Reference](#api-reference)
-9. [Career Matching](#career-matching)
-10. [Career Knowledge Base](#career-knowledge-base)
-11. [Embeddings and Qdrant](#embeddings-and-qdrant)
-12. [AWS Ollama Deployment](#aws-ollama-deployment)
-13. [Testing](#testing)
-14. [License](#license)
+| Area | Status | Notes |
+| --- | --- | --- |
+| Authentication | Implemented | Email OTP registration, JWT login, password changes, and protected API routes |
+| Profile workspace | Implemented | Skills, education, experience, projects, certifications, and career preferences |
+| AI Career Assistant | Implemented | Persistent conversations, profile context, retry support, and optional grammar checking |
+| Skill Analysis | Implemented | Deterministic skill-gap analysis with optional AI explanations |
+| Career Matching | Implemented | Local opportunity index, deterministic scoring, optional Gemini reranking, and Qwen explanations |
+| AI Interviewer | Implemented | Text interview sessions, role analysis, navigation, evaluation, reports, and history |
+| Voice interview mode | Optional | Requires a separately installed Faster-Whisper model and runtime configuration |
+| Networking | Implemented | Discovery, connection requests, accepted connections, and profile views |
+| Communities | Implemented | Communities, memberships, posts, reactions, comments, and media |
+| Messaging | Implemented | REST messaging, WebSocket delivery, Redis Pub/Sub fan-out, and presence |
+| Resources and home feed | Implemented | Curated resources, saved resources, global posts, likes, comments, and sharing |
+| Production deployment | Project-specific | Compose provides local infrastructure services; deployment orchestration is not included |
 
----
+## Contents
 
-## Features
+- [Overview](#overview)
+- [Key features](#key-features)
+- [Visual documentation](#visual-documentation)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Repository structure](#repository-structure)
+- [Prerequisites](#prerequisites)
+- [Getting started](#getting-started)
+- [Docker infrastructure](#docker-infrastructure)
+- [Configuration reference](#configuration-reference)
+- [API reference](#api-reference)
+- [AI and data flow](#ai-and-data-flow)
+- [Database design](#database-design)
+- [Development workflow](#development-workflow)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [Security](#security)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
-- Professional profile creation and management
-- Email OTP authentication with JWT-based sessions
-- AI Career Assistant with persistent conversations (optionally profile-aware)
-- AI Profile Optimization
-- Skill Analysis with deterministic Skill Gap Detection
-- Qwen-generated skill priorities and career roadmap insights
-- Career Matching: semantic retrieval + deterministic scoring + Gemini reranking + Qwen explanations
-- Redis caching for expensive Career Matching responses
-- MinIO storage for profile, document, and media files
-- Grammar and spelling assistance via LanguageTool
+## Overview
 
----
+CareerSphere AI is organized around a user’s career context:
+
+1. A user creates an account and builds a structured professional profile.
+2. Profile data is used by skill analysis, career matching, interview preparation, and the AI assistant.
+3. Networking and community features support discovery, conversations, and collaboration.
+4. Resources and posts provide a shared knowledge layer around career growth.
+5. PostgreSQL remains the system of record, while Redis, Qdrant, MinIO, and model services support specialized workloads.
+
+The project intentionally keeps deterministic domain logic in the backend. AI services enhance explanations, prioritization, and conversations, but they do not replace the authoritative profile, scoring, persistence, or permission boundaries.
+
+## Key features
+
+### Career intelligence
+
+- Profile-aware AI career assistant with persistent conversations.
+- Structured profile optimization recommendations.
+- Skill inventory and skill-gap analysis.
+- Career opportunity matching using profile, preference, skill, experience, and location signals.
+- Optional semantic reranking through Gemini.
+- Optional Qwen-generated explanations for matches and skill priorities.
+
+### Interview preparation
+
+- Role and interview-type selection.
+- Custom role analysis and interview blueprint preview.
+- Text interview sessions with draft answers, navigation, retries, and completion.
+- Answer evaluation and final interview reports.
+- Interview history and report regeneration.
+- Optional voice transcription through Faster-Whisper when configured.
+
+### Professional networking
+
+- People discovery and connection requests.
+- Accepted connection management.
+- Community creation, membership, posts, reactions, comments, and media.
+- Direct conversations with REST and WebSocket delivery.
+- Redis-backed cross-instance message fan-out and presence tracking.
+- Notifications for relevant account and networking activity.
+
+### Knowledge and social feed
+
+- Resource library with type and category filters.
+- Save and unsave resources.
+- Global posts with likes, comments, pagination, and sharing.
+- Media upload and presigned object URLs through MinIO.
+
+## Visual documentation
+
+This README intentionally contains no screenshots, banners, logos, decorative graphics, externally hosted image links, or image directories. The documentation is text-first and uses Mermaid only for technical diagrams. Run the application locally to inspect the current interface.
 
 ## Architecture
 
-### Design Principle
+### System context
 
-| Component | Responsibility |
-| :--- | :--- |
-| **PostgreSQL** | Source of truth for structured data |
-| **Qdrant** | Semantic / vector retrieval |
-| **Backend (FastAPI)** | Deterministic comparison and scoring |
-| **Gemini** | Second-stage semantic reranking |
-| **Qwen (Ollama)** | Grounded explanations and AI insights |
-| **Redis** | Cache and temporary state (OTP, tokens) |
-| **MinIO** | Object storage (resumes, images, documents) |
-| **Next.js** | Presentation layer |
+~~~mermaid
+flowchart LR
+    Browser["Browser<br/>Next.js + React"] --> API["FastAPI<br/>/api"]
+    API --> Domain["Domain services<br/>auth, profile, matching, interviews, social"]
+    Domain --> PostgreSQL[("PostgreSQL")]
+    Domain --> Redis[("Redis")]
+    Domain --> Qdrant[("Qdrant")]
+    Domain --> MinIO[("MinIO")]
+    Domain --> Ollama["Ollama<br/>Qwen + embeddings"]
+    Domain -. optional .-> Gemini["Gemini reranking"]
+    Domain -. optional .-> LanguageTool["LanguageTool"]
+    Domain --> SMTP["SMTP provider<br/>email OTP"]
+    API <-->|"WebSocket messaging"| Browser
+    Redis <-->|"Pub/Sub and presence"| API
+~~~
 
-> SQLite is not used. All relational data lives in PostgreSQL.
+### Application layers
 
-### System Overview
+| Layer | Responsibility |
+| --- | --- |
+| Next.js client | Routes, forms, dashboards, feed, interview workspace, networking, resources, and messaging UI |
+| FastAPI application | HTTP routing, WebSocket routing, authentication dependencies, validation, startup checks, and health reporting |
+| Domain services | Profile context, matching, interviews, posts, communities, conversations, notifications, resources, and storage orchestration |
+| PostgreSQL | Users, profiles, career data, opportunities, conversations, messages, posts, communities, resources, notifications, and interview records |
+| Redis | Caching, matching responses, presence TTLs, Pub/Sub fan-out, and distributed messaging coordination |
+| Qdrant | Profile, career knowledge, and opportunity vector collections used for semantic retrieval |
+| MinIO | Binary media storage with metadata in PostgreSQL and presigned access URLs |
+| Model integrations | Ollama/Qwen for assistant and interview workloads, Ollama embeddings for retrieval, and optional Gemini reranking |
 
-```text
-Frontend (Next.js :3000)
-        │
-        ▼
-FastAPI Backend (:8000)
-        │
-        ├── PostgreSQL (:5432)    users, media metadata, conversations, messages
-        ├── Redis (:6379)         OTP / verification tokens, availability cache
-        ├── Qdrant (:6333)        embeddings and semantic search collections
-        └── MinIO (:9000/:9001)   resumes, profile images, media objects
+### Request lifecycle
 
-Optional
-        ├── Ollama (:11434)       local LLM and embeddings   (profile: ai)
-        └── LanguageTool (:8010)  grammar and spelling       (profile: languagetool)
-```
+1. The browser sends requests to the FastAPI base URL configured by NEXT_PUBLIC_API_URL.
+2. Axios attaches the JWT bearer token stored by the frontend authentication helper.
+3. FastAPI validates the request and delegates to a domain service.
+4. The service reads or writes PostgreSQL and calls specialized infrastructure only when required.
+5. The API returns a validated response; messaging can also deliver updates through the WebSocket route.
 
-### Data Responsibilities
+## Technology stack
 
-| Store | Holds |
-| :--- | :--- |
-| PostgreSQL | `users`, `media_objects`, `conversations`, `chat_messages`, opportunities |
-| Redis | OTP and email verification tokens, short-lived username/email availability cache, Career Matching response cache |
-| Qdrant | `user_profiles` and `career_content` vector collections |
-| MinIO | Binary files (resumes, profile images, documents) |
+| Layer | Technologies |
+| --- | --- |
+| Frontend | Next.js 16, React 18, Axios, Tailwind CSS, Framer Motion, Lucide React |
+| Frontend quality | ESLint, Jest 30, Testing Library, jsdom |
+| Backend | Python, FastAPI, Uvicorn, Pydantic Settings |
+| Persistence | PostgreSQL, SQLAlchemy 2, Alembic |
+| Caching and realtime | Redis, Redis Pub/Sub, WebSockets |
+| Retrieval | Qdrant, Ollama embeddings |
+| AI | Ollama/Qwen, optional Gemini reranking |
+| Object storage | MinIO |
+| Optional language tooling | LanguageTool and Faster-Whisper |
+| Local orchestration | Docker Compose |
 
-### Career Matching Flow
+The frontend package currently defines these scripts:
 
-```text
-Qdrant retrieves → Backend compares → Weighted algorithm ranks → Gemini reranks → Qwen explains → Frontend presents
-```
+~~~text
+npm run dev
+npm run build
+npm run start
+npm run lint
+npm test
+npm run test:ci
+~~~
 
-See [Career Matching](#career-matching) for details.
+## Repository structure
 
----
-
-## Tech Stack
-
-**Frontend**
-- Next.js 14 (App Router), React 18, Tailwind CSS, Framer Motion, Axios
-
-**Backend**
-- FastAPI, Uvicorn, SQLAlchemy 2, Alembic, Pydantic v2
-- PostgreSQL (`psycopg` v3), Redis, Qdrant, MinIO
-- JWT (PyJWT) + Bcrypt authentication
-
-**AI**
-- Ollama with Qwen (explanations, insights, chat)
-- `nomic-embed-text` (embeddings)
-- Gemini (Career Matching reranking)
-- LanguageTool (grammar and spelling)
-
----
-
-## Repository Structure
-
-```text
-CareerSphere-AI/
+~~~text
+.
 ├── backend/
 │   ├── app/
-│   │   ├── api/            # Route handlers (auth, media, AI, matching)
-│   │   ├── core/           # Settings and security
-│   │   ├── data/           # Career knowledge dataset (career_knowledge.py)
-│   │   ├── db/             # SQLAlchemy models, session, Redis client
-│   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # Qdrant, MinIO, embedding, indexing, cache helpers
-│   │   └── main.py
-│   ├── alembic/            # PostgreSQL migrations
-│   ├── scripts/            # Seeding and indexing scripts
-│   ├── tests/
-│   ├── init_db.py          # Bootstrap: PG tables + Qdrant collections + MinIO bucket
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/               # Next.js application
-├── ollama/                 # Optional LLM image
-├── docker-compose.yml      # postgres, redis, qdrant, minio, ollama, languagetool
-├── .env.example
+│   │   ├── api/              FastAPI routers
+│   │   ├── core/             Settings and security
+│   │   ├── data/             Curated career and interview data
+│   │   ├── db/               SQLAlchemy models and database session
+│   │   ├── schemas/          Pydantic request and response models
+│   │   └── services/         Domain and infrastructure services
+│   ├── alembic/              Database migrations
+│   ├── scripts/              Opportunity seeding and indexing tools
+│   ├── tests/                Backend test suite
+│   ├── init_db.py            Database and infrastructure bootstrap
+│   ├── requirements.txt      Python dependencies
+│   └── pytest.ini            Pytest configuration
+├── frontend/
+│   ├── app/                  Next.js App Router pages
+│   ├── components/           Reusable UI and feature components
+│   ├── hooks/                Client hooks, including messaging WebSocket support
+│   ├── lib/                  Client helpers and authentication storage
+│   ├── services/             Frontend API client
+│   ├── __tests__/            Frontend tests
+│   ├── public/               Runtime assets
+│   └── package.json          Frontend scripts and dependencies
+├── ollama/                   Optional local Ollama image and entrypoint
+├── docker-compose.yml        Redis, Qdrant, MinIO, and optional AI services
+├── .env.example              Root backend environment template
 └── README.md
-```
+~~~
 
----
+## Prerequisites
 
-## Getting Started
+Install the following before starting:
 
-### Prerequisites
+- Git.
+- Node.js and npm compatible with the installed Next.js toolchain.
+- A supported Python 3 environment. The repository does not pin an exact Python minor version; Python 3.10+ is recommended.
+- PostgreSQL. The repository requires an external PostgreSQL instance; the supplied Compose file does not define a PostgreSQL service.
+- Docker Desktop or Docker Engine with Docker Compose for Redis, Qdrant, and MinIO.
+- An SMTP account or provider if email OTP registration is enabled.
+- Ollama if using local assistant, interview, or embedding models.
 
-- Docker Desktop
-- Python 3.10+
-- Node.js 18+
-- Git
+## Getting started
 
-### 1. Start infrastructure
+### 1. Clone the repository
 
-From the project root:
+~~~bash
+git clone https://github.com/yraj-17/CareerSphere-AI.git
+cd CareerSphere-AI
+~~~
 
-```bash
-docker compose up -d postgres redis qdrant minio
-```
+### 2. Configure environment variables
+
+Copy the root template:
+
+~~~powershell
+Copy-Item .env.example .env
+~~~
+
+On macOS or Linux:
+
+~~~bash
+cp .env.example .env
+~~~
+
+Create the frontend-local environment file:
+
+~~~powershell
+Copy-Item frontend/.env.example frontend/.env.local
+~~~
+
+On macOS or Linux:
+
+~~~bash
+cp frontend/.env.example frontend/.env.local
+~~~
+
+Set at least:
+
+- DATABASE_URL for a reachable PostgreSQL database.
+- A long random SECRET_KEY.
+- CORS_ORIGINS containing the frontend origin.
+- SMTP credentials if email OTP is required.
+- Model and infrastructure values appropriate for the local environment.
+
+Do not commit .env or .env.local.
+
+### 3. Create the PostgreSQL database
+
+Create the database using your local PostgreSQL installation, a managed database, or another PostgreSQL container:
+
+~~~bash
+psql -U postgres -c "CREATE DATABASE careersphere_db;"
+~~~
+
+If the database already exists, continue with the next step. Update DATABASE_URL when your host, port, username, password, or database name differs.
+
+### 4. Start local infrastructure
+
+The default Compose services are Redis, Qdrant, and MinIO:
+
+~~~bash
+docker compose up -d redis qdrant minio
+~~~
 
 Optional services:
 
-```bash
-# Local LLM and embeddings
+~~~bash
 docker compose --profile ai up -d ollama
-
-# Grammar service
 docker compose --profile languagetool up -d languagetool
-```
+~~~
 
-LanguageTool is used only for grammar and spelling suggestions. The AI Career Assistant still goes through FastAPI → Ollama → Qwen.
+Compose does not start the FastAPI or Next.js applications and does not create PostgreSQL.
 
-### 2. Configure environment
+### 5. Install backend dependencies
 
-```bash
-# from project root
-cp .env.example .env
-# or
-cp backend/.env.example backend/.env
-```
+PowerShell:
 
-At minimum, set `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, and `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (Gmail app password for signup OTP). Update MinIO keys if you changed the compose defaults.
-
-### 3. Set up the backend
-
-```bash
+~~~powershell
 cd backend
-python -m venv .venv
-
-# Windows PowerShell
+py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-
-# macOS / Linux
-# source .venv/bin/activate
-
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
+~~~
 
-Apply the schema (choose **one** path on a fresh database):
+macOS or Linux:
 
-```bash
-# Option A: Alembic migrations (recommended, versioned schema)
-alembic upgrade head
-python -c "from app.services.qdrant_service import ensure_default_collections; from app.services.storage_service import ensure_bucket; ensure_default_collections(); ensure_bucket()"
-
-# Option B: Bootstrap helper (tables + Qdrant collections + MinIO bucket)
-python init_db.py
-alembic stamp head    # sync Alembic's version table after Option B
-```
-
-> Do not run `alembic upgrade head` after `init_db.py` without stamping. Both create the same tables.
-
-Start the API:
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-| Endpoint | URL |
-| :--- | :--- |
-| API | http://localhost:8000 |
-| Docs | http://localhost:8000/docs |
-| Health | http://localhost:8000/api/health |
-
-### 4. Set up the frontend
-
-```bash
-cd frontend
-npm install
-cp .env.example .env.local
-npm run dev
-```
-
-App: http://localhost:3000
-
----
-
-## Configuration
-
-See `.env.example` and `backend/.env.example` for the full list.
-
-| Variable | Purpose |
-| :--- | :--- |
-| `DATABASE_URL` | PostgreSQL URL (`postgresql+psycopg://...`) |
-| `REDIS_URL` | Redis URL (`redis://localhost:6379/0` from host) |
-| `QDRANT_URL` | Qdrant HTTP URL |
-| `QDRANT_API_KEY` | Optional; blank for local Docker |
-| `QDRANT_COLLECTION_PROFILES` | Profile embedding collection |
-| `QDRANT_COLLECTION_CONTENT` | Content embedding collection |
-| `EMBEDDING_PROVIDER` | Embedding provider (default `ollama`) |
-| `EMBEDDING_MODEL` | Embedding model (default `nomic-embed-text`) |
-| `EMBEDDING_DIMENSION` | Optional override; blank detects the model dimension |
-| `MINIO_ENDPOINT` | MinIO API host |
-| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO credentials |
-| `MINIO_BUCKET` | Default bucket (`careersphere`) |
-| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Local or remote LLM |
-| `LANGUAGETOOL_URL` | LanguageTool base URL (`http://localhost:8010`) |
-| `SECRET_KEY` | JWT signing secret |
-| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials for OTP |
-
-When the backend runs **inside** Docker on the same compose network, use service hostnames (`postgres`, `redis`, `qdrant`, `minio`) instead of `localhost`.
-
----
-
-## Docker Services
-
-| Service | Container | Ports | Volume |
-| :--- | :--- | :--- | :--- |
-| PostgreSQL | `careersphere-postgres` | 5432 | `postgres_data` |
-| Redis | `careersphere-redis` | 6379 | `redis_data` |
-| Qdrant | `careersphere-qdrant` | 6333, 6334 | `qdrant_data` |
-| MinIO | `careersphere-minio` | 9000 (API), 9001 (console) | `minio_data` |
-| Ollama (optional) | `careersphere-ollama` | 11434 | `ollama_data` |
-| LanguageTool (optional) | `careersphere-languagetool` | 8010 | none |
-
-MinIO console: http://localhost:9001 (default `minioadmin` / `minioadmin`; change for any non-local use).
-
----
-
-## API Reference
-
-### Auth
-
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| GET | `/api/health` | PostgreSQL / Redis / Qdrant / MinIO status |
-| POST | `/api/auth/send-otp` | Send email OTP |
-| POST | `/api/auth/verify-otp` | Verify OTP and receive registration token |
-| GET | `/api/auth/check-username` | Username availability |
-| GET | `/api/auth/check-email` | Email availability |
-| POST | `/api/auth/register` | Create account |
-| POST | `/api/auth/login` | JWT login |
-| GET | `/api/auth/me` | Current user |
-| POST | `/api/auth/logout` | Client logout acknowledgement |
-
-### Media (MinIO)
-
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| POST | `/api/media/upload` | Upload file (multipart) |
-| GET | `/api/media` | List current user's media |
-| GET | `/api/media/{id}/url` | Presigned URL |
-| GET | `/api/media/{id}/download` | Download bytes |
-| DELETE | `/api/media/{id}` | Delete object and metadata |
-
-### AI Career Assistant
-
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| POST | `/api/ai/chat` | One-shot prompt (authenticated, no history) |
-| GET | `/api/ai/conversations` | List conversations |
-| POST | `/api/ai/conversations` | Create a conversation on the first message |
-| GET | `/api/ai/conversations/{id}` | Conversation with messages (owner only) |
-| POST | `/api/ai/conversations/{id}/messages` | Send a follow-up message |
-| POST | `/api/ai/conversations/{id}/retry` | Retry after a failed generation |
-| DELETE | `/api/ai/conversations/{id}` | Delete a conversation |
-| POST | `/api/ai/grammar-check` | LanguageTool grammar/spelling suggestions |
-
-### AI Analysis
-
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| POST | `/api/ai/profile/optimize` | Structured profile quality analysis for the authenticated user |
-| GET | `/api/skill-analysis/me` | Deterministic skill gap |
-| GET | `/api/skill-analysis/me?include_ai=true` | Skill gap plus Qwen explanations and priorities |
-| GET | `/api/career-matching/me` | Career Matching results |
-| GET | `/api/career-matching/me?include_ai=true` | Career Matching plus Qwen explanations |
-
-The user is always identified from the JWT.
-
----
-
-## Career Matching
-
-Career Matching answers: **"Which specific opportunities are suitable for my current profile?"**
-
-### Pipeline
-
-| Stage | Component | Output |
-| :--- | :--- | :--- |
-| 1. Retrieve | Qdrant | Top 30 candidates |
-| 2. Score | Deterministic engine | Top 10 |
-| 3. Rerank | Gemini | Top 5 |
-| 4. Explain | Qwen | Strengths and skill gaps |
-| 5. Cache | Redis | Short-TTL final response |
-
-### Deterministic Weights
-
-| Factor | Weight |
-| :--- | :--- |
-| Required Skills | 35% |
-| Preferred Skills | 15% |
-| Target Role | 15% |
-| Career Preferences | 15% |
-| Experience | 12% |
-| Location / Remote | 8% |
-| **Total** | **100%** |
-
-### AI Responsibilities and Fallbacks
-
-- Qdrant similarity is used for retrieval only; it is **not** the final match score.
-- The deterministic engine calculates the actual structured match.
-- Gemini receives the deterministic Top 10 and may only rerank them. It cannot add opportunities or replace deterministic scores.
-- Qwen explains the final opportunities.
-- If Gemini is unavailable, the deterministic Top 5 is returned.
-- If Qwen is unavailable, opportunities are returned without AI explanations.
-
-### Opportunity Dataset
-
-The repository uses a curated development/demo dataset (not a live job-board integration):
-
-- 60 opportunities, 296 required-skill rows, 203 preferred-skill rows
-- Backend, Full Stack, Frontend, DevOps, Cloud, ML, Data, Product, and UI/UX roles
-- Jobs and internships, remote and non-remote
-- Intern, Entry Level, Junior, and Mid Level bands
-
-Seed and index:
-
-```bash
+~~~bash
 cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+~~~
+
+### 6. Initialize the database and storage collections
+
+For a migration-based setup:
+
+~~~bash
+alembic upgrade head
+~~~
+
+For a local bootstrap that also creates Qdrant collections and the MinIO bucket:
+
+~~~bash
+python init_db.py
+~~~
+
+Use one initialization path. init_db.py creates the SQLAlchemy schema and stamps the Alembic head before ensuring the supporting collections and bucket.
+
+The backend checks PostgreSQL during application import, so PostgreSQL must be available before starting Uvicorn.
+
+### 7. Seed and index optional career data
+
+The repository includes backend scripts for local opportunity data and retrieval indexes:
+
+~~~bash
 python -m scripts.seed_opportunities
 python -m scripts.index_opportunities
-```
-
-Re-index after reseeding, since Qdrant payloads store the PostgreSQL `opportunity_id`. Integrity check:
-
-```text
-Qdrant opportunity_id → PostgreSQL Opportunity.id → record exists → deterministic matching
-```
-
----
-
-## Career Knowledge Base
-
-The semantic retrieval layer for Skill Analysis, Skill Gap Detection, and Career Readiness scoring. It answers questions like: *"Given a user's skills, how close are they to a Data Scientist role?"*
-
-### Indexing Flow
-
-```text
-Structured dataset        backend/app/data/career_knowledge.py
-        ↓ build documents
-Career indexing service   backend/app/services/career_indexing_service.py
-        ↓ embed_texts (nomic-embed-text via Ollama)
-Embedding service         backend/app/services/embedding_service.py
-        ↓ upsert_vectors
-Qdrant service            backend/app/services/qdrant_service.py
-        ↓
-Collection: career_content (768-dim, cosine)
-```
-
-PostgreSQL remains the source of truth for user data; Qdrant is the retrieval layer for career knowledge.
-
-### Supported Domains (14)
-
-Software Engineering & Technology, Cloud & DevOps, AI/ML & Data, Product & Business, Design & Creative, Marketing & Communications, Finance & Accounting, Human Resources, Sales & Business Development, Operations & Supply Chain, Education & Learning, Engineering, Healthcare & Health Administration, Legal/Compliance & Risk.
-
-### Initial Roles (30)
-
-| Domain | Roles |
-| :--- | :--- |
-| Software Engineering & Technology | Backend Engineer, Full Stack Developer, Frontend Developer |
-| Cloud & DevOps | DevOps Engineer, Cloud Engineer |
-| AI, ML & Data | Machine Learning Engineer, Data Scientist, Data Analyst |
-| Product & Business | Product Manager, Business Analyst |
-| Design & Creative | UI/UX Designer, Product Designer |
-| Marketing & Communications | Digital Marketing Specialist, Content Strategist |
-| Finance & Accounting | Financial Analyst, Accountant |
-| Human Resources | HR Specialist, Talent Acquisition Specialist |
-| Sales & Business Development | Sales Executive, Business Development Manager |
-| Operations & Supply Chain | Operations Manager, Supply Chain Analyst |
-| Education & Learning | Teacher / Educator, Instructional Designer |
-| Engineering | Mechanical Engineer, Civil Engineer, Electrical Engineer |
-| Healthcare & Health Administration | Healthcare Administrator |
-| Legal, Compliance & Risk | Compliance Analyst, Risk Analyst |
-
-### Dataset Structure
-
-```python
-SkillEntry(
-    id="postgresql",        # stable slug, used as Qdrant source_id
-    name="PostgreSQL",
-    category="database",
-    description="...",      # 1-3 sentences, embedded as text
-    aliases=["Postgres"],
-)
-
-RoleEntry(
-    id="backend-engineer",
-    name="Backend Engineer",
-    domain="Software Engineering & Technology",
-    description="...",      # embedded as text
-    required_skills=["python", "rest_apis", "postgresql"],
-    recommended_skills=["fastapi", "docker", "redis"],
-)
-```
-
-### Qdrant Indexing Properties
-
-| Property | Value |
-| :--- | :--- |
-| Collection | `career_content` (`QDRANT_COLLECTION_CONTENT`) |
-| Vector size | 768 (`nomic-embed-text`) |
-| Distance | Cosine |
-| Point ID | Deterministic UUID5 of `"{source_type}:{source_id}"` |
-| Idempotency | Upsert overwrites the same point IDs; safe to re-run |
-| Coexistence | Never deletes or modifies unrelated points |
-
-Example role payload:
-
-```json
-{
-  "source_type": "role",
-  "source_id": "backend-engineer",
-  "text": "Backend Engineer (Software Engineering & Technology): ...",
-  "metadata": {
-    "name": "Backend Engineer",
-    "domain": "Software Engineering & Technology",
-    "required_skills": ["Python", "REST APIs", "PostgreSQL"],
-    "recommended_skills": ["FastAPI", "Docker", "Redis"]
-  }
-}
-```
-
-Example skill payload:
-
-```json
-{
-  "source_type": "skill",
-  "source_id": "python",
-  "text": "Python: general-purpose programming language ...",
-  "metadata": { "name": "Python", "category": "programming", "aliases": ["Python 3"] }
-}
-```
-
-### Run the Indexer
-
-Prerequisites: Qdrant running, Ollama running, and `nomic-embed-text` pulled.
-
-```bash
-cd backend
 python -m scripts.index_career_knowledge
-# or from project root: python -m backend.scripts.index_career_knowledge
-```
+~~~
 
-The command is idempotent and prints a summary (collection, vector count, embedding model, dimension, elapsed time).
+The indexing commands require the configured embedding provider and Qdrant. If Ollama is running in Compose, pull the embedding model inside the container before indexing:
 
----
-
-## Embeddings and Qdrant
-
-Embeddings convert text into vectors so related career content can be found by meaning rather than exact keywords. Qdrant stores vectors plus small payloads referencing source records. The embedding model only converts text to vectors; Ollama/Qwen generates natural-language responses.
-
-| Setting | Value |
-| :--- | :--- |
-| Provider | `ollama` |
-| Model | `nomic-embed-text` |
-| Dimension | Detected at runtime unless `EMBEDDING_DIMENSION` is set |
-
-Install the embedding model once:
-
-```bash
-docker compose --profile ai up -d ollama
+~~~bash
 docker exec careersphere-ollama ollama pull nomic-embed-text
-```
+~~~
 
-Initialize Qdrant collections:
+The exact container name may differ if Compose assigns a project-specific prefix. Use docker compose ps to identify it.
 
-```bash
-cd backend
-python -c "from app.services.qdrant_service import ensure_default_collections; ensure_default_collections()"
-```
+### 8. Start the backend
 
----
+Run this from the backend directory with the virtual environment active:
 
-## AWS Ollama Deployment
+~~~bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+~~~
 
-The LLM can run locally or be offloaded to an AWS GPU instance. Only the Ollama endpoint changes; the application architecture stays the same.
+Useful backend URLs:
 
-### Reference Setup
+- Health: http://localhost:8000/api/health
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
-| Component | Value |
-| :--- | :--- |
-| Cloud / Service | AWS EC2 |
-| Region | São Paulo (`sa-east-1`) |
-| Instance | `g6.xlarge` |
-| GPU | NVIDIA L4 (~24 GB VRAM) |
-| OS | Ubuntu 24.04 |
-| Runtime | Ollama |
-| Model | `qwen3.8:27b` |
+### 9. Install and start the frontend
 
-### Steps
+Open a second terminal:
 
-**1. Launch the instance and verify the GPU**
+~~~bash
+cd frontend
+npm install
+npm run dev
+~~~
 
-```bash
-ssh -i <your-key.pem> ubuntu@<EC2_PUBLIC_IP>
-nvidia-smi
-```
+Open http://localhost:3000. The frontend defaults to http://localhost:8000 through NEXT_PUBLIC_API_URL; update frontend/.env.local when the backend is hosted elsewhere.
 
-**2. Install Ollama and pull the model**
+### 10. Verify the services
 
-```bash
-ollama --version
-systemctl status ollama
-ollama pull qwen3.8:27b
-ollama list
-```
+PowerShell:
 
-**3. Configure Ollama for remote access** (systemd environment)
+~~~powershell
+Invoke-RestMethod http://localhost:8000/api/health
+~~~
 
-```text
-OLLAMA_HOST=0.0.0.0:11434
-OLLAMA_KEEP_ALIVE=-1
-```
+macOS or Linux:
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-ss -lntp | grep 11434
-```
+~~~bash
+curl http://localhost:8000/api/health
+~~~
 
-**4. Test the remote API**
+The health response reports PostgreSQL, Redis, Qdrant, and MinIO independently. A fully healthy response requires all four core dependencies to be reachable.
 
-```bash
-curl http://<EC2_PUBLIC_IP>:11434/api/generate \
-  -d '{"model": "qwen3.8:27b", "prompt": "Explain what a Docker container is in one sentence.", "stream": false}'
-```
+## Docker infrastructure
 
-**5. Point FastAPI at it**
+The supplied docker-compose.yml defines infrastructure only:
 
-```env
-# Local
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3.8:27b
+| Service | Profile | Port | Purpose |
+| --- | --- | ---: | --- |
+| redis | default | 6379 | Cache, Pub/Sub, presence, and coordination |
+| qdrant | default | 6333, 6334 | Vector search and collection storage |
+| minio | default | 9000, 9001 | Object storage API and console |
+| ollama | ai | 11434 | Local language and embedding models |
+| languagetool | languagetool | 8010 | Optional grammar checking |
 
-# AWS
-OLLAMA_BASE_URL=http://<EC2_PUBLIC_IP>:11434
-OLLAMA_MODEL=qwen3.8:27b
-```
+Common commands:
 
-Restart FastAPI after changing the environment.
+~~~bash
+docker compose ps
+docker compose logs -f redis qdrant minio
+docker compose stop
+docker compose start
+docker compose down
+~~~
 
-### Local vs AWS
+docker compose down removes containers but preserves named volumes unless --volumes is supplied. Treat docker compose down --volumes as destructive because it removes local Redis, Qdrant, MinIO, and Ollama data.
 
-```text
-Local:  FastAPI → localhost:11434 → Ollama → Qwen
-AWS:    FastAPI → EC2:11434 → Ollama → NVIDIA L4 → Qwen
-```
+Default local consoles:
 
-Response time depends on model warm-up, prompt length, generated tokens, network latency, and GPU utilization.
+- MinIO API: http://localhost:9000
+- MinIO console: http://localhost:9001
+- Qdrant HTTP API: http://localhost:6333
+- Ollama API when enabled: http://localhost:11434
+- LanguageTool when enabled: http://localhost:8010
 
-### Security
+## Configuration reference
 
-Ollama has no built-in authentication. Do not expose port 11434 publicly in production.
+The backend loads .env and also checks the parent directory when running from backend. The frontend reads frontend/.env.local.
 
-- Restrict SSH access
-- Restrict port 11434 to trusted sources
-- Use a private network, VPN, firewall, or reverse proxy in production
-- Never commit AWS keys, `.pem` files, Gemini keys, SMTP passwords, JWT secrets, or `.env` files
-- Never place private API keys in frontend code
+### Core application and database
 
----
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| PROJECT_NAME | No | Application display name |
+| DATABASE_URL | Yes | PostgreSQL connection URL; postgresql+psycopg is supported |
+| SECRET_KEY | Yes | JWT signing secret; use a long random value |
+| ALGORITHM | No | JWT algorithm, default HS256 |
+| ACCESS_TOKEN_EXPIRE_MINUTES | No | Access-token lifetime |
+| CORS_ORIGINS | No | Allowed frontend origins; defaults to localhost frontend |
+
+SQLite is not supported by the backend configuration.
+
+### Cache, retrieval, and storage
+
+| Variable | Purpose |
+| --- | --- |
+| REDIS_URL | Redis connection URL |
+| QDRANT_URL | Qdrant endpoint |
+| QDRANT_API_KEY | Optional Qdrant API key |
+| QDRANT_COLLECTION_PROFILES | Profile vector collection |
+| QDRANT_COLLECTION_CONTENT | Career-content vector collection |
+| QDRANT_COLLECTION_OPPORTUNITIES | Opportunity vector collection |
+| EMBEDDING_PROVIDER | Embedding provider, default ollama |
+| EMBEDDING_MODEL | Embedding model, default nomic-embed-text |
+| EMBEDDING_DIMENSION | Optional explicit vector dimension |
+| MINIO_ENDPOINT | MinIO host and port |
+| MINIO_ACCESS_KEY / MINIO_SECRET_KEY | Object-storage credentials |
+| MINIO_BUCKET | Object-storage bucket |
+| MINIO_SECURE | Whether MinIO uses HTTPS |
+| MINIO_PUBLIC_URL | Optional public media URL |
+
+### AI and language services
+
+| Variable | Purpose |
+| --- | --- |
+| OLLAMA_BASE_URL | Ollama endpoint |
+| OLLAMA_MODEL | Qwen model used for assistant and interview workloads |
+| AI_MAX_PROMPT_CHARS | Prompt size guard |
+| AI_CONTEXT_MESSAGES / AI_CONTEXT_CHARS | Conversation context limits |
+| GEMINI_API_KEY | Optional Gemini reranking credential |
+| GEMINI_MODEL | Gemini reranking model |
+| GEMINI_RERANK_TIMEOUT_SECONDS | Gemini request timeout |
+| LANGUAGETOOL_URL | Optional grammar-check endpoint |
+| LANGUAGETOOL_LANGUAGE | LanguageTool language code |
+| LANGUAGETOOL_TIMEOUT_SECONDS | LanguageTool timeout |
+
+### Interview and transcription controls
+
+| Variable | Purpose |
+| --- | --- |
+| OLLAMA_INTERVIEW_TIMEOUT_SECONDS | Interview-generation timeout |
+| INTERVIEW_AI_MAX_CONCURRENCY | Interview AI concurrency limit |
+| INTERVIEW_SUBMISSION_GRACE_SECONDS | Submission grace period |
+| INTERVIEW_WHISPER_MODEL | Optional Faster-Whisper model; blank disables voice transcription |
+| INTERVIEW_WHISPER_DEVICE | Whisper device, commonly cpu |
+| INTERVIEW_WHISPER_COMPUTE_TYPE | Whisper compute type |
+| INTERVIEW_TRANSCRIPTION_TIMEOUT_SECONDS | Transcription timeout |
+| INTERVIEW_MAX_AUDIO_BYTES | Maximum uploaded audio size |
+| INTERVIEW_MAX_AUDIO_SECONDS | Maximum audio duration |
+
+### Email and operational settings
+
+| Variable | Purpose |
+| --- | --- |
+| EMAIL_HOST_USER | SMTP account used for OTP email |
+| EMAIL_HOST_PASSWORD | SMTP password or provider app password |
+| OTP_EXPIRE_MINUTES | OTP validity period |
+| AVAILABILITY_CACHE_TTL | Username/email availability cache duration |
+| REDIS_PRESENCE_TTL_SECONDS | Presence expiration |
+| INSTANCE_ID | Optional instance identifier for distributed runtime |
+
+Never commit real credentials, API keys, JWT secrets, SMTP passwords, or production endpoints. Values in .env.example are development placeholders only.
+
+## API reference
+
+The API base path is:
+
+~~~text
+http://localhost:8000/api
+~~~
+
+Interactive documentation is generated by FastAPI:
+
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+Protected endpoints use:
+
+~~~http
+Authorization: Bearer <access-token>
+~~~
+
+### Route groups
+
+| Group | Prefix | Responsibilities |
+| --- | --- | --- |
+| Health | /health | Dependency health status |
+| Authentication | /auth | OTP registration, login, account details, password changes, logout |
+| Media | /media | Uploads, metadata, presigned URLs, downloads, and deletion |
+| AI assistant | /ai | Chat, conversations, retries, profile optimization, and grammar checks |
+| Profile | /profile | Profile, skills, education, experience, projects, certifications, preferences |
+| Skill analysis | /skill-analysis | Profile skill-gap analysis and optional AI insights |
+| Career matching | /career-matching | Profile-based opportunity matching and optional explanations |
+| Networking | /networking | Discovery, requests, connections, and network views |
+| Communities | /communities | Communities, memberships, posts, reactions, comments, and media |
+| Messaging | /messaging | Conversations, messages, stars, deletion, and message management |
+| Notifications | /notifications | Notification list, unread count, read, and read-all actions |
+| Resources | /resources | Resource discovery, detail, save, unsave, and management |
+| Posts | /posts | Global feed posts, likes, comments, editing, deletion, and sharing |
+| Interviews | /interviews | Options, roles, blueprint, sessions, questions, answers, evaluation, and reports |
+
+Notable endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | /health | Check PostgreSQL, Redis, Qdrant, and MinIO |
+| GET | /auth/me | Read the current account |
+| POST | /auth/login | Authenticate and issue a JWT |
+| POST | /ai/chat | Send a message to the career assistant |
+| GET | /skill-analysis/me | Analyze the current profile |
+| GET | /career-matching/me | Retrieve current career matches |
+| POST | /posts | Create a global feed post |
+| POST | /interviews | Create an interview session |
+| POST | /interviews/{interview_id}/submit-answer | Submit an interview answer |
+| GET | /interviews/{interview_id}/report | Read an interview report |
+| WebSocket | /messaging/ws/{conversation_id} | Receive and send live conversation events |
+
+The OpenAPI document at /openapi.json is the source of truth for request and response schemas.
+
+## AI and data flow
+
+### Career matching flow
+
+~~~mermaid
+sequenceDiagram
+    participant User as Browser
+    participant API as FastAPI /api
+    participant Match as Career matching service
+    participant PG as PostgreSQL
+    participant Q as Qdrant
+    participant Embed as Ollama embeddings
+    participant Gemini as Optional Gemini
+    participant Qwen as Ollama/Qwen
+    participant Redis as Redis cache
+
+    User->>API: GET /career-matching/me
+    API->>Match: Load profile context
+    Match->>PG: Read skills, experience, projects, preferences
+    Match->>Embed: Create retrieval query embedding
+    Embed-->>Match: Query vector
+    Match->>Q: Retrieve opportunity candidates
+    Q-->>Match: Candidate identifiers and scores
+    Match->>PG: Load opportunity records
+    Match->>Match: Apply deterministic match weights
+    opt Gemini configured
+        Match->>Gemini: Rerank deterministic candidates
+        Gemini-->>Match: Semantic ordering signal
+    end
+    opt Explanations enabled
+        Match->>Qwen: Explain matches and priorities
+        Qwen-->>Match: Explanations
+    end
+    Match->>Redis: Cache response
+    Match-->>API: Validated matching result
+    API-->>User: JSON response
+~~~
+
+The deterministic matching service remains authoritative. Its current weighting includes required skills, preferred skills, target role, experience, location or remote preference, and career preferences. Gemini is an optional second-stage reranker and Qwen explanations are supplemental.
+
+### AI boundaries and fallbacks
+
+- The AI assistant uses profile context when available and stores conversation state in PostgreSQL.
+- Skill analysis can return deterministic gaps without an AI provider.
+- Career matching can return deterministic matches when Gemini or Qwen is unavailable.
+- Text interviews do not require voice transcription.
+- LanguageTool and Gemini are optional integrations.
+- External model failures must not bypass authorization or persistence checks.
+
+## Database design
+
+PostgreSQL is the source of truth for product data. Qdrant stores searchable vectors, Redis stores ephemeral or cached state, and MinIO stores binary objects.
+
+### Domain ownership
+
+| Domain | Primary records |
+| --- | --- |
+| Identity | User, MediaObject, account and authentication state |
+| Profile | Profile, ProfileSkill, ProfileEducation, ProfileExperience, ProfileProject, ProfileCertification, CareerPreference |
+| Opportunities | Opportunity, required skills, preferred skills |
+| Networking | Connection, Notification |
+| Messaging | DirectConversation, participants, DirectMessage, stars, deletion records |
+| Social | GlobalPost, media, likes, comments |
+| Communities | Community, memberships, posts, reactions, comments, tags, media |
+| Resources | Resource, SavedResource |
+| Interviews | InterviewSession, questions, answers, reports, role profiles |
+
+### Simplified entity relationship model
+
+~~~mermaid
+erDiagram
+    USER ||--|| PROFILE : owns
+    PROFILE ||--o{ PROFILE_SKILL : has
+    PROFILE ||--o{ PROFILE_EDUCATION : records
+    PROFILE ||--o{ PROFILE_EXPERIENCE : records
+    PROFILE ||--o{ PROFILE_PROJECT : builds
+    PROFILE ||--o{ PROFILE_CERTIFICATION : earns
+    PROFILE ||--o| CAREER_PREFERENCE : sets
+    USER ||--o{ CONNECTION : participates
+    USER ||--o{ GLOBAL_POST : authors
+    GLOBAL_POST ||--o{ GLOBAL_POST_COMMENT : receives
+    GLOBAL_POST ||--o{ GLOBAL_POST_LIKE : receives
+    USER ||--o{ DIRECT_CONVERSATION : starts
+    DIRECT_CONVERSATION ||--o{ DIRECT_MESSAGE : contains
+    USER ||--o{ COMMUNITY_MEMBERSHIP : joins
+    COMMUNITY ||--o{ COMMUNITY_MEMBERSHIP : has
+    COMMUNITY ||--o{ COMMUNITY_POST : contains
+    USER ||--o{ RESOURCE : shares
+    RESOURCE ||--o{ SAVED_RESOURCE : saved_by
+    USER ||--o{ INTERVIEW_SESSION : completes
+    INTERVIEW_SESSION ||--o{ INTERVIEW_QUESTION : contains
+    INTERVIEW_QUESTION ||--o{ INTERVIEW_ANSWER : receives
+    INTERVIEW_SESSION ||--o| INTERVIEW_REPORT : produces
+~~~
+
+The diagram is intentionally simplified. The complete schema is defined by SQLAlchemy models in backend/app/db/models.py and the Alembic migrations in backend/alembic/versions/.
+
+## Development workflow
+
+### Frontend
+
+Run from frontend:
+
+~~~bash
+npm run dev
+npm run lint
+npm test
+npm run test:ci
+npm run build
+npm run start
+~~~
+
+The Next.js App Router pages live under frontend/app. Feature components are grouped under frontend/components, while HTTP access is centralized in frontend/services/api.js.
+
+### Backend
+
+Run from backend with the virtual environment active:
+
+~~~bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+pytest
+pytest -m integration
+~~~
+
+The backend uses Alembic migrations for schema evolution. Add a migration for persistent schema changes and keep Pydantic schemas, service logic, and route contracts aligned.
+
+### Recommended change flow
+
+1. Create a focused branch from the current development branch.
+2. Make the smallest change that satisfies the feature or bug requirement.
+3. Add or update the relevant frontend and backend tests.
+4. Run lint, unit tests, build checks, and targeted integration tests.
+5. Review the diff for secrets, unrelated changes, and API compatibility.
+6. Open a pull request with behavior, test evidence, and migration notes.
 
 ## Testing
 
-Infrastructure must be running (`postgres` and `redis` at minimum). Unit tests mock external services and do not require Qdrant or Ollama.
+### Frontend checks
 
-```bash
+~~~bash
+cd frontend
+npm run lint
+npm test
+npm run test:ci
+npm run build
+~~~
+
+Frontend tests use Jest, jsdom, and Testing Library. They cover major dashboard features including the home feed, communities, interview flows, messaging, networking, notifications, profile, resources, and settings.
+
+### Backend checks
+
+~~~bash
 cd backend
-
-# Full suite
 pytest
+~~~
 
-# Career knowledge unit tests
-pytest tests/test_career_knowledge.py -v
-```
+The backend suite includes authentication, AI conversations, career matching, career knowledge, communities, messaging, presence, notifications, opportunities, posts, profile, resources, interviews, networking, vector foundations, and reliability coverage.
 
-Integration tests (require live Qdrant, Ollama, and `nomic-embed-text`; they use temporary isolated collections):
+Integration tests that depend on PostgreSQL, Redis, Qdrant, MinIO, or model services require those services to be available and correctly configured. Use the project’s integration marker for targeted runs:
 
-```bash
-# macOS / Linux
-RUN_QDRANT_INTEGRATION=1 pytest tests/test_vector_foundation.py -m integration
-RUN_QDRANT_INTEGRATION=1 pytest tests/test_career_knowledge.py -v -m integration
+~~~bash
+pytest -m integration
+~~~
 
-# Windows PowerShell
-$env:RUN_QDRANT_INTEGRATION="1"
-pytest tests/test_vector_foundation.py -m integration
-pytest tests/test_career_knowledge.py -v -m integration
-```
+Do not treat a passing unit test run with mocked infrastructure as proof that every local service is configured correctly. Validate /api/health and exercise the relevant route when changing an integration boundary.
 
-The vector foundation test embeds a small career dataset, searches for `backend development using Python`, and verifies backend/Python content ranks first. The career knowledge test verifies embed → upsert → search → payload correctness → idempotency on a second run.
+## Contributing
 
----
+Contributions should preserve the project’s separation between deterministic domain logic and optional AI enhancements.
+
+When opening a pull request:
+
+- Describe the user-visible behavior and affected route or component.
+- Include tests for new logic and regression coverage for fixes.
+- Include an Alembic migration for schema changes.
+- Document new environment variables in .env.example and this README.
+- Avoid committing .env, credentials, model files, generated media, or local database data.
+- Keep API behavior backward-compatible unless the change is explicitly versioned.
+- Include manual verification steps for UI, WebSocket, model, or infrastructure changes.
+
+## Roadmap
+
+There is no separate committed roadmap file in the repository. The following items are reasonable next steps, not promises of a scheduled release:
+
+- Add a documented production deployment profile with PostgreSQL included or explicitly provisioned.
+- Add a first-class production observability and audit-log strategy.
+- Formalize service contracts and generated API client typing.
+- Expand integration-test orchestration for PostgreSQL, Redis, Qdrant, MinIO, and model providers.
+- Add clearer model-provider health, timeout, and fallback diagnostics.
+- Add repository-level CONTRIBUTING.md, SECURITY.md, and license files.
+- Decide whether opportunity data should remain curated or gain a governed external ingestion path.
+
+## Security
+
+- Store secrets only in environment variables or a managed secret store.
+- Generate a strong random SECRET_KEY for every deployed environment.
+- Never commit .env, .env.local, API keys, SMTP passwords, JWT secrets, or production URLs.
+- Use provider app passwords or scoped SMTP credentials instead of a personal mailbox password.
+- Keep CORS_ORIGINS restricted to known application origins.
+- Use HTTPS and secure cookie or token-delivery policies when deploying beyond local development.
+- Review MinIO exposure before making MINIO_PUBLIC_URL public.
+- Restrict Qdrant, Redis, MinIO, Ollama, and LanguageTool network access in deployed environments; local Compose defaults are intended for development.
+- Preserve ownership checks on profile, post, resource, message, community, and interview operations.
+
+No public security contact is defined in the repository yet. For a private report, contact the project maintainers through the repository’s private communication channel rather than posting sensitive details in a public issue.
 
 ## License
 
-Distributed under the MIT License.
+No LICENSE file was found in the repository at the time this README was written. Until the maintainers add a license, reuse and redistribution rights should be treated as unspecified. Add a license file and update this section before presenting the project as an open-source package.
+
+## Acknowledgements
+
+CareerSphere AI is built with open-source technologies including:
+
+- [Next.js](https://nextjs.org/)
+- [React](https://react.dev/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [SQLAlchemy](https://www.sqlalchemy.org/)
+- [Alembic](https://alembic.sqlalchemy.org/)
+- [PostgreSQL](https://www.postgresql.org/)
+- [Redis](https://redis.io/)
+- [Qdrant](https://qdrant.tech/)
+- [MinIO](https://min.io/)
+- [Ollama](https://ollama.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
+
+See the dependency manifests for the complete list of direct and transitive packages used by the application.
