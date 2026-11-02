@@ -116,8 +116,8 @@ export default function AnalyticsDashboard() {
                     <circle cx="60" cy="60" r="48" fill="none" stroke="url(#ringGradient)" strokeWidth="10" strokeDasharray="302" strokeDashoffset="54" strokeLinecap="round" />
                     <defs>
                       <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="rgba(255,143,50,1)" />
-                        <stop offset="100%" stopColor="rgba(64,217,255,1)" />
+                        <stop offset="0%" stopColor="rgba(198,161,91,1)" />
+                        <stop offset="100%" stopColor="rgba(49,94,155,1)" />
                       </linearGradient>
                     </defs>
                   </svg>

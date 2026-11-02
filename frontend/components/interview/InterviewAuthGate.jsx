@@ -27,5 +27,5 @@ export default function InterviewAuthGate({ children }) {
 
   if (!isAuthenticated) return null;
 
-  return <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">{children}</div>;
+  return <div className="mx-auto w-full max-w-[1520px] flex-1 px-4 py-5 sm:px-6 sm:py-7 lg:px-10 lg:py-8">{children}</div>;
 }

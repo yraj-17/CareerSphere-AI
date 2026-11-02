@@ -4,27 +4,27 @@
 
 /* CareerSphere AI design system */
 :root {
-  --brand-navy: #102f6b;
-  --brand-deep-navy: #0b2a5b;
-  --brand-amber: #e89b00;
-  --brand-yellow: #f4a300;
-  --page-bg: #f3f5f7;
-  --surface: #ffffff;
-  --surface-subtle: #eaf0f8;
-  --border: #dde3ea;
-  --border-strong: #cbd5e1;
-  --text-primary: #1a1a1a;
-  --text-secondary: #4a4a4a;
-  --text-muted: #64748b;
-  --success: #15803d;
-  --warning: #a15c00;
-  --danger: #b42318;
-  --info: #1d4ed8;
+  --brand-navy: #17243A;
+  --brand-deep-navy: #101B2D;
+  --brand-amber: #C6A15B;
+  --brand-yellow: #D6B875;
+  --page-bg: #F5F6F8;
+  --surface: #FFFFFF;
+  --surface-subtle: #EEF1F5;
+  --border: #E3E7ED;
+  --border-strong: #D0D5DD;
+  --text-primary: #172033;
+  --text-secondary: #475467;
+  --text-muted: #667085;
+  --success: #15803D;
+  --warning: #A15C00;
+  --danger: #B42318;
+  --info: #315E9B;
   --radius-card: 1rem;
   --radius-control: 0.625rem;
-  --shadow-card: 0 8px 24px rgba(16, 47, 107, 0.06);
-  --shadow-popover: 0 16px 36px rgba(11, 42, 91, 0.16);
-  --focus-ring: 0 0 0 3px rgba(16, 47, 107, 0.18);
+  --shadow-card: 0 4px 16px rgba(23, 36, 58, 0.045);
+  --shadow-popover: 0 12px 32px rgba(23, 36, 58, 0.12);
+  --focus-ring: 0 0 0 3px rgba(198, 161, 91, 0.22);
 }
 
 @layer base {
@@ -144,6 +144,17 @@
     color: #fff;
   }
 
+  .nav-active {
+    border-color: var(--brand-navy);
+    background: var(--brand-navy);
+    color: #fff;
+  }
+
+  .nav-active:hover {
+    border-color: var(--brand-deep-navy);
+    background: var(--brand-deep-navy);
+  }
+
   .input-base {
     @apply w-full rounded-lg border px-3 py-2.5 text-sm transition-colors;
     border-color: var(--border-strong);
@@ -177,8 +188,8 @@
 }
 
 .glass-card-hover:hover {
-  border-color: rgba(16, 47, 107, 0.28);
-  box-shadow: 0 12px 28px rgba(16, 47, 107, 0.1);
+  border-color: rgba(23, 36, 58, 0.28);
+  box-shadow: 0 12px 28px rgba(23, 36, 58, 0.1);
   transform: translateY(-1px);
 }
 
@@ -196,8 +207,8 @@
 }
 
 .bg-grid-pattern {
-  background-image: linear-gradient(rgba(16, 47, 107, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 47, 107, 0.035) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(23, 36, 58, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 36, 58, 0.035) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -219,7 +230,7 @@
 
 [class~='bg-slate-950/72'],
 [class~='bg-slate-950/75'] {
-  background-color: rgba(11, 42, 91, 0.38) !important;
+  background-color: rgba(16, 27, 45, 0.38) !important;
 }
 
 [class~='bg-slate-900'],
@@ -244,7 +255,7 @@
 }
 
 .chat-inverse:disabled {
-  color: #94a3b8 !important;
+  color: var(--text-muted) !important;
 }
 
 [class~='text-slate-200'],
@@ -258,7 +269,7 @@
 }
 
 [class~='text-slate-600'] {
-  color: #94a3b8 !important;
+  color: var(--text-muted) !important;
 }
 
 [class*='border-white'],
@@ -292,20 +303,29 @@
 
 [class~='text-cyan'],
 [class~='text-cyan-200'],
-[class~='text-cyan-300'],
+[class~='text-cyan-300'] {
+  color: var(--info) !important;
+}
+
 [class~='text-violet'],
 [class~='text-violet-300'] {
-  color: var(--brand-navy) !important;
+  color: var(--brand-amber) !important;
 }
 
-[class*='bg-cyan/'],
+[class*='bg-cyan/'] {
+  background-color: rgba(49, 94, 155, 0.08) !important;
+}
+
 [class*='bg-violet/'] {
-  background-color: var(--surface-subtle) !important;
+  background-color: rgba(198, 161, 91, 0.1) !important;
 }
 
-[class*='border-cyan'],
+[class*='border-cyan'] {
+  border-color: rgba(49, 94, 155, 0.25) !important;
+}
+
 [class*='border-violet'] {
-  border-color: rgba(16, 47, 107, 0.25) !important;
+  border-color: rgba(198, 161, 91, 0.35) !important;
 }
 
 [class~='text-emerald-300'],
@@ -341,11 +361,11 @@
 }
 
 [class*='bg-amber-'] {
-  background-color: #fff7e0 !important;
+  background-color: #FBF6EA !important;
 }
 
 [class*='border-amber-'] {
-  border-color: #f4d28c !important;
+  border-color: #E4C98A !important;
 }
 
 .bg-clip-text.text-transparent {
@@ -361,12 +381,12 @@
 /* Keep intentionally dark scrims legible after the light-theme migration. */
 [class~='bg-black/60'],
 [class~='bg-black/40'] {
-  background-color: rgba(11, 42, 91, 0.45) !important;
+  background-color: rgba(16, 27, 45, 0.45) !important;
 }
 
 .chat-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .scrollbar-hidden {

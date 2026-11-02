@@ -227,7 +227,7 @@ export default function CreateCommunityModal({ open, onClose, onSubmit }) {
                     value={visibility}
                     checked={form.visibility === visibility}
                     onChange={(event) => updateField('visibility', event.target.value)}
-                    className="accent-blue-700"
+                    className="accent-brand-500"
                   />
                   {visibility}
                 </label>

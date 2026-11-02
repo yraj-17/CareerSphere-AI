@@ -483,8 +483,8 @@ export default function InterviewRoom({ interviewId }) {
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center" role="status">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin text-brand-500" aria-hidden="true" />
-        <span className="text-sm text-slate-500">Restoring your interview...</span>
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-[var(--brand-navy)]" aria-hidden="true" />
+        <span className="text-sm text-[var(--text-muted)]">Restoring your interview...</span>
       </div>
     );
   }
@@ -492,9 +492,9 @@ export default function InterviewRoom({ interviewId }) {
   if (notFound || loadError) {
     return (
       <div className="surface-card mx-auto max-w-xl text-center" role="alert">
-        <AlertCircle className="mx-auto h-8 w-8 text-red-600" aria-hidden="true" />
+        <AlertCircle className="mx-auto h-8 w-8 text-[var(--danger)]" aria-hidden="true" />
         <h1 className="mt-3 text-lg font-semibold">{notFound ? 'Interview not found' : 'Unable to load this interview'}</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           {notFound ? 'It may have been removed, or it belongs to another account.' : loadError}
         </p>
         <div className="mt-4 flex justify-center gap-2">
@@ -516,7 +516,7 @@ export default function InterviewRoom({ interviewId }) {
 
   const isVoice = interview.interaction_mode === 'VOICE';
   const progressPct = Math.round((interview.answered_count / Math.max(1, total)) * 100);
-  const timerTone = remainingSeconds <= 60 ? 'text-red-700' : remainingSeconds <= 120 ? 'text-amber-700' : 'text-slate-900';
+  const timerTone = remainingSeconds <= 60 ? 'text-[var(--danger)]' : remainingSeconds <= 120 ? 'text-[var(--warning)]' : 'text-[var(--text-primary)]';
   const draft = selected ? drafts[selected.id] : null;
   const draftText = draft?.text || '';
   const overLimit = draftText.length > DEFAULT_MAX_ANSWER_LENGTH;
@@ -535,7 +535,7 @@ export default function InterviewRoom({ interviewId }) {
     <div className="space-y-5">
       <section className="surface-card flex flex-col gap-4 md:flex-row md:items-center md:justify-between" aria-label="Interview status">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">AI Interviewer</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--brand-amber)]">AI Interviewer · Live workspace</p>
           <h1 className="mt-1 truncate text-xl font-semibold">{interview.target_role}</h1>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Badge>{typeLabel(interview.interview_type)}</Badge>
@@ -545,7 +545,7 @@ export default function InterviewRoom({ interviewId }) {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="flex items-center justify-end gap-1 text-xs font-medium text-slate-500">
+            <p className="flex items-center justify-end gap-1 text-xs font-medium text-[var(--text-muted)]">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               Time remaining
             </p>
@@ -561,7 +561,7 @@ export default function InterviewRoom({ interviewId }) {
       </section>
 
       <section className="surface-card space-y-3 p-4 sm:p-5" aria-label="Question navigator">
-        <div className="flex justify-between text-xs font-medium text-slate-600">
+        <div className="flex justify-between text-xs font-medium text-[var(--text-secondary)]">
           <span>
             Question {position} of {total}
           </span>
@@ -570,14 +570,14 @@ export default function InterviewRoom({ interviewId }) {
           </span>
         </div>
         <div
-          className="h-2 overflow-hidden rounded-full bg-slate-200"
+          className="h-2 overflow-hidden rounded-full bg-[var(--surface-subtle)]"
           role="progressbar"
           aria-label="Interview progress"
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuenow={interview.answered_count}
         >
-          <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progressPct}%` }} />
+          <div className="h-full rounded-full bg-[var(--brand-navy)] transition-all" style={{ width: `${progressPct}%` }} />
         </div>
         <ol className="flex flex-wrap gap-2" aria-label="Questions">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
@@ -602,7 +602,7 @@ export default function InterviewRoom({ interviewId }) {
             );
           })}
         </ol>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500" aria-label="Status legend">
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)]" aria-label="Status legend">
           {['NOT_STARTED', 'IN_PROGRESS', 'SKIPPED', 'SUBMITTED', 'ANSWERED'].map((key) => (
             <li key={key} className="flex items-center gap-1">
               <span className={`inline-block h-2.5 w-2.5 rounded-sm border ${QUESTION_STATUS[key].className}`} aria-hidden="true" />
@@ -613,7 +613,7 @@ export default function InterviewRoom({ interviewId }) {
       </section>
 
       {timeUp && (
-        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900" role="alert">
+        <div className="flex items-center gap-2 rounded-xl border border-[rgba(198,161,91,0.35)] bg-[rgba(198,161,91,0.1)] p-3 text-sm font-medium text-[var(--text-secondary)]" role="alert">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Time&apos;s up. Submitting your saved drafts and preparing your report...
         </div>
@@ -621,10 +621,10 @@ export default function InterviewRoom({ interviewId }) {
 
       <section className="surface-card space-y-5" aria-labelledby="question-heading">
         {!selected ? (
-          <div className="flex items-center gap-2 text-sm text-slate-600" role="status">
+          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]" role="status">
             {interview.preparing ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin text-brand-500" aria-hidden="true" />
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-navy)]" aria-hidden="true" />
                 <span id="question-heading">
                   Preparing question {position}
                   {plannedSlot ? ` (${plannedSlot.competency})` : ''}...

@@ -41,7 +41,7 @@ export default function ProblemSection() {
           >
             <div className="absolute inset-4 rounded-full border border-accent/20 bg-accent/8 blur-3xl" />
             <div className="absolute inset-10 rounded-full border border-cyan/10" />
-            <div className="absolute inset-14 rounded-full border border-white/10 bg-[radial-gradient(circle,rgba(255,143,50,0.28),rgba(7,9,15,0.92)_70%)] shadow-[0_0_60px_rgba(255,143,50,0.22)]" />
+            <div className="absolute inset-14 rounded-full border border-white/10 bg-[radial-gradient(circle,rgba(198,161,91,0.28),rgba(16,27,45,0.92)_70%)] shadow-[0_0_60px_rgba(198,161,91,0.22)]" />
             <div className="relative z-10 text-center">
               <div className="text-xs uppercase tracking-[0.3em] text-accentSoft">Transition</div>
               <div className="mt-4 text-3xl font-semibold text-white">One intelligent ecosystem.</div>

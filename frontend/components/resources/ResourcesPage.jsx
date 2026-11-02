@@ -190,9 +190,10 @@ export default function ResourcesPage() {
   };
 
   const filtersActive = resourceType !== 'all' || category !== 'all';
+  const hasActiveControls = Boolean(query || filtersActive || activeView === 'saved');
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="relative space-y-8 animate-fade-in">
       <ResourceFormModal open={formOpen} mode="create" onClose={() => setFormOpen(false)} onSubmit={handleCreate} />
       <ResourceFormModal
         open={!!editTarget}
@@ -208,23 +209,33 @@ export default function ResourcesPage() {
         onShared={() => setShareTarget(null)}
       />
 
-      <section className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-100 bg-brand-50">
-            <FileStack className="h-5 w-5 text-brand-500" aria-hidden="true" />
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white px-5 py-6 shadow-[0_10px_30px_rgba(23,36,58,0.06)] sm:px-7 sm:py-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_92%_0%,rgba(198,161,91,0.14),transparent_28%),linear-gradient(135deg,rgba(238,241,245,0.6),transparent_62%)]" />
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-500 text-surface shadow-[0_8px_20px_rgba(23,36,58,0.16)]">
+              <FileStack className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-600">Knowledge hub</p>
+              <h1 className="page-title mt-1">Resources</h1>
+              <p className="page-description mt-2">
+                A focused library of practical resources for learning, building, and career growth.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
+                <span className="rounded-full bg-brand-50 px-3 py-1.5 text-brand-700">Curated by the community</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--brand-amber)]" aria-hidden="true" />
+                  Learn something useful today
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-500">Knowledge hub</p>
-            <h1 className="page-title mt-1">Resources</h1>
-            <p className="page-description mt-1.5">
-              Discover and share practical resources for learning and career growth.
-            </p>
-          </div>
+          <button type="button" onClick={() => setFormOpen(true)} className="btn-primary shrink-0 self-start sm:self-center">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Share Resource
+          </button>
         </div>
-        <button type="button" onClick={() => setFormOpen(true)} className="btn-primary shrink-0">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Share Resource
-        </button>
       </section>
 
       {error && (
@@ -237,9 +248,21 @@ export default function ResourcesPage() {
         </div>
       )}
 
-      <div className="surface-card space-y-4 p-4 sm:p-5">
+      <div className="surface-card space-y-5 p-4 sm:p-6">
+        <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Find your next edge</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Search the library or narrow it down by format and focus area.</p>
+          </div>
+          {hasActiveControls && (
+            <button type="button" onClick={clearFilters} className="self-start text-xs font-semibold text-brand-600 transition-colors hover:text-brand-800 sm:self-auto">
+              Clear all filters
+            </button>
+          )}
+        </div>
+
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex w-full rounded-lg bg-slate-100 p-1 lg:w-auto" role="tablist" aria-label="Resources view">
+          <div className="flex w-full rounded-xl bg-slate-100 p-1 lg:w-auto" role="tablist" aria-label="Resources view">
             {[
               { id: 'all', label: 'All' },
               { id: 'saved', label: 'Saved' },
@@ -250,8 +273,8 @@ export default function ResourcesPage() {
                 role="tab"
                 aria-selected={activeView === item.id}
                 onClick={() => setActiveView(item.id)}
-                className={`flex-1 rounded-md px-5 py-2 text-sm font-semibold transition-colors lg:flex-none ${
-                  activeView === item.id ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                className={`flex-1 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors lg:flex-none ${
+                  activeView === item.id ? 'bg-brand-500 text-surface shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {item.label}
@@ -282,7 +305,7 @@ export default function ResourcesPage() {
           </label>
         </div>
 
-        <div className="space-y-3 border-t border-slate-200 pt-4">
+        <div className="space-y-4 border-t border-slate-200 pt-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
             <span className="w-16 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</span>
             <div className="flex flex-wrap gap-2" aria-label="Resource types">
@@ -293,7 +316,7 @@ export default function ResourcesPage() {
                   onClick={() => setResourceType(item.id)}
                   className={`min-h-8 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 sm:text-sm ${
                     resourceType === item.id
-                      ? 'border-brand-200 bg-brand-50 text-brand-600'
+                    ? 'border-brand-500 bg-brand-500 text-surface shadow-sm'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
@@ -313,7 +336,7 @@ export default function ResourcesPage() {
                   onClick={() => setCategory(item.id)}
                   className={`min-h-8 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 sm:text-sm ${
                     category === item.id
-                      ? 'border-brand-200 bg-brand-50 text-brand-600'
+                    ? 'border-brand-500 bg-brand-500 text-surface shadow-sm'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
@@ -328,12 +351,18 @@ export default function ResourcesPage() {
       <section className="space-y-4" aria-label="Resource library">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">{activeView === 'saved' ? 'Saved Resources' : 'Resource Library'}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold tracking-tight text-slate-900">{activeView === 'saved' ? 'Saved Resources' : 'Resource Library'}</h2>
+              <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-700">
+                {activeView === 'saved' ? 'Your collection' : 'Community picks'}
+              </span>
+            </div>
             <p className="mt-0.5 text-sm text-slate-500">{activeView === 'saved' ? 'Your bookmarked learning resources.' : 'Useful resources shared by the CareerSphere community.'}</p>
           </div>
           {!loading && total > 0 && (
-            <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-              {total.toLocaleString()} found
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--brand-amber)]" aria-hidden="true" />
+              {total.toLocaleString()} {total === 1 ? 'resource' : 'resources'}
             </span>
           )}
         </div>

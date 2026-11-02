@@ -100,7 +100,7 @@ function ErrorState({ message, onRetry }) {
       <button
         type="button"
         onClick={onRetry}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
       >
         <RefreshCw className="h-4 w-4" />
         Try Again
@@ -266,7 +266,7 @@ export default function DiscoverPeoplePage() {
 
       {/* ── Page header ── */}
       <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-7 sm:p-10 shadow-glow backdrop-blur-2xl">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,143,50,0.14),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(64,217,255,0.09),transparent_40%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(198,161,91,0.14),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(49,94,155,0.09),transparent_40%)] pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <div>
             <div className="flex items-center gap-2.5 mb-2">

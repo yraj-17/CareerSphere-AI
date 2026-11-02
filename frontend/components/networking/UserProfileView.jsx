@@ -149,7 +149,7 @@ function ProfileError({ message, onRetry }) {
       <button
         type="button"
         onClick={onRetry}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
       >
         <RefreshCw className="h-4 w-4" />
         Try Again
@@ -244,7 +244,7 @@ function ConnectionButton({ connStatus, connId, userId, onAction, busy }) {
         onClick={() => onAction('connect', userId)}
         disabled={busy}
         data-testid="connect-btn"
-        className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold bg-accent text-black shadow-[0_6px_20px_rgba(255,143,50,0.30)] hover:bg-accentSoft hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-wait"
+        className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold bg-accent text-black shadow-[0_6px_20px_rgba(23,36,58,0.16)] hover:bg-accentSoft hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-wait"
       >
         {busy ? <Spinner /> : <UserPlus className="h-4 w-4" />}
         {busy ? 'Sending…' : 'Connect'}
@@ -468,7 +468,7 @@ export default function UserProfileView({ userId, currentUser }) {
 
       {/* ── Profile header ── */}
       <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-7 sm:p-10 shadow-glow backdrop-blur-2xl">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,143,50,0.12),transparent_50%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(198,161,91,0.12),transparent_50%)] pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row items-start gap-6">
           <Avatar
             photoUrl={profile.profile_photo_url}

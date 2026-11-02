@@ -56,7 +56,7 @@ export default function DashboardPage() {
     <div className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 w-full space-y-8 animate-fade-in">
       {/* Welcome Banner */}
       <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-8 sm:p-10 shadow-glow backdrop-blur-2xl">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,143,50,0.18),transparent_55%),radial-gradient(circle_at_85%_20%,rgba(64,217,255,0.12),transparent_35%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(198,161,91,0.18),transparent_55%),radial-gradient(circle_at_85%_20%,rgba(49,94,155,0.12),transparent_35%)] pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
@@ -95,7 +95,7 @@ export default function DashboardPage() {
         {/* User Card */}
         <div className="rounded-[2.2rem] border border-white/10 bg-white/[0.04] p-6 shadow-glow backdrop-blur-xl md:col-span-2 space-y-6">
           <div className="flex items-center gap-4 pb-6 border-b border-white/10">
-            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-accent via-accentSoft to-cyan flex items-center justify-center text-2xl font-extrabold text-black shadow-[0_0_30px_rgba(255,143,50,0.3)] uppercase">
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-accent via-accentSoft to-cyan flex items-center justify-center text-2xl font-extrabold text-black shadow-[0_0_30px_rgba(198,161,91,0.3)] uppercase">
               {user.first_name?.[0] || 'U'}
             </div>
             <div>
@@ -179,7 +179,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
           <Link
             href="/dashboard/ai"
-            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(198,161,91,0.15)] group"
           >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
               <Sparkles className="h-4 w-4 text-accent" /> AI Career Assistant
@@ -191,7 +191,7 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/skill-analysis"
-            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(198,161,91,0.15)] group"
           >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
               <BarChart2 className="h-4 w-4 text-accent" /> Skill Analysis
@@ -203,7 +203,7 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/career-matching"
-            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(198,161,91,0.15)] group"
           >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
               <Briefcase className="h-4 w-4 text-accent" /> Career Matching
@@ -215,7 +215,7 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/networking"
-            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(198,161,91,0.15)] group"
           >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
               <Users className="h-4 w-4 text-accent" /> Networking
@@ -227,7 +227,7 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/messaging"
-            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(255,143,50,0.15)] group"
+            className="p-4 rounded-2xl bg-white/[0.05] border border-accent/30 hover:border-accent/60 transition-all shadow-[0_0_25px_rgba(198,161,91,0.15)] group"
           >
             <h4 className="text-sm font-semibold text-white flex items-center gap-2 group-hover:text-accent transition-colors">
               <MessageSquare className="h-4 w-4 text-accent" /> Messaging

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Check, History, Info, Loader2, Mic, PlayCircle, Plus, Sparkles, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, Clock3, History, Loader2, Mic, PlayCircle, Plus, Settings2, SlidersHorizontal, Sparkles, Target, X } from 'lucide-react';
 import {
   analyzeInterviewRole,
   createInterview,
@@ -66,8 +66,10 @@ export function validateSetup(
 function OptionCard({ name, option, checked, onChange, disabled, note }) {
   return (
     <label
-      className={`flex cursor-pointer flex-col gap-1 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-brand-300 ${
-        checked ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-300'
+      className={`flex cursor-pointer flex-col gap-2 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-[rgba(198,161,91,0.22)] ${
+        checked
+          ? 'border-[var(--brand-navy)] bg-[rgba(23,36,58,0.04)] shadow-[0_0_0_1px_rgba(23,36,58,0.08)]'
+          : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-subtle)]'
       } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
       <span className="flex items-center gap-2">
@@ -78,12 +80,12 @@ function OptionCard({ name, option, checked, onChange, disabled, note }) {
           checked={checked}
           onChange={() => onChange(option.value)}
           disabled={disabled}
-          className="h-4 w-4 accent-[#102f6b]"
+          className="h-4 w-4 accent-[var(--brand-navy)]"
         />
-        <span className="text-sm font-semibold text-slate-900">{option.label}</span>
+        <span className="text-sm font-semibold text-[var(--text-primary)]">{option.label}</span>
       </span>
-      <span className="pl-6 text-xs leading-5 text-slate-500">{option.description}</span>
-      {note && <span className="pl-6 text-xs font-medium leading-5 text-amber-800">{note}</span>}
+      <span className="pl-6 text-xs leading-5 text-[var(--text-muted)]">{option.description}</span>
+      {note && <span className="pl-6 text-xs font-medium leading-5 text-[var(--warning)]">{note}</span>}
     </label>
   );
 }
@@ -91,9 +93,24 @@ function OptionCard({ name, option, checked, onChange, disabled, note }) {
 function FieldError({ id, message }) {
   if (!message) return null;
   return (
-    <p id={id} className="mt-1.5 text-xs font-medium text-red-700">
+    <p id={id} className="mt-1.5 text-xs font-medium text-[var(--danger)]">
       {message}
     </p>
+  );
+}
+
+function SectionHeading({ number, icon: Icon, title, description, id }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-[var(--border)] pb-4">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-subtle)] text-[var(--brand-navy)]">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-amber)]">Section {number}</p>
+        <h2 id={id} className="mt-0.5 text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+        <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{description}</p>
+      </div>
+    </div>
   );
 }
 
@@ -349,8 +366,8 @@ export default function InterviewSetupPage() {
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center" role="status">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin text-brand-500" aria-hidden="true" />
-        <span className="text-sm text-slate-500">Loading interview setup...</span>
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-[var(--brand-navy)]" aria-hidden="true" />
+        <span className="text-sm text-[var(--text-muted)]">Loading interview setup...</span>
       </div>
     );
   }
@@ -358,9 +375,9 @@ export default function InterviewSetupPage() {
   if (loadError) {
     return (
       <div className="surface-card mx-auto max-w-xl text-center" role="alert">
-        <AlertCircle className="mx-auto h-8 w-8 text-red-600" aria-hidden="true" />
+        <AlertCircle className="mx-auto h-8 w-8 text-[var(--danger)]" aria-hidden="true" />
         <h1 className="mt-3 text-lg font-semibold">The AI Interviewer couldn&apos;t load</h1>
-        <p className="mt-1 text-sm text-slate-500">{loadError}</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{loadError}</p>
         <button type="button" className="btn-primary mt-4" onClick={() => window.location.reload()}>
           Try again
         </button>
@@ -369,26 +386,31 @@ export default function InterviewSetupPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Practice</p>
-          <h1 className="page-title mt-1">AI Interviewer</h1>
-          <p className="page-description">
-            Run a timed mock interview built for the exact role you want, get feedback after every answer, and review a full report at the end.
-          </p>
+    <div className="space-y-5">
+      <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-navy)] text-surface shadow-[var(--shadow-card)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons8-interview-48.png" alt="" className="h-8 w-8 object-contain" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--brand-amber)]">AI Interviewer · Setup</p>
+            <h1 className="page-title mt-1">Configure your interview</h1>
+            <p className="page-description">Build a personalised interview session based on your target role and skills.</p>
+          </div>
         </div>
-        <Link href="/dashboard/interview/history" className="btn-outline shrink-0">
+        <Link href="/dashboard/interview/history" className="btn-outline shrink-0 self-start sm:self-center">
           <History className="h-4 w-4" aria-hidden="true" />
           Interview history
+          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
-      </div>
+      </header>
 
       {activeInterview && (
-        <div className="flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl border border-[rgba(198,161,91,0.4)] bg-[rgba(198,161,91,0.08)] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-brand-600">You have an interview in progress</p>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm font-semibold text-[var(--brand-navy)]">You have an interview in progress</p>
+            <p className="text-sm text-[var(--text-secondary)]">
               {activeInterview.target_role} · {typeLabel(activeInterview.interview_type)} · {activeInterview.answered_count} answered
             </p>
           </div>
@@ -399,13 +421,19 @@ export default function InterviewSetupPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           <section className="surface-card space-y-5" aria-labelledby="setup-role">
-            <h2 id="setup-role" className="text-base font-semibold">Target role</h2>
+            <SectionHeading
+              number="01"
+              icon={Target}
+              id="setup-role"
+              title="Role & context"
+              description="Tell the interviewer what role you are preparing for and where to focus."
+            />
 
             <div>
-              <label htmlFor="target-role" className="text-sm font-medium text-slate-700">
+              <label htmlFor="target-role" className="text-sm font-medium text-[var(--text-primary)]">
                 Target job role
               </label>
               <input
@@ -431,7 +459,7 @@ export default function InterviewSetupPage() {
               <FieldError id="target-role-error" message={errors.targetRole} />
               <div id="target-role-status" className="mt-2 text-xs" aria-live="polite">
                 {catalogRole ? (
-                  <p className="flex items-center gap-1.5 text-emerald-700">
+                  <p className="flex items-center gap-1.5 text-[var(--success)]">
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                     {catalogRole.title === trimmedRole
                       ? `${catalogRole.family} role. Questions will be built for ${catalogRole.title}.`
@@ -439,35 +467,35 @@ export default function InterviewSetupPage() {
                   </p>
                 ) : isCustomTitle ? (
                   <div className="space-y-2">
-                    <p className="text-slate-600">
+                    <p className="text-[var(--text-secondary)]">
                       Custom role. The interviewer will analyse &ldquo;{trimmedRole}&rdquo; on its own terms — it is never treated as a different role.
                     </p>
                     {analysedCustom ? (
-                      <p className="flex items-center gap-1.5 text-emerald-700">
+                      <p className="flex items-center gap-1.5 text-[var(--success)]">
                         <Check className="h-3.5 w-3.5" aria-hidden="true" />
                         Analysed: {analysedCustom.competencies.map((c) => c.name).join(', ')}
                       </p>
                     ) : (
-                      <button type="button" onClick={analyseRole} disabled={analyzing} className="btn-outline px-3 py-1.5 text-xs">
+                      <button type="button" onClick={analyseRole} disabled={analyzing} className="btn-secondary px-3 py-1.5 text-xs">
                         {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
                         {analyzing ? 'Analysing role...' : 'Analyse role to preview focus areas'}
                       </button>
                     )}
                     {analyzeError && (
-                      <p className="text-red-700" role="alert">
+                      <p className="text-[var(--danger)]" role="alert">
                         {analyzeError}
                       </p>
                     )}
                   </div>
                 ) : (
-                  <p className="text-slate-500">Choose from {catalog.length} roles or enter any job title.</p>
+                  <p className="text-[var(--text-muted)]">Choose from {catalog.length} roles or enter any job title.</p>
                 )}
               </div>
             </div>
 
             <div>
-              <p id="focus-heading" className="text-sm font-medium text-slate-700">
-                Focus areas <span className="font-normal text-slate-400">(optional, up to {maxFocusAreas})</span>
+              <p id="focus-heading" className="text-sm font-medium text-[var(--text-primary)]">
+                Focus areas <span className="font-normal text-[var(--text-muted)]">(optional, up to {maxFocusAreas})</span>
               </p>
               {roleFocusAreas.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-2" role="group" aria-labelledby="focus-heading">
@@ -480,7 +508,7 @@ export default function InterviewSetupPage() {
                         aria-pressed={selected}
                         onClick={() => toggleFocusArea(focus)}
                         className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          selected ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300'
+                          selected ? 'border-[var(--brand-navy)] bg-[var(--brand-navy)] text-surface' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:border-[var(--brand-amber)]'
                         }`}
                       >
                         {focus}
@@ -489,7 +517,7 @@ export default function InterviewSetupPage() {
                   })}
                 </div>
               ) : (
-                <p className="mt-1.5 text-xs text-slate-500">
+                <p className="mt-1.5 text-xs text-[var(--text-muted)]">
                   {isCustomTitle ? 'Analyse the role to see its focus areas, or add your own below.' : 'Select a role to see its focus areas.'}
                 </p>
               )}
@@ -521,9 +549,9 @@ export default function InterviewSetupPage() {
               {customFocusAreas.length > 0 && (
                 <ul className="mt-3 flex flex-wrap gap-2" aria-label="Your focus areas">
                   {customFocusAreas.map((item) => (
-                    <li key={item} className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-3 pr-1 text-xs font-medium text-brand-600">
+                    <li key={item} className="inline-flex items-center gap-1 rounded-full border border-[rgba(198,161,91,0.45)] bg-[rgba(198,161,91,0.12)] py-1 pl-3 pr-1 text-xs font-medium text-[var(--brand-navy)]">
                       {item}
-                      <button type="button" onClick={() => removeFocusArea(item)} className="rounded-full p-0.5 hover:bg-brand-100" aria-label={`Remove ${item}`}>
+                      <button type="button" onClick={() => removeFocusArea(item)} className="rounded-full p-0.5 hover:bg-[rgba(198,161,91,0.2)]" aria-label={`Remove ${item}`}>
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </li>
@@ -532,14 +560,14 @@ export default function InterviewSetupPage() {
               )}
               {skillSuggestions.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-xs text-slate-500">From your profile, relevant to this role:</p>
+                  <p className="text-xs text-[var(--text-muted)]">From your profile, relevant to this role:</p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {skillSuggestions.map((skill) => (
                       <button
                         key={skill}
                         type="button"
                         onClick={() => addFocusArea(skill)}
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-600"
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:border-[var(--brand-amber)] hover:text-[var(--brand-navy)]"
                       >
                         <Plus className="h-3 w-3" aria-hidden="true" />
                         {skill}
@@ -550,13 +578,14 @@ export default function InterviewSetupPage() {
               )}
             </div>
 
+            <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <label htmlFor="job-description" className="text-sm font-medium text-slate-700">
-                Job description <span className="font-normal text-slate-400">(optional)</span>
+              <label htmlFor="job-description" className="text-sm font-medium text-[var(--text-primary)]">
+                Job description <span className="font-normal text-[var(--text-muted)]">(optional)</span>
               </label>
               <textarea
                 id="job-description"
-                rows={3}
+                rows={4}
                 value={form.jobDescription}
                 onChange={(event) => update('jobDescription', event.target.value)}
                 placeholder="Paste the job posting to tailor questions to it."
@@ -564,19 +593,19 @@ export default function InterviewSetupPage() {
                 aria-describedby="job-description-count"
                 aria-invalid={Boolean(errors.jobDescription)}
               />
-              <p id="job-description-count" className={`mt-1 text-right text-xs ${form.jobDescription.length > MAX_JOB_DESCRIPTION_LENGTH ? 'text-red-700' : 'text-slate-400'}`}>
+              <p id="job-description-count" className={`mt-1 text-right text-xs ${form.jobDescription.length > MAX_JOB_DESCRIPTION_LENGTH ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>
                 {form.jobDescription.length}/{MAX_JOB_DESCRIPTION_LENGTH}
               </p>
               <FieldError id="job-description-error" message={errors.jobDescription} />
             </div>
 
             <div>
-              <label htmlFor="instructions" className="text-sm font-medium text-slate-700">
-                Topics or instructions <span className="font-normal text-slate-400">(optional)</span>
+              <label htmlFor="instructions" className="text-sm font-medium text-[var(--text-primary)]">
+                Topics or instructions <span className="font-normal text-[var(--text-muted)]">(optional)</span>
               </label>
               <textarea
                 id="instructions"
-                rows={2}
+                rows={4}
                 value={form.instructions}
                 onChange={(event) => update('instructions', event.target.value)}
                 placeholder="e.g. Include a question about debugging production issues."
@@ -584,15 +613,22 @@ export default function InterviewSetupPage() {
                 aria-describedby="instructions-count"
                 aria-invalid={Boolean(errors.instructions)}
               />
-              <p id="instructions-count" className={`mt-1 text-right text-xs ${form.instructions.length > MAX_INSTRUCTIONS_LENGTH ? 'text-red-700' : 'text-slate-400'}`}>
+              <p id="instructions-count" className={`mt-1 text-right text-xs ${form.instructions.length > MAX_INSTRUCTIONS_LENGTH ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>
                 {form.instructions.length}/{MAX_INSTRUCTIONS_LENGTH}
               </p>
               <FieldError id="instructions-error" message={errors.instructions} />
             </div>
+            </div>
           </section>
 
-          <section className="surface-card space-y-3" aria-labelledby="setup-type">
-            <h2 id="setup-type" className="text-base font-semibold">Interview type</h2>
+          <section className="surface-card space-y-5" aria-labelledby="setup-type">
+            <SectionHeading
+              number="02"
+              icon={SlidersHorizontal}
+              id="setup-type"
+              title="Interview format"
+              description="Choose the kind of assessment that best matches your preparation goal."
+            />
             <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-labelledby="setup-type">
               {INTERVIEW_TYPE_OPTIONS.map((option) => (
                 <OptionCard
@@ -606,8 +642,16 @@ export default function InterviewSetupPage() {
             </div>
           </section>
 
-          <section className="surface-card space-y-3" aria-labelledby="setup-mode">
-            <h2 id="setup-mode" className="text-base font-semibold">Interaction mode</h2>
+          <section className="surface-card space-y-5" aria-labelledby="setup-session">
+            <SectionHeading
+              number="03"
+              icon={Settings2}
+              id="setup-session"
+              title="Session settings"
+              description="Set the interaction mode, difficulty, length, and question count."
+            />
+            <div>
+              <p id="setup-mode" className="text-sm font-medium text-[var(--text-primary)]">Interaction mode</p>
             <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-labelledby="setup-mode">
               {MODE_OPTIONS.map((option) => {
                 const unavailable = option.value === 'VOICE' && !voiceAvailable;
@@ -626,22 +670,21 @@ export default function InterviewSetupPage() {
             </div>
             <FieldError id="mode-error" message={errors.interactionMode} />
             {form.interactionMode === 'VOICE' && (
-              <p className="flex gap-2 text-xs leading-5 text-slate-500">
+              <p className="flex gap-2 text-xs leading-5 text-[var(--text-muted)]">
                 <Mic className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 Your browser will ask for microphone access when you first record. Recordings are only used to produce a transcript and are not stored.
               </p>
             )}
-          </section>
-
-          <section className="surface-card grid gap-5 sm:grid-cols-3" aria-label="Difficulty, duration and questions">
+            </div>
+            <div className="grid gap-5 border-t border-[var(--border)] pt-5 sm:grid-cols-3" aria-label="Difficulty, duration and questions">
             <fieldset className="sm:col-span-3">
-              <legend className="text-sm font-medium text-slate-700">Difficulty</legend>
-              <div className="mt-2 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <legend className="text-sm font-medium text-[var(--text-primary)]">Difficulty</legend>
+              <div className="mt-2 inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface-subtle)] p-1">
                 {DIFFICULTY_OPTIONS.map((option) => (
                   <label
                     key={option.value}
                     className={`cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium focus-within:ring-2 focus-within:ring-brand-300 ${
-                      form.difficulty === option.value ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600'
+                      form.difficulty === option.value ? 'bg-[var(--surface)] text-[var(--brand-navy)] shadow-sm' : 'text-[var(--text-secondary)]'
                     }`}
                   >
                     <input
@@ -658,14 +701,14 @@ export default function InterviewSetupPage() {
               </div>
             </fieldset>
             <div>
-              <label htmlFor="duration" className="text-sm font-medium text-slate-700">
+              <label htmlFor="duration" className="text-sm font-medium text-[var(--text-primary)]">
                 Duration
               </label>
               <select
                 id="duration"
                 value={form.durationMinutes}
                 onChange={(event) => changeDuration(Number(event.target.value))}
-                className="input-base mt-2"
+                className="input-base mt-2 appearance-none"
               >
                 {durations.map((minutes) => (
                   <option key={minutes} value={minutes}>
@@ -676,7 +719,7 @@ export default function InterviewSetupPage() {
               <FieldError id="duration-error" message={errors.durationMinutes} />
             </div>
             <div>
-              <label htmlFor="question-count" className="text-sm font-medium text-slate-700">
+              <label htmlFor="question-count" className="text-sm font-medium text-[var(--text-primary)]">
                 Number of questions
               </label>
               <select
@@ -686,7 +729,7 @@ export default function InterviewSetupPage() {
                   setQuestionCountTouched(true);
                   update('questionCount', Number(event.target.value));
                 }}
-                className="input-base mt-2"
+                className="input-base mt-2 appearance-none"
               >
                 {Array.from({ length: Math.max(0, questionLimit - MIN_QUESTIONS + 1) }, (_, i) => MIN_QUESTIONS + i).map((count) => (
                   <option key={count} value={count}>
@@ -696,12 +739,23 @@ export default function InterviewSetupPage() {
               </select>
               <FieldError id="question-count-error" message={errors.questionCount} />
             </div>
+            </div>
           </section>
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="surface-card space-y-4" aria-labelledby="setup-summary">
-            <h2 id="setup-summary" className="text-base font-semibold">Interview summary</h2>
+          <div className="surface-card space-y-4 p-5" aria-labelledby="setup-summary">
+            <h2 id="setup-summary" className="text-base font-semibold text-[var(--text-primary)]">Interview summary</h2>
+            <div className="flex items-center gap-3 rounded-xl bg-[var(--brand-navy)] p-4 text-surface">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[rgba(214,184,117,0.18)] text-[var(--brand-yellow)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/icons8-interview-48.png" alt="" className="h-7 w-7 object-contain" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">AI Interviewer</p>
+                <p className="mt-0.5 truncate text-xs text-[rgba(255,255,255,0.72)]">A focused practice session for your next opportunity</p>
+              </div>
+            </div>
             <dl className="space-y-2 text-sm">
               {[
                 ['Role', trimmedRole || '—'],
@@ -711,22 +765,24 @@ export default function InterviewSetupPage() {
                 ['Duration', `${form.durationMinutes} minutes`],
                 ['Questions', `${form.questionCount} (${form.questionCount - practical} conceptual · ${practical} practical)`],
               ].map(([term, value]) => (
-                <div key={term} className="flex justify-between gap-3">
-                  <dt className="text-slate-500">{term}</dt>
-                  <dd className="text-right font-medium text-slate-900">{value}</dd>
+                  <div key={term} className="flex justify-between gap-3 border-b border-[var(--border)] pb-2 last:border-0 last:pb-0">
+                  <dt className="text-[var(--text-muted)]">{term}</dt>
+                  <dd className="text-right font-medium text-[var(--text-primary)]">{value}</dd>
                 </div>
               ))}
               <div>
-                <dt className="text-slate-500">Focus areas</dt>
-                <dd className="mt-1 text-slate-900">{form.focusAreas.length ? form.focusAreas.join(', ') : 'General for the role'}</dd>
+                <dt className="text-[var(--text-muted)]">Focus areas</dt>
+                <dd className="mt-2 flex flex-wrap gap-1.5">
+                  {form.focusAreas.length ? form.focusAreas.map((focus) => <span key={focus} className="rounded-full bg-[rgba(198,161,91,0.12)] px-2 py-1 text-xs font-medium text-[var(--brand-navy)]">{focus}</span>) : 'General for the role'}
+                </dd>
               </div>
             </dl>
 
             {(plannedSlots.length > 0 || planLoading) && (
-              <div className="border-t border-slate-100 pt-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Interview plan</h3>
+              <div className="border-t border-[var(--border)] pt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Interview plan</h3>
                 {planLoading && !plannedSlots.length ? (
-                  <p className="mt-2 flex items-center gap-2 text-xs text-slate-500" role="status">
+                  <p className="mt-2 flex items-center gap-2 text-xs text-[var(--text-muted)]" role="status">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                     Building plan...
                   </p>
@@ -734,19 +790,19 @@ export default function InterviewSetupPage() {
                   <ol className="mt-2 space-y-1.5 text-xs" aria-label="Interview plan">
                     {plannedSlots.map((slot) => (
                       <li key={slot.position} className="flex gap-2">
-                        <span className="w-4 shrink-0 text-right font-semibold text-slate-400">{slot.position}</span>
+                        <span className="w-4 shrink-0 text-right font-semibold text-[var(--text-muted)]">{slot.position}</span>
                         <span className="min-w-0">
-                          <span className={slot.kind === 'question' ? 'text-slate-500' : 'font-semibold text-amber-800'}>
+                          <span className={slot.kind === 'question' ? 'text-[var(--text-muted)]' : 'font-semibold text-[var(--warning)]'}>
                             {slot.category === 'BEHAVIORAL' ? 'Behavioral' : slotKindLabel(slot.kind)}
                           </span>
-                          <span className="text-slate-700"> · {slot.competency}</span>
+                          <span className="text-[var(--text-secondary)]"> · {slot.competency}</span>
                         </span>
                       </li>
                     ))}
                   </ol>
                 )}
                 {reservedKinds.length > 0 && (
-                  <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs leading-5 text-amber-900">
+                  <p className="mt-2 rounded-lg border border-[rgba(198,161,91,0.35)] bg-[rgba(198,161,91,0.1)] p-2 text-xs leading-5 text-[var(--text-secondary)]">
                     {reservedKinds.map((k) => PRACTICAL_KIND_LABELS[k] || k).join(', ')} slots are reserved in this plan. The assessment
                     environment isn&apos;t enabled yet, so those slots will be shown and skipped, and are not scored.
                   </p>
@@ -754,14 +810,14 @@ export default function InterviewSetupPage() {
               </div>
             )}
 
-            <p className="flex gap-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <p className="flex gap-2 rounded-lg bg-[var(--surface-subtle)] p-3 text-xs leading-5 text-[var(--text-secondary)]">
+              <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-amber)]" aria-hidden="true" />
               <span>
                 The timer starts when the first question appears and is enforced by the server. {SCORE_DISCLAIMER}
               </span>
             </p>
             {submitError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+              <div className="rounded-lg border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.06)] p-3 text-sm text-[var(--danger)]" role="alert">
                 {submitError}
                 {conflictId && (
                   <Link href={`/dashboard/interview/${conflictId}`} className="mt-2 block font-semibold underline">

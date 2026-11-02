@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import Navbar from '@/components/common/Navbar';
 import BackgroundFX from '@/components/landing/BackgroundFX';
@@ -16,7 +17,11 @@ export default function AppChrome({ children }) {
   return (
     <>
       {isLanding || isDedicatedChat || isCommunities || isResources ? null : <BackgroundFX />}
-      {isLanding || isDedicatedChat ? null : <Navbar />}
+      {isLanding || isDedicatedChat ? null : (
+        <Suspense fallback={<div className="h-[68px] border-b border-slate-200 bg-white min-[1360px]:h-[76px]" aria-hidden="true" />}>
+          <Navbar />
+        </Suspense>
+      )}
       <main
         className={isDedicatedChat
           ? 'flex h-screen min-h-0 flex-none flex-col overflow-hidden'

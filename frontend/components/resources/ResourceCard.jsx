@@ -49,8 +49,8 @@ function thumbnailUrl(resource) {
 
 export function ResourceCardSkeleton() {
   return (
-    <div className="min-h-[340px] animate-pulse rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="h-28 rounded-xl bg-slate-100" />
+    <div className="min-h-[370px] animate-pulse rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="h-36 rounded-2xl bg-slate-100" />
       <div className="mt-4 h-5 w-3/4 rounded bg-slate-100" />
       <div className="mt-3 h-4 w-full rounded bg-slate-100" />
       <div className="mt-2 h-4 w-5/6 rounded bg-slate-100" />
@@ -80,15 +80,18 @@ export default function ResourceCard({
   const imageUrl = thumbnailUrl(resource);
 
   return (
-    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_4px_16px_rgba(16,47,107,0.06)] transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_10px_24px_rgba(16,47,107,0.1)]">
-      <div className="relative mx-4 mt-4 flex h-28 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_4px_16px_rgba(23,36,58,0.045)] transition-all hover:-translate-y-1 hover:border-brand-300 hover:shadow-[0_14px_30px_rgba(23,36,58,0.11)]">
+      <div className="relative mx-3 mt-3 flex h-36 items-center justify-center overflow-hidden rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-[#f7f1e4]">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
         ) : (
-          <ThumbnailIcon className="h-10 w-10 text-brand-300" aria-hidden="true" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-brand-200 bg-white/80 text-brand-500 shadow-sm">
+            <ThumbnailIcon className="h-7 w-7" aria-hidden="true" />
+          </div>
         )}
-        <span className="absolute left-2.5 top-2.5 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-brand-600 shadow-sm">
+        <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full border border-white bg-white px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-brand-700 shadow-sm">
+          <ThumbnailIcon className="h-3 w-3" aria-hidden="true" />
           {resourceTypeLabel(resource.resource_type)}
         </span>
         <button
@@ -96,7 +99,7 @@ export default function ResourceCard({
           onClick={() => (resource.is_saved ? onUnsave?.(resource) : onSave?.(resource))}
           disabled={busy}
           aria-label={saveLabel}
-          className={`absolute right-2.5 top-2.5 rounded-lg border bg-white/95 p-2 shadow-sm transition-colors disabled:opacity-60 ${
+          className={`absolute right-2.5 top-2.5 rounded-full border bg-white p-2 shadow-sm transition-colors disabled:opacity-60 ${
             resource.is_saved
               ? 'border-brand-200 text-brand-600'
               : 'border-slate-200 text-slate-500 hover:border-brand-200 hover:text-brand-600'
@@ -106,26 +109,34 @@ export default function ResourceCard({
         </button>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col p-4">
-        <p className="text-xs font-medium text-slate-500">{categoryLabel(resource.category)}</p>
+      <div className="flex min-w-0 flex-1 flex-col p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-600">{categoryLabel(resource.category)}</p>
+          {resource.save_count > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400" title={`${resource.save_count} saves`}>
+              <Bookmark className="h-3 w-3" aria-hidden="true" />
+              {resource.save_count}
+            </span>
+          )}
+        </div>
         <Link href={`/dashboard/resources/${resource.id}`} className="group/title mt-1.5">
-          <h2 className="line-clamp-2 text-base font-semibold leading-snug text-slate-900 group-hover/title:text-brand-600">
+          <h2 className="line-clamp-2 text-[17px] font-semibold leading-snug text-slate-900 group-hover/title:text-brand-600">
             {resource.title}
           </h2>
         </Link>
-        <p className="mt-2 line-clamp-3 min-h-[4.25rem] text-sm leading-relaxed text-slate-600">
+        <p className="mt-2.5 line-clamp-3 min-h-[4.5rem] text-sm leading-relaxed text-slate-600">
           {resource.description || 'No description provided yet.'}
         </p>
 
         <div className="mt-3 flex min-h-7 flex-wrap gap-1.5">
           {(resource.tags || []).slice(0, 4).map((tag) => (
-            <span key={tag.toLowerCase()} className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+            <span key={tag.toLowerCase()} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600">
               #{tag}
             </span>
           ))}
         </div>
 
-        <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-4">
+        <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-5">
           <ProfileAvatar
             src={resource.author?.profile_photo_url}
             name={authorName}
@@ -148,21 +159,21 @@ export default function ResourceCard({
             href={resource.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-600"
+            className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-3 py-2.5 text-xs font-semibold text-surface transition-colors hover:bg-brand-600"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             Open
           </a>
           <Link
             href={`/dashboard/resources/${resource.id}`}
-            className="inline-flex min-w-0 flex-1 items-center justify-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600"
+            className="inline-flex min-w-0 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600"
           >
             View
           </Link>
           <button
             type="button"
             onClick={() => onShare?.(resource)}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600"
           >
             <Share2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
             Share

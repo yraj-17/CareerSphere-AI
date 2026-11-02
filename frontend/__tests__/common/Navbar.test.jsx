@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 const mockLogout = jest.fn();
 const mockPush = jest.fn();
 let mockPathname = '/dashboard';
+let mockSearch = '';
 let mockAuthState = {
   isAuthenticated: true,
   user: {
@@ -25,6 +26,7 @@ jest.mock('next/link', () => {
 
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
+  useSearchParams: () => new URLSearchParams(mockSearch),
   useRouter: () => ({ push: mockPush }),
 }));
 
@@ -62,6 +64,7 @@ describe('Navbar', () => {
     markAllNotificationsRead.mockResolvedValue({ success: true, updated: 0 });
     markNotificationRead.mockResolvedValue({ success: true, updated: 1 });
     mockPathname = '/dashboard';
+    mockSearch = '';
     mockAuthState = {
       isAuthenticated: true,
       user: {
@@ -99,6 +102,17 @@ describe('Navbar', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('menuitem', { name: /discover people/i })).not.toBeInTheDocument();
+  });
+
+  test('highlights only Requests when the requests tab is selected', () => {
+    mockPathname = '/dashboard/networking/my-network';
+    mockSearch = 'tab=requests';
+
+    render(<Navbar />);
+    fireEvent.click(screen.getByRole('button', { name: /connect & explore menu/i }));
+
+    expect(screen.getByRole('menuitem', { name: /^requests$/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('menuitem', { name: /^my network$/i })).not.toHaveAttribute('aria-current', 'page');
   });
 
   test('does not render a global search control in the header', () => {

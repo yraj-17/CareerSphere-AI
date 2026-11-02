@@ -243,7 +243,7 @@ export default function MessageBubble({
                 ? 'bg-slate-100 border border-slate-200 text-slate-500 italic rounded-br-sm'
                 : 'bg-slate-100 border border-slate-200 text-slate-500 italic rounded-bl-sm'
               : isMine
-                ? 'chat-inverse bg-brand-500 rounded-br-sm shadow-[0_2px_10px_rgba(16,47,107,0.18)]'
+                ? 'chat-inverse bg-brand-500 rounded-br-sm shadow-[0_2px_10px_rgba(23,36,58,0.18)]'
                 : 'bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-sm'
           }`}
           onContextMenu={handleContextMenu}
@@ -271,7 +271,7 @@ export default function MessageBubble({
           >
             {isStarred && !isDeleted && (
               <Star
-                className="h-3 w-3 fill-yellow-400 text-yellow-500 drop-shadow-[0_1px_1px_rgba(161,98,7,0.25)]"
+                className="h-3 w-3 fill-accentSoft text-accentSoft drop-shadow-[0_1px_1px_rgba(198,161,91,0.2)]"
                 aria-label="Starred"
                 role="img"
               />

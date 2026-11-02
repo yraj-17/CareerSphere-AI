@@ -131,7 +131,7 @@ export default function ResourceDetailPage({ resourceId }) {
 
       <article className="overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] shadow-glow backdrop-blur-2xl">
         <div className="relative p-7 sm:p-10">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_0%,rgba(255,143,50,0.14),transparent_50%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_0%,rgba(198,161,91,0.14),transparent_50%)]" />
           <div className="relative z-10">
             <div className="mb-5 flex flex-wrap gap-2">
               <span className="rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-accent">

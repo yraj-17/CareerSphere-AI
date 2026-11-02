@@ -414,7 +414,7 @@ export default function SignupForm() {
     <div className="w-full max-w-lg mx-auto relative z-10">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-accent/10 border border-accent/30 text-accent mb-4 shadow-[0_0_30px_rgba(255,143,50,0.25)]">
+        <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-accent/10 border border-accent/30 text-accent mb-4 shadow-[0_0_20px_rgba(198,161,91,0.16)]">
           <Sparkles className="h-6 w-6 text-accent" />
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
@@ -731,7 +731,7 @@ export default function SignupForm() {
             type="submit"
             id="signup-submit-button"
             disabled={!canSubmit}
-            className="w-full mt-2 relative flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-black bg-accent hover:bg-accentSoft shadow-[0_8px_30px_rgba(255,143,50,0.35)] hover:shadow-[0_12px_40px_rgba(255,143,50,0.45)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full mt-2 relative flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-black bg-accent hover:bg-accentSoft shadow-[0_8px_24px_rgba(23,36,58,0.18)] hover:shadow-[0_12px_32px_rgba(23,36,58,0.22)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
           >
             {isSubmitting ? (
               <>

@@ -1,167 +1,200 @@
 'use client';
 
-/**
- * MyNetworkPage — Phase 5.5
- *
- * Manages the authenticated user's professional connections:
- *   • Connections tab  — accepted connections with Remove action
- *   • Requests tab     — incoming pending requests with Accept / Decline
- *   • Sent tab         — outgoing pending requests with Cancel
- *
- * Data strategy:
- *   - Each tab's data is fetched once on first open (lazy-per-tab).
- *   - After any mutation, local state is updated; no full re-fetch needed.
- *   - Counts in tab headers stay in sync with local arrays.
- *
- * Confirmations:
- *   - Remove and Cancel show an inline confirmation popover before acting.
- */
-
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Users,
-  UserCheck,
-  Send,
   AlertCircle,
-  RefreshCw,
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+  Clock3,
+  Inbox,
   Info,
+  MapPin,
+  RefreshCw,
+  Search,
+  Send,
+  SlidersHorizontal,
+  User,
+  UserCheck,
+  UserPlus,
+  UserRoundX,
+  Users,
   X,
-  Loader2,
 } from 'lucide-react';
 import {
+  acceptConnectionRequest,
+  cancelConnectionRequest,
+  extractErrorMessage,
   getMyNetworkConnections,
   getMyNetworkIncoming,
   getMyNetworkOutgoing,
-  acceptConnectionRequest,
   rejectConnectionRequest,
-  cancelConnectionRequest,
   removeConnection,
-  extractErrorMessage,
 } from '@/services/api';
 import ConnectionCard from '@/components/networking/ConnectionCard';
 import PersonCardSkeleton from '@/components/networking/PersonCardSkeleton';
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
 const TABS = [
   { id: 'connections', label: 'Connections', icon: UserCheck },
-  { id: 'requests',   label: 'Requests',    icon: Users },
-  { id: 'sent',       label: 'Sent',        icon: Send },
+  { id: 'requests', label: 'Requests', icon: Inbox },
+  { id: 'sent', label: 'Sent', icon: Send },
 ];
 
 const SKELETON_COUNT = { connections: 4, requests: 3, sent: 3 };
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
+function fullName(user = {}) {
+  return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'CareerSphere member';
+}
+
+function formatDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function matchesSearch(connection, query) {
+  const term = query.trim().toLowerCase();
+  if (!term) return true;
+  const user = connection?.other_user || {};
+  return [fullName(user), user.username, user.headline, user.location]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(term));
+}
+
+function sortConnections(connections, sortBy) {
+  return [...connections].sort((a, b) => {
+    const nameA = fullName(a?.other_user).toLowerCase();
+    const nameB = fullName(b?.other_user).toLowerCase();
+    if (sortBy === 'name') return nameA.localeCompare(nameB);
+    return new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
+  });
+}
+
+function Avatar({ user, size = 'md' }) {
+  const initials = `${(user?.first_name?.[0] || '').toUpperCase()}${(user?.last_name?.[0] || '').toUpperCase()}` || '?';
+  const sizeClass = size === 'sm' ? 'h-12 w-12 text-sm' : 'h-14 w-14 text-base';
+  return user?.profile_photo_url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={user.profile_photo_url}
+      alt={fullName(user)}
+      className={`${sizeClass} flex-shrink-0 rounded-2xl border border-[var(--border)] object-cover`}
+      onError={(event) => { event.currentTarget.style.display = 'none'; }}
+    />
+  ) : (
+    <div className={`${sizeClass} flex flex-shrink-0 items-center justify-center rounded-2xl border border-[rgba(198,161,91,0.3)] bg-[var(--surface-subtle)] font-semibold text-[var(--brand-navy)]`}>
+      {initials}
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
 
 function Toast({ message, type = 'info', onDismiss }) {
   const styles = {
-    success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-    error:   'border-rose-500/30 bg-rose-500/10 text-rose-300',
-    info:    'border-accent/30 bg-accent/10 text-accent',
+    success: 'border-[rgba(21,128,61,0.22)] bg-[rgba(21,128,61,0.06)] text-[var(--success)]',
+    error: 'border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.06)] text-[var(--danger)]',
+    info: 'border-[rgba(49,94,155,0.22)] bg-[rgba(49,94,155,0.06)] text-[var(--info)]',
   };
   return (
     <motion.div
       initial={{ opacity: 0, y: -10, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.97 }}
-      transition={{ duration: 0.2 }}
       role="alert"
-      className={`flex items-start gap-3 px-4 py-3 rounded-2xl border text-sm ${styles[type]}`}
+      className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${styles[type]}`}
     >
-      <Info className="h-4 w-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
       <span className="flex-1 leading-relaxed">{message}</span>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
-      >
+      <button type="button" onClick={onDismiss} aria-label="Dismiss" className="flex-shrink-0 opacity-60 transition-opacity hover:opacity-100">
         <X className="h-4 w-4" />
       </button>
     </motion.div>
   );
 }
 
-// ─── Inline confirmation dialog ───────────────────────────────────────────────
-
-function ConfirmDialog({ title, description, confirmLabel, confirmCls, onConfirm, onCancel }) {
+function ConfirmDialog({ title, description, confirmLabel, confirmClassName, onConfirm, onCancel }) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.15 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       role="dialog"
       aria-modal="true"
       aria-label={title}
       data-testid="confirm-dialog"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,27,45,0.42)] p-4 backdrop-blur-sm"
     >
-      <div className="w-full max-w-sm rounded-[2rem] border border-white/10 bg-slate-900 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] space-y-5">
-        <div className="space-y-1.5">
-          <h2 className="text-base font-bold text-white">{title}</h2>
-          {description && (
-            <p className="text-sm text-slate-400 leading-relaxed">{description}</p>
-          )}
+      <motion.div
+        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        className="surface-card w-full max-w-md space-y-5 p-6 shadow-[var(--shadow-popover)]"
+      >
+        <div className="space-y-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--surface-subtle)] text-[var(--brand-navy)]">
+            <Info className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{title}</h2>
+          <p className="text-sm leading-6 text-[var(--text-secondary)]">{description}</p>
         </div>
-        <div className="flex items-center gap-3 justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 rounded-full text-sm font-medium border border-white/10 text-slate-200 hover:border-white/25 hover:text-white transition-all"
-          >
-            Keep
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            data-testid="confirm-action-btn"
-            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${confirmCls}`}
-          >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} className="btn-outline w-full sm:w-auto">Keep</button>
+          <button type="button" onClick={onConfirm} data-testid="confirm-action-btn" className={`btn-primary w-full sm:w-auto ${confirmClassName}`}>
             {confirmLabel}
           </button>
         </div>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
 
-// ─── Section loading skeleton ─────────────────────────────────────────────────
-
-function SectionSkeleton({ count }) {
+function StatCard({ id, label, value, detail, icon: Icon, accent = false }) {
   return (
-    <div
-      data-testid="section-skeleton"
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-    >
-      {Array.from({ length: count }).map((_, i) => (
-        <PersonCardSkeleton key={i} />
-      ))}
+    <div data-testid={`stat-${id}`} className="surface-card flex items-center gap-4 p-4 sm:p-5">
+      <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${accent ? 'bg-[var(--brand-navy)] text-surface' : 'bg-[var(--surface-subtle)] text-[var(--brand-navy)]'}`}>
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">{value}</p>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{detail}</p>
+      </div>
     </div>
   );
 }
 
-// ─── Section error state ──────────────────────────────────────────────────────
+function SectionSkeleton({ count, list = false }) {
+  return list ? (
+    <div data-testid="section-skeleton" className="space-y-3">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="h-28 animate-pulse rounded-xl border border-[var(--border)] bg-[var(--surface-subtle)]" />
+      ))}
+    </div>
+  ) : (
+    <div data-testid="section-skeleton" className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: count }).map((_, index) => <PersonCardSkeleton key={index} />)}
+    </div>
+  );
+}
 
 function SectionError({ message, onRetry }) {
   return (
-    <div
-      data-testid="section-error"
-      className="flex flex-col items-center justify-center py-16 text-center space-y-4"
-    >
-      <div className="h-14 w-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-        <AlertCircle className="h-7 w-7 text-rose-400" />
+    <div data-testid="section-error" className="surface-card flex flex-col items-center justify-center space-y-4 py-16 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[rgba(180,35,24,0.07)] text-[var(--danger)]">
+        <AlertCircle className="h-6 w-6" />
       </div>
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-white">{message}</p>
-      </div>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
-      >
+      <p className="max-w-md text-sm leading-6 text-[var(--text-secondary)]">{message}</p>
+      <button type="button" onClick={onRetry} className="btn-primary">
         <RefreshCw className="h-4 w-4" />
         Try Again
       </button>
@@ -169,81 +202,156 @@ function SectionError({ message, onRetry }) {
   );
 }
 
-// ─── Section empty state ──────────────────────────────────────────────────────
-
-function SectionEmpty({ tabId }) {
-  const cfg = {
+function SectionEmpty({ tabId, requestView = false }) {
+  const config = {
     connections: {
       icon: UserCheck,
       title: 'No connections yet',
       sub: 'Start building your professional network by discovering people.',
       cta: 'Discover People',
-      href: '/dashboard/networking',
     },
     requests: {
-      icon: Users,
+      icon: Inbox,
       title: 'No pending requests',
       sub: "You don't have any incoming connection requests right now.",
       cta: null,
     },
     sent: {
       icon: Send,
-      title: 'No sent requests',
-      sub: "You haven't sent any connection requests yet.",
+      title: 'No sent invitations',
+      sub: "You haven't sent any connection invitations yet.",
       cta: 'Discover People',
-      href: '/dashboard/networking',
     },
   };
-  const { icon: Icon, title, sub, cta, href } = cfg[tabId] ?? cfg.connections;
-
+  const { icon: Icon, title, sub, cta } = config[tabId] || config.connections;
   return (
-    <div
-      data-testid="section-empty"
-      className="flex flex-col items-center justify-center py-16 text-center space-y-4"
-    >
-      <div className="h-14 w-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-        <Icon className="h-7 w-7 text-slate-500" />
+    <div data-testid="section-empty" className="surface-card flex flex-col items-center justify-center py-16 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--surface-subtle)] text-[var(--brand-navy)]">
+        <Icon className="h-7 w-7" />
       </div>
-      <div className="space-y-1">
-        <p className="text-base font-bold text-white">{title}</p>
-        <p className="text-sm text-slate-400 max-w-xs leading-relaxed">{sub}</p>
-      </div>
+      <h2 className="mt-5 text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--text-muted)]">{sub}</p>
       {cta && (
-        <Link
-          href={href}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
-        >
+        <Link href="/dashboard/networking" className="btn-primary mt-5">
+          <UserPlus className="h-4 w-4" />
           {cta}
         </Link>
+      )}
+      {requestView && tabId === 'requests' && (
+        <p className="mt-5 text-xs font-medium text-[var(--text-muted)]">New requests will appear here.</p>
       )}
     </div>
   );
 }
 
-// ─── MyNetworkPage ────────────────────────────────────────────────────────────
+function SearchEmpty({ requestView }) {
+  return (
+    <div className="surface-card flex flex-col items-center justify-center py-14 text-center">
+      <Search className="h-8 w-8 text-[var(--text-muted)]" />
+      <h2 className="mt-4 text-base font-semibold text-[var(--text-primary)]">No matching {requestView ? 'requests' : 'people'}</h2>
+      <p className="mt-2 text-sm text-[var(--text-muted)]">Try a different name, headline, username, or location.</p>
+    </div>
+  );
+}
+
+function RequestRow({ conn, variant, onAccept, onReject, onCancel, busy = false }) {
+  const user = conn?.other_user || {};
+  const name = fullName(user);
+  const date = formatDate(conn?.created_at);
+  const incoming = variant === 'incoming';
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      data-testid="connection-card"
+      className="surface-card flex flex-col gap-5 p-4 transition-shadow hover:shadow-[0_8px_24px_rgba(23,36,58,0.08)] sm:p-5 lg:flex-row lg:items-center lg:justify-between"
+    >
+      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+        <Avatar user={user} size="sm" />
+        <div className="min-w-0">
+          <Link href={`/dashboard/networking/${user.id}`} className="group inline-flex max-w-full items-center gap-1 text-sm font-semibold text-[var(--text-primary)] hover:text-[var(--brand-navy)]">
+            <span className="truncate">{name}</span>
+            <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 text-[var(--text-muted)] transition-colors group-hover:text-[var(--brand-amber)]" aria-hidden="true" />
+          </Link>
+          <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{user.headline || 'CareerSphere member'}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
+            {user.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{user.location}</span>}
+            {date && <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{incoming ? 'Received' : 'Sent'} {date}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <Link href={`/dashboard/networking/${user.id}`} className="btn-outline px-3 py-2 text-xs">
+          <User className="h-3.5 w-3.5" />
+          View Profile
+        </Link>
+        {incoming ? (
+          <>
+            <button
+              type="button"
+              onClick={() => !busy && onAccept(conn.id)}
+              disabled={busy}
+              aria-label={`Accept connection request from ${name}`}
+              data-testid="accept-btn"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[rgba(21,128,61,0.28)] bg-[rgba(21,128,61,0.05)] px-3 py-2 text-xs font-semibold text-[var(--success)] transition-colors hover:bg-[rgba(21,128,61,0.1)] disabled:cursor-wait disabled:opacity-60"
+            >
+              {busy ? <Spinner /> : <Check className="h-3.5 w-3.5" />}
+              {busy ? 'Accepting…' : 'Accept'}
+            </button>
+            <button
+              type="button"
+              onClick={() => !busy && onReject(conn.id)}
+              disabled={busy}
+              aria-label={`Ignore connection request from ${name}`}
+              data-testid="reject-btn"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[rgba(180,35,24,0.22)] px-3 py-2 text-xs font-semibold text-[var(--danger)] transition-colors hover:bg-[rgba(180,35,24,0.06)] disabled:cursor-wait disabled:opacity-60"
+            >
+              <UserRoundX className="h-3.5 w-3.5" />
+              Ignore
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]">
+              <Clock3 className="h-3.5 w-3.5 text-[var(--brand-amber)]" />
+              Pending
+            </span>
+            <button
+              type="button"
+              onClick={() => !busy && onCancel(conn.id)}
+              disabled={busy}
+              aria-label={`Cancel connection request to ${name}`}
+              data-testid="cancel-btn"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[rgba(180,35,24,0.22)] px-3 py-2 text-xs font-semibold text-[var(--danger)] transition-colors hover:bg-[rgba(180,35,24,0.06)] disabled:cursor-wait disabled:opacity-60"
+            >
+              {busy ? <Spinner /> : <X className="h-3.5 w-3.5" />}
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+    </motion.article>
+  );
+}
 
 export default function MyNetworkPage({ initialTab = 'connections' }) {
   const normalizedInitialTab = TABS.some((tab) => tab.id === initialTab) ? initialTab : 'connections';
+  const requestView = normalizedInitialTab === 'requests';
   const [activeTab, setActiveTab] = useState(normalizedInitialTab);
-
-  // Per-tab data state: { data, loading, error, loaded }
+  const [requestTab, setRequestTab] = useState('received');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('recent');
   const [tabState, setTabState] = useState({
     connections: { data: [], loading: false, error: null, loaded: false },
-    requests:    { data: [], loading: false, error: null, loaded: false },
-    sent:        { data: [], loading: false, error: null, loaded: false },
+    requests: { data: [], loading: false, error: null, loaded: false },
+    sent: { data: [], loading: false, error: null, loaded: false },
   });
-
-  // Per-card busy state: { [connId]: true }
   const [busyIds, setBusyIds] = useState({});
-
-  // Pending confirmation: { connId, action } | null
   const [pending, setPending] = useState(null);
-
-  // Toast
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
-
-  // ── Toast helpers ─────────────────────────────────────────────────────────
 
   const showToast = useCallback((message, type = 'info') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -256,188 +364,167 @@ export default function MyNetworkPage({ initialTab = 'connections' }) {
     setToast(null);
   }, []);
 
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
   useEffect(() => {
     const nextTab = TABS.some((tab) => tab.id === initialTab) ? initialTab : 'connections';
     setActiveTab(nextTab);
+    setRequestTab(initialTab === 'sent' ? 'sent' : 'received');
   }, [initialTab]);
 
-  // ── Tab data fetcher ──────────────────────────────────────────────────────
-
   const fetchTabData = useCallback(async (tabId, force = false) => {
-    setTabState((prev) => {
-      if (!force && prev[tabId].loaded) return prev;
-      return {
-        ...prev,
-        [tabId]: { ...prev[tabId], loading: true, error: null },
-      };
+    setTabState((previous) => {
+      if (!force && previous[tabId].loaded) return previous;
+      return { ...previous, [tabId]: { ...previous[tabId], loading: true, error: null } };
     });
 
     const fetcher = {
       connections: getMyNetworkConnections,
-      requests:    getMyNetworkIncoming,
-      sent:        getMyNetworkOutgoing,
+      requests: getMyNetworkIncoming,
+      sent: getMyNetworkOutgoing,
     }[tabId];
 
     try {
-      const data = await fetcher();
-      setTabState((prev) => ({
-        ...prev,
-        [tabId]: { data: data ?? [], loading: false, error: null, loaded: true },
+      const response = await fetcher();
+      setTabState((previous) => ({
+        ...previous,
+        [tabId]: {
+          data: Array.isArray(response) ? response : [],
+          loading: false,
+          error: null,
+          loaded: true,
+        },
       }));
-    } catch (err) {
-      setTabState((prev) => ({
-        ...prev,
-        [tabId]: { ...prev[tabId], loading: false, error: extractErrorMessage(err) || 'Failed to load.', loaded: false },
+    } catch (error) {
+      setTabState((previous) => ({
+        ...previous,
+        [tabId]: {
+          ...previous[tabId],
+          loading: false,
+          error: extractErrorMessage(error) || 'Failed to load.',
+          loaded: false,
+        },
       }));
     }
   }, []);
 
-  // Fetch initial tab and each new tab on first open
+  // Summary cards use the same real collections as each tab.
   useEffect(() => {
-    fetchTabData(activeTab);
-  }, [activeTab, fetchTabData]);
+    TABS.forEach(({ id }) => fetchTabData(id));
+  }, [fetchTabData]);
 
-  // ── setBusy helpers ───────────────────────────────────────────────────────
-
-  const setBusy = (id, val) =>
-    setBusyIds((prev) => {
-      const next = { ...prev };
-      if (val) next[id] = true;
+  const setBusy = useCallback((id, value) => {
+    setBusyIds((previous) => {
+      const next = { ...previous };
+      if (value) next[id] = true;
       else delete next[id];
       return next;
     });
-
-  // ── Counts (from local state arrays) ─────────────────────────────────────
+  }, []);
 
   const counts = {
     connections: tabState.connections.data.length,
-    requests:    tabState.requests.data.length,
-    sent:        tabState.sent.data.length,
+    requests: tabState.requests.data.length,
+    sent: tabState.sent.data.length,
   };
+  const dataTab = requestView ? (requestTab === 'sent' ? 'sent' : 'requests') : activeTab;
+  const { data, loading, error } = tabState[dataTab];
+  const visibleData = useMemo(
+    () => sortConnections(data.filter((connection) => matchesSearch(connection, searchQuery)), sortBy),
+    [data, searchQuery, sortBy],
+  );
 
-  // ── Accept ────────────────────────────────────────────────────────────────
-
-  const handleAccept = useCallback(async (connId) => {
-    setBusy(connId, true);
+  const handleAccept = useCallback(async (connectionId) => {
+    setBusy(connectionId, true);
     try {
-      await acceptConnectionRequest(connId);
-      // Remove from requests, will appear in connections on next load
-      setTabState((prev) => ({
-        ...prev,
-        requests: {
-          ...prev.requests,
-          data: prev.requests.data.filter((c) => c.id !== connId),
-        },
-        // Invalidate connections so it reloads fresh on next visit
-        connections: { ...prev.connections, loaded: false },
+      await acceptConnectionRequest(connectionId);
+      setTabState((previous) => ({
+        ...previous,
+        requests: { ...previous.requests, data: previous.requests.data.filter((connection) => connection.id !== connectionId) },
+        connections: { ...previous.connections, loaded: false },
       }));
       showToast('Connection accepted.', 'success');
-    } catch (err) {
-      showToast(extractErrorMessage(err) || 'Unable to accept request.', 'error');
+    } catch (error) {
+      showToast(extractErrorMessage(error) || 'Unable to accept request.', 'error');
     } finally {
-      setBusy(connId, false);
+      setBusy(connectionId, false);
     }
-  }, [showToast]);
+  }, [setBusy, showToast]);
 
-  // ── Reject ────────────────────────────────────────────────────────────────
-
-  const handleReject = useCallback(async (connId) => {
-    setBusy(connId, true);
+  const handleReject = useCallback(async (connectionId) => {
+    setBusy(connectionId, true);
     try {
-      await rejectConnectionRequest(connId);
-      setTabState((prev) => ({
-        ...prev,
-        requests: {
-          ...prev.requests,
-          data: prev.requests.data.filter((c) => c.id !== connId),
-        },
+      await rejectConnectionRequest(connectionId);
+      setTabState((previous) => ({
+        ...previous,
+        requests: { ...previous.requests, data: previous.requests.data.filter((connection) => connection.id !== connectionId) },
       }));
-      showToast('Connection request declined.', 'info');
-    } catch (err) {
-      showToast(extractErrorMessage(err) || 'Unable to decline request.', 'error');
+      showToast('Connection request ignored.', 'info');
+    } catch (error) {
+      showToast(extractErrorMessage(error) || 'Unable to ignore request.', 'error');
     } finally {
-      setBusy(connId, false);
+      setBusy(connectionId, false);
     }
-  }, [showToast]);
+  }, [setBusy, showToast]);
 
-  // ── Remove (needs confirmation) ───────────────────────────────────────────
-
-  const handleRemoveClick = useCallback((connId) => {
-    setPending({ connId, action: 'remove' });
-  }, []);
+  const handleRemoveClick = useCallback((connectionId) => setPending({ connectionId, action: 'remove' }), []);
+  const handleCancelClick = useCallback((connectionId) => setPending({ connectionId, action: 'cancel' }), []);
 
   const handleRemoveConfirm = useCallback(async () => {
-    const connId = pending?.connId;
+    const connectionId = pending?.connectionId;
     setPending(null);
-    if (!connId) return;
-    setBusy(connId, true);
+    if (!connectionId) return;
+    setBusy(connectionId, true);
     try {
-      await removeConnection(connId);
-      setTabState((prev) => ({
-        ...prev,
-        connections: {
-          ...prev.connections,
-          data: prev.connections.data.filter((c) => c.id !== connId),
-        },
+      await removeConnection(connectionId);
+      setTabState((previous) => ({
+        ...previous,
+        connections: { ...previous.connections, data: previous.connections.data.filter((connection) => connection.id !== connectionId) },
       }));
       showToast('Connection removed.', 'success');
-    } catch (err) {
-      showToast(extractErrorMessage(err) || 'Unable to remove connection.', 'error');
+    } catch (error) {
+      showToast(extractErrorMessage(error) || 'Unable to remove connection.', 'error');
     } finally {
-      setBusy(connId, false);
+      setBusy(connectionId, false);
     }
-  }, [pending, showToast]);
-
-  // ── Cancel (needs confirmation) ───────────────────────────────────────────
-
-  const handleCancelClick = useCallback((connId) => {
-    setPending({ connId, action: 'cancel' });
-  }, []);
+  }, [pending, setBusy, showToast]);
 
   const handleCancelConfirm = useCallback(async () => {
-    const connId = pending?.connId;
+    const connectionId = pending?.connectionId;
     setPending(null);
-    if (!connId) return;
-    setBusy(connId, true);
+    if (!connectionId) return;
+    setBusy(connectionId, true);
     try {
-      await cancelConnectionRequest(connId);
-      setTabState((prev) => ({
-        ...prev,
-        sent: {
-          ...prev.sent,
-          data: prev.sent.data.filter((c) => c.id !== connId),
-        },
+      await cancelConnectionRequest(connectionId);
+      setTabState((previous) => ({
+        ...previous,
+        sent: { ...previous.sent, data: previous.sent.data.filter((connection) => connection.id !== connectionId) },
       }));
       showToast('Connection request cancelled.', 'info');
-    } catch (err) {
-      showToast(extractErrorMessage(err) || 'Unable to cancel request.', 'error');
+    } catch (error) {
+      showToast(extractErrorMessage(error) || 'Unable to cancel request.', 'error');
     } finally {
-      setBusy(connId, false);
+      setBusy(connectionId, false);
     }
-  }, [pending, showToast]);
+  }, [pending, setBusy, showToast]);
 
-  // ── Retry ─────────────────────────────────────────────────────────────────
-
-  const handleRetry = useCallback((tabId) => {
-    fetchTabData(tabId, true);
-  }, [fetchTabData]);
-
-  // ── Active tab state ──────────────────────────────────────────────────────
-
-  const { data, loading, error } = tabState[activeTab];
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  const handleRetry = useCallback((tabId) => fetchTabData(tabId, true), [fetchTabData]);
+  const headerTitle = requestView ? 'Connection Requests' : 'My Network';
+  const headerDescription = requestView
+    ? 'Review and manage the people who want to connect with you.'
+    : 'Manage your connections and grow your professional network.';
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* ── Confirm dialog (portal-style overlay) ── */}
+    <div className="space-y-7 animate-fade-in">
       <AnimatePresence>
         {pending?.action === 'remove' && (
           <ConfirmDialog
             title="Remove this connection?"
             description="This will permanently remove the connection. You can always reconnect later."
             confirmLabel="Remove"
-            confirmCls="bg-rose-500 text-white hover:bg-rose-600 shadow-[0_6px_20px_rgba(239,68,68,0.3)]"
+            confirmClassName="bg-[var(--danger)] hover:bg-[var(--danger)]"
             onConfirm={handleRemoveConfirm}
             onCancel={() => setPending(null)}
           />
@@ -447,133 +534,139 @@ export default function MyNetworkPage({ initialTab = 'connections' }) {
             title="Cancel this connection request?"
             description="The request will be withdrawn. The recipient will no longer see it."
             confirmLabel="Cancel Request"
-            confirmCls="bg-amber-500 text-black hover:bg-amber-600 shadow-[0_6px_20px_rgba(245,158,11,0.3)]"
+            confirmClassName="bg-[var(--brand-amber)] text-[var(--brand-deep-navy)] hover:bg-[var(--brand-yellow)]"
             onConfirm={handleCancelConfirm}
             onCancel={() => setPending(null)}
           />
         )}
       </AnimatePresence>
 
-      {/* ── Page header ── */}
-      <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-7 sm:p-10 shadow-glow backdrop-blur-2xl">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,143,50,0.14),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(64,217,255,0.09),transparent_40%)] pointer-events-none" />
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
-          <div>
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 border border-accent/30">
-                <Users className="h-4 w-4 text-accent" />
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                My Network
-              </h1>
+      <section className="surface-card relative overflow-hidden p-6 sm:p-8">
+        <div className="pointer-events-none absolute right-0 top-0 h-44 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(198,161,91,0.15),transparent_65%)]" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--brand-navy)]">
+              {requestView ? <Inbox className="h-3.5 w-3.5 text-[var(--brand-amber)]" /> : <Users className="h-3.5 w-3.5 text-[var(--brand-amber)]" />}
+              {requestView ? 'Network inbox' : 'Professional network'}
             </div>
-            <p className="text-sm text-slate-400">
-              Manage your connections and connection requests.
-            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-4xl">{headerTitle}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--text-secondary)]">{headerDescription}</p>
           </div>
-
-          <Link
-            href="/dashboard/networking"
-            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 text-sm font-medium text-slate-200 hover:border-white/25 hover:bg-white/10 hover:text-white transition-all"
-          >
+          <Link href="/dashboard/networking" className="btn-primary w-full sm:w-fit">
+            <UserPlus className="h-4 w-4" />
             Discover People
+            <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
-      </div>
+      </section>
 
-      {/* ── Toast ── */}
       <AnimatePresence mode="wait">
-        {toast && (
-          <Toast
-            key={toast.id}
-            message={toast.message}
-            type={toast.type}
-            onDismiss={dismissToast}
-          />
-        )}
+        {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onDismiss={dismissToast} />}
       </AnimatePresence>
 
-      {/* ── Tabs ── */}
-      <div
-        className="flex items-center gap-2 sm:gap-3 border-b border-white/10 pb-1 overflow-x-auto no-scrollbar"
-        role="tablist"
-        aria-label="My Network sections"
-      >
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const isActive = activeTab === id;
-          const count = tabState[id].loaded ? counts[id] : null;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              data-testid={`tab-${id}`}
-              onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px ${
-                isActive
-                  ? 'border-accent text-accent bg-accent/5'
-                  : 'border-transparent text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              <span>{label}</span>
-              {count !== null && (
-                <span
-                  data-testid={`tab-count-${id}`}
-                  className={`ml-0.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                    isActive
-                      ? 'bg-accent/20 text-accent'
-                      : 'bg-white/8 text-slate-400'
-                  }`}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {requestView ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatCard id="received" label="Received" value={tabState.requests.loaded ? counts.requests : '—'} detail="Pending invitations" icon={Inbox} accent />
+          <StatCard id="sent" label="Sent" value={tabState.sent.loaded ? counts.sent : '—'} detail="Awaiting response" icon={Send} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard id="connections" label="Total connections" value={tabState.connections.loaded ? counts.connections : '—'} detail="People in your network" icon={Users} accent />
+          <StatCard id="requests" label="Pending requests" value={tabState.requests.loaded ? counts.requests : '—'} detail="Need your response" icon={Inbox} />
+          <StatCard id="sent" label="Sent invitations" value={tabState.sent.loaded ? counts.sent : '—'} detail="Awaiting response" icon={Send} />
+        </div>
+      )}
 
-      {/* ── Tab content ── */}
-      <div role="tabpanel" aria-label={activeTab}>
-        {loading ? (
-          <SectionSkeleton count={SKELETON_COUNT[activeTab] ?? 4} />
-        ) : error ? (
-          <SectionError
-            message={`Unable to load ${activeTab}. ${error}`}
-            onRetry={() => handleRetry(activeTab)}
-          />
-        ) : data.length === 0 ? (
-          <SectionEmpty tabId={activeTab} />
-        ) : (
-          <AnimatePresence initial={false}>
-            <div
-              data-testid={`${activeTab}-grid`}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-            >
-              {data.map((conn) => (
-                <ConnectionCard
-                  key={conn.id}
-                  conn={conn}
-                  variant={
-                    activeTab === 'connections'
-                      ? 'connection'
-                      : activeTab === 'requests'
-                      ? 'incoming'
-                      : 'sent'
-                  }
-                  onAccept={handleAccept}
-                  onReject={handleReject}
-                  onRemove={handleRemoveClick}
-                  onCancel={handleCancelClick}
-                  busy={!!busyIds[conn.id]}
-                />
-              ))}
+      <section className="surface-card overflow-hidden p-0">
+        <div className="flex flex-col gap-4 border-b border-[var(--border)] p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex overflow-x-auto rounded-xl bg-[var(--surface-subtle)] p-1" role="tablist" aria-label={requestView ? 'Connection request sections' : 'My Network sections'}>
+            {(requestView
+              ? [
+                { id: 'received', label: 'Received', icon: Inbox, tabId: 'requests' },
+                { id: 'sent', label: 'Sent', icon: Send, tabId: 'sent' },
+              ]
+              : TABS.map((tab) => ({ ...tab, tabId: tab.id }))
+            ).map(({ id, label, icon: Icon, tabId }) => {
+              const isActive = requestView ? requestTab === id : activeTab === id;
+              const count = tabState[tabId].loaded ? counts[tabId] : null;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  data-testid={requestView ? `request-tab-${id}` : `tab-${id}`}
+                  onClick={() => (requestView ? setRequestTab(id) : setActiveTab(id))}
+                  className={`relative inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2.5 text-sm font-semibold transition-colors sm:px-4 ${isActive ? 'bg-[var(--surface)] text-[var(--brand-navy)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                >
+                  <Icon className={`h-4 w-4 ${isActive ? 'text-[var(--brand-amber)]' : ''}`} aria-hidden="true" />
+                  {label}
+                  {count !== null && <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${isActive ? 'bg-[rgba(198,161,91,0.16)] text-[var(--brand-navy)]' : 'bg-[var(--surface)] text-[var(--text-muted)]'}`}>{count}</span>}
+                  {isActive && <span className="absolute inset-x-4 -bottom-1 h-0.5 rounded-full bg-[var(--brand-amber)]" aria-hidden="true" />}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row xl:min-w-[27rem] xl:justify-end">
+            <label className="relative block flex-1">
+              <span className="sr-only">Search {requestView ? 'connection requests' : 'your network'}</span>
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
+              <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={requestView ? 'Search requests by name…' : 'Search your network by name…'} className="input-base pl-10" />
+            </label>
+            <label className="relative flex items-center">
+              <SlidersHorizontal className="pointer-events-none absolute left-3 h-4 w-4 text-[var(--text-muted)]" aria-hidden="true" />
+              <span className="sr-only">Sort results</span>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="input-base min-w-40 appearance-none pl-9 pr-3">
+                <option value="recent">Most recent</option>
+                <option value="name">Name A–Z</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-5">
+          <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                {requestView ? (requestTab === 'sent' ? 'Sent invitations' : 'Received requests') : TABS.find((tab) => tab.id === activeTab)?.label}
+              </h2>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                {requestView
+                  ? requestTab === 'sent' ? 'Keep track of invitations waiting for a response.' : 'Review people who want to join your professional network.'
+                  : activeTab === 'connections' ? 'People you are connected with on CareerSphere.' : activeTab === 'requests' ? 'Requests waiting for your response.' : 'Invitations you have sent.'}
+              </p>
             </div>
-          </AnimatePresence>
-        )}
-      </div>
+            {tabState[dataTab].loaded && <span className="text-xs font-medium text-[var(--text-muted)]">{counts[dataTab]} {counts[dataTab] === 1 ? 'record' : 'records'}</span>}
+          </div>
+
+          {loading ? (
+            <SectionSkeleton count={SKELETON_COUNT[dataTab] || 3} list={dataTab !== 'connections'} />
+          ) : error ? (
+            <SectionError message={`Unable to load ${dataTab}. ${error}`} onRetry={() => handleRetry(dataTab)} />
+          ) : data.length === 0 ? (
+            <SectionEmpty tabId={dataTab} requestView={requestView} />
+          ) : visibleData.length === 0 ? (
+            <SearchEmpty requestView={requestView} />
+          ) : (
+            <AnimatePresence initial={false}>
+              {dataTab === 'connections' ? (
+                <div data-testid="connections-grid" className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleData.map((connection) => (
+                    <ConnectionCard key={connection.id} conn={connection} variant="connection" onRemove={handleRemoveClick} busy={!!busyIds[connection.id]} />
+                  ))}
+                </div>
+              ) : (
+                <div data-testid={`${dataTab}-grid`} className="space-y-3">
+                  {visibleData.map((connection) => (
+                    <RequestRow key={connection.id} conn={connection} variant={dataTab === 'requests' ? 'incoming' : 'sent'} onAccept={handleAccept} onReject={handleReject} onCancel={handleCancelClick} busy={!!busyIds[connection.id]} />
+                  ))}
+                </div>
+              )}
+            </AnimatePresence>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   BarChart2,
   Bell,
@@ -76,13 +76,15 @@ const networkingLinks = [
     label: 'My Network',
     href: '/dashboard/networking/my-network',
     icon: UsersRound,
-    isActive: (pathname) => pathname === '/dashboard/networking/my-network',
+    isActive: (pathname, searchParams) =>
+      pathname === '/dashboard/networking/my-network' && searchParams?.get('tab') !== 'requests',
   },
   {
     label: 'Requests',
     href: '/dashboard/networking/my-network?tab=requests',
     icon: Users,
-    isActive: (pathname) => pathname === '/dashboard/networking/my-network',
+    isActive: (pathname, searchParams) =>
+      pathname === '/dashboard/networking/my-network' && searchParams?.get('tab') === 'requests',
   },
   {
     label: 'Communities',
@@ -183,7 +185,7 @@ function NotificationDropdown({
   onClose,
 }) {
   return (
-    <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_36px_rgba(11,42,91,0.16)]">
+    <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_36px_rgba(16,27,45,0.16)]">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div>
           <p className="text-sm font-bold text-slate-900">Notifications</p>
@@ -278,9 +280,9 @@ function Brand({ compact = false, href = '/dashboard/home' }) {
   );
 }
 
-function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, badgeLabel }) {
+function NavLink({ item, pathname, searchParams, onClick, compact = false, badgeCount = 0, badgeLabel }) {
   const Icon = item.icon;
-  const active = item.isActive(pathname);
+  const active = item.isActive(pathname, searchParams);
 
   return (
     <Link
@@ -290,7 +292,7 @@ function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, bad
       title={!compact ? item.label : undefined}
       className={`group flex h-11 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
         active
-          ? 'border-brand-200 bg-brand-50 text-brand-600'
+          ? 'nav-active'
           : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
       } ${compact ? 'justify-start' : 'justify-center'}`}
     >
@@ -304,6 +306,8 @@ function NavLink({ item, pathname, onClick, compact = false, badgeCount = 0, bad
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchKey = searchParams?.toString() || '';
   const router = useRouter();
   const [netOpen, setNetOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -369,7 +373,7 @@ export default function Navbar() {
     setNotificationSource(null);
     setUserOpen(false);
     setMobileOpen(false);
-  }, [pathname]);
+  }, [pathname, searchKey]);
 
   const refreshCounts = useCallback(async () => {
     if (!hasAuthenticatedUser) return;
@@ -509,7 +513,7 @@ export default function Navbar() {
 
         <nav className="flex min-w-0 flex-1 items-center justify-center gap-1" aria-label="Primary navigation">
           {primaryNav.map((item) => (
-            <NavLink key={item.href} item={item} pathname={pathname} />
+            <NavLink key={item.href} item={item} pathname={pathname} searchParams={searchParams} />
           ))}
 
           <div className="relative" ref={netRef}>
@@ -538,11 +542,11 @@ export default function Navbar() {
             {netOpen && (
               <div
                 role="menu"
-                className="absolute left-1/2 top-full z-50 mt-3 w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(11,42,91,0.16)]"
+                className="absolute left-1/2 top-full z-50 mt-3 w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(16,27,45,0.16)]"
               >
                 {networkingLinks.map((item) => {
                   const Icon = item.icon;
-                  const active = item.isActive(pathname);
+                  const active = item.isActive(pathname, searchParams);
 
                   return (
                     <Link
@@ -567,6 +571,7 @@ export default function Navbar() {
           <NavLink
             item={messageNav}
             pathname={pathname}
+            searchParams={searchParams}
             badgeCount={messageUnreadCount}
             badgeLabel={`${messageUnreadCount} unread direct messages`}
           />
@@ -634,7 +639,7 @@ export default function Navbar() {
             {userOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-3 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(11,42,91,0.16)]"
+                className="absolute right-0 top-full z-50 mt-3 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_16px_36px_rgba(16,27,45,0.16)]"
               >
                 <Link
                   href={profileNav.href}
@@ -738,7 +743,7 @@ export default function Navbar() {
             aria-label="Close navigation menu"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white px-4 py-4 shadow-[20px_0_55px_rgba(11,42,91,0.14)]">
+          <div className="relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white px-4 py-4 shadow-[20px_0_55px_rgba(16,27,45,0.14)]">
             <div className="flex items-center justify-between gap-3">
               <Brand compact />
               <button
@@ -757,6 +762,7 @@ export default function Navbar() {
                   key={item.href}
                   item={item}
                   pathname={pathname}
+                  searchParams={searchParams}
                   onClick={() => setMobileOpen(false)}
                   compact
                 />
@@ -770,6 +776,7 @@ export default function Navbar() {
                   key={item.href}
                   item={item}
                   pathname={pathname}
+                  searchParams={searchParams}
                   onClick={() => setMobileOpen(false)}
                   compact
                 />
@@ -778,6 +785,7 @@ export default function Navbar() {
               <NavLink
                 item={messageNav}
                 pathname={pathname}
+                searchParams={searchParams}
                 onClick={() => setMobileOpen(false)}
                 compact
                 badgeCount={messageUnreadCount}
@@ -792,8 +800,8 @@ export default function Navbar() {
                 <span className="truncate">Notifications</span>
                 <CountBadge count={notificationUnreadCount} label={`${notificationUnreadCount} unread notifications`} />
               </Link>
-              <NavLink item={profileNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
-              <NavLink item={settingsNav} pathname={pathname} onClick={() => setMobileOpen(false)} compact />
+              <NavLink item={profileNav} pathname={pathname} searchParams={searchParams} onClick={() => setMobileOpen(false)} compact />
+              <NavLink item={settingsNav} pathname={pathname} searchParams={searchParams} onClick={() => setMobileOpen(false)} compact />
             </nav>
 
             <div className="border-t border-slate-200 pt-4">

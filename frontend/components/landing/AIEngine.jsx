@@ -26,8 +26,8 @@ export default function AIEngine() {
 
         <div className="mt-14 grid gap-10 lg:grid-cols-[1fr_0.9fr]">
           <div className="relative min-h-[34rem] rounded-[2.4rem] border border-white/10 bg-slate-950/65 p-6 overflow-hidden">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,143,50,0.14),transparent_28%),radial-gradient(circle_at_18%_16%,rgba(64,217,255,0.12),transparent_18%),radial-gradient(circle_at_78%_18%,rgba(155,124,255,0.12),transparent_18%)]" />
-            <div className="absolute left-1/2 top-1/2 h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_45%_38%,rgba(255,255,255,0.72),rgba(255,143,50,0.48),rgba(6,9,18,1)_74%)] shadow-[0_0_70px_rgba(255,143,50,0.26)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(198,161,91,0.14),transparent_28%),radial-gradient(circle_at_18%_16%,rgba(49,94,155,0.12),transparent_18%),radial-gradient(circle_at_78%_18%,rgba(198,161,91,0.12),transparent_18%)]" />
+            <div className="absolute left-1/2 top-1/2 h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_45%_38%,rgba(255,255,255,0.72),rgba(198,161,91,0.48),rgba(16,27,45,1)_74%)] shadow-[0_0_70px_rgba(198,161,91,0.26)]">
               <div className="absolute inset-4 rounded-full border border-white/15" />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="text-xs uppercase tracking-[0.3em] text-accentSoft">AI Engine</div>

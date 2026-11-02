@@ -127,7 +127,7 @@ export default function ResourceFormModal({ open, mode = 'create', resource = nu
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" aria-label="Close resource form" onClick={onClose} className="absolute inset-0 cursor-default bg-black/30 backdrop-blur-sm" />
-      <form onSubmit={handleSubmit} className="scrollbar-hidden relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(16,47,107,0.18)]">
+      <form onSubmit={handleSubmit} className="scrollbar-hidden relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(23,36,58,0.18)]">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">{title}</h2>

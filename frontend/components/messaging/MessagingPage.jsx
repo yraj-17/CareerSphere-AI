@@ -550,7 +550,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
           onClick={() => (mobile ? setMobileSidebarOpen(false) : setSidebarOpen(false))}
           aria-label={mobile ? 'Close conversations' : 'Collapse conversations sidebar'}
           title={mobile ? 'Close conversations' : 'Collapse sidebar'}
-          className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 shadow-sm transition-all duration-200 hover:-translate-x-0.5 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_6px_16px_rgba(11,42,91,0.12)] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+          className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 shadow-sm transition-all duration-200 hover:-translate-x-0.5 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_6px_16px_rgba(16,27,45,0.12)] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
         >
           {mobile ? (
             <X className="h-[18px] w-[18px] transition-transform duration-200 group-hover:rotate-90" />
@@ -606,7 +606,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
       {mobileSidebarOpen ? (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Conversation list">
           <button type="button" onClick={() => setMobileSidebarOpen(false)} className="absolute inset-0 bg-black/40" aria-label="Close conversation list" />
-          <aside className="relative z-10 flex h-full w-[min(320px,88vw)] flex-col bg-slate-50 shadow-[16px_0_32px_rgba(11,42,91,0.16)]">
+          <aside className="relative z-10 flex h-full w-[min(320px,88vw)] flex-col bg-slate-50 shadow-[16px_0_32px_rgba(16,27,45,0.16)]">
             {renderSidebar(true)}
           </aside>
         </div>

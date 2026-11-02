@@ -30,7 +30,7 @@ export default function InterviewDemo() {
           >
             <div className="absolute right-6 top-6 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-accent">Live Simulation</div>
             <div className="flex items-start gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-[1.6rem] border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.6),rgba(255,143,50,0.42),rgba(8,12,22,1)_72%)] text-white shadow-[0_0_45px_rgba(255,143,50,0.25)]">
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.6rem] border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.6),rgba(198,161,91,0.42),rgba(16,27,45,1)_72%)] text-white shadow-[0_0_45px_rgba(198,161,91,0.25)]">
                 AI
               </div>
               <div>
@@ -80,7 +80,7 @@ export default function InterviewDemo() {
                         <path
                           d="M18 2.5a15.5 15.5 0 1 1 0 31a15.5 15.5 0 1 1 0-31"
                           fill="none"
-                          stroke={index % 2 === 0 ? 'rgba(255,143,50,0.9)' : 'rgba(64,217,255,0.9)'}
+                          stroke={index % 2 === 0 ? 'rgba(198,161,91,0.9)' : 'rgba(49,94,155,0.9)'}
                           strokeWidth="2.8"
                           strokeDasharray={`${score.value}, 100`}
                           strokeLinecap="round"

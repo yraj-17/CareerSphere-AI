@@ -124,7 +124,7 @@ export default function ForwardModal({
 
       {/* Modal panel */}
       <div
-        className="relative flex w-full max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_rgba(11,42,91,0.2)]"
+        className="relative flex w-full max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_rgba(16,27,45,0.2)]"
         style={{ maxHeight: '70vh' }}
         onClick={(e) => e.stopPropagation()}
         data-testid="forward-modal"

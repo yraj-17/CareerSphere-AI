@@ -9,7 +9,7 @@ export default function GrammarSuggestions({ result, isChecking, error, onApply,
   }
 
   return (
-    <div className="rounded-2xl border border-cyan/30 bg-cyan/10 backdrop-blur-xl p-4 shadow-[0_0_30px_rgba(64,217,255,0.12)] space-y-3">
+    <div className="rounded-2xl border border-cyan/30 bg-cyan/10 backdrop-blur-xl p-4 shadow-[0_0_30px_rgba(49,94,155,0.12)] space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-white">
           <SpellCheck className="h-4 w-4 text-cyan" />

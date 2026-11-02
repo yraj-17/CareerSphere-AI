@@ -759,7 +759,7 @@ function PostComposer({ joined, onSubmit, disabled }) {
           <button
             type="submit"
             disabled={disabled || submitting}
-            className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black shadow-[0_8px_28px_rgba(255,143,50,0.22)] hover:bg-accentSoft disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black shadow-[0_8px_28px_rgba(23,36,58,0.16)] hover:bg-accentSoft disabled:opacity-60"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {submitting ? 'Posting...' : 'Post'}
@@ -1026,7 +1026,7 @@ export default function CommunityDetailPage({ communityId }) {
       )}
 
       <section className="overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] shadow-glow backdrop-blur-2xl">
-        <div className="h-36 bg-[radial-gradient(circle_at_20%_0%,rgba(255,143,50,0.20),transparent_42%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.95))]" />
+        <div className="h-36 bg-[radial-gradient(circle_at_20%_0%,rgba(198,161,91,0.20),transparent_42%),linear-gradient(135deg,rgba(16,27,45,0.95),rgba(16,27,45,0.95))]" />
         <div className="-mt-10 flex flex-col gap-5 p-6 sm:p-8 md:flex-row md:items-end md:justify-between">
           <div className="flex flex-col gap-4 sm:flex-row">
             {/* Community avatar / photo */}
@@ -1036,10 +1036,10 @@ export default function CommunityDetailPage({ communityId }) {
                 <img
                   src={communityImageUrl}
                   alt={`${community.name} community photo`}
-                  className="h-20 w-20 rounded-3xl border-2 border-accent/30 bg-slate-950 object-cover shadow-[0_0_28px_rgba(255,143,50,0.18)]"
+                  className="h-20 w-20 rounded-3xl border-2 border-accent/30 bg-slate-950 object-cover shadow-[0_0_28px_rgba(198,161,91,0.18)]"
                 />
               ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-accent/30 bg-slate-950 text-xl font-bold text-accent shadow-[0_0_28px_rgba(255,143,50,0.18)]">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-accent/30 bg-slate-950 text-xl font-bold text-accent shadow-[0_0_28px_rgba(198,161,91,0.18)]">
                   {getInitials(community.name)}
                 </div>
               )}

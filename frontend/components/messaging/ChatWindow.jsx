@@ -174,7 +174,7 @@ function DeleteConfirmDialog({ message, onConfirm, onCancel }) {
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <div
-        className="relative w-full max-w-xs rounded-xl border border-slate-200 bg-white p-5 shadow-[0_24px_64px_rgba(11,42,91,0.2)]"
+        className="relative w-full max-w-xs rounded-xl border border-slate-200 bg-white p-5 shadow-[0_24px_64px_rgba(16,27,45,0.2)]"
         data-testid="delete-confirm-dialog"
       >
         <div className="flex items-center gap-2 mb-3">
@@ -422,7 +422,7 @@ export default function ChatWindow({
           <div className="flex items-center gap-1.5">
             <span
               aria-hidden="true"
-              className={`h-2 w-2 rounded-full ${isOtherOnline ? 'bg-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.12)]' : 'bg-slate-300'}`}
+              className={`h-2 w-2 rounded-full ${isOtherOnline ? 'bg-[var(--success)] shadow-[0_0_0_3px_rgba(21,128,61,0.12)]' : 'bg-slate-300'}`}
             />
             <span className={`text-xs ${isOtherOnline ? 'font-medium text-emerald-700' : 'text-slate-500'}`}>
               {isOtherOnline ? 'Online' : 'Offline'}
@@ -434,7 +434,7 @@ export default function ChatWindow({
         {other?.id && (
           <Link
             href={`/dashboard/networking/${other.id}`}
-            className="group flex shrink-0 items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-100 hover:shadow-[0_8px_20px_rgba(11,42,91,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+            className="group flex shrink-0 items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-100 hover:shadow-[0_8px_20px_rgba(16,27,45,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             title="View Profile"
           >
             <span className="chat-inverse flex h-6 w-6 items-center justify-center rounded-lg bg-brand-500 shadow-sm transition-colors group-hover:bg-brand-600">
@@ -548,7 +548,7 @@ export default function ChatWindow({
           </div>
         )}
 
-        <div className="mx-auto flex max-w-[900px] items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 shadow-[0_8px_24px_rgba(16,47,107,0.08)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
+        <div className="mx-auto flex max-w-[900px] items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 shadow-[0_8px_24px_rgba(23,36,58,0.08)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
           <textarea
             ref={inputRef}
             data-testid="message-input"

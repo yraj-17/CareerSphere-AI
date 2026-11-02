@@ -11,7 +11,7 @@ export default function CTASection() {
 
   return (
     <section id="cta" className="px-4 py-24 md:px-8 md:py-32">
-      <div className="mx-auto max-w-7xl overflow-hidden rounded-[2.8rem] border border-white/10 bg-gradient-to-br from-[#140d08] via-[#0b1220] to-[#090c15] p-10 shadow-glow md:p-14">
+      <div className="mx-auto max-w-7xl overflow-hidden rounded-[2.8rem] border border-white/10 bg-gradient-to-br from-[#101B2D] via-[#17243A] to-[#101B2D] p-10 shadow-glow md:p-14">
         <div className="relative grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>
             <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-accent">
@@ -44,7 +44,7 @@ export default function CTASection() {
               transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
               className="absolute left-1/2 top-1/2 h-60 w-60 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-cyan/16"
             />
-            <div className="absolute left-1/2 top-1/2 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,255,255,0.8),rgba(255,143,50,0.48),rgba(7,9,15,1)_72%)] shadow-[0_0_70px_rgba(255,143,50,0.25)]">
+            <div className="absolute left-1/2 top-1/2 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,255,255,0.8),rgba(198,161,91,0.48),rgba(16,27,45,1)_72%)] shadow-[0_0_70px_rgba(198,161,91,0.25)]">
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                 <div className="text-xs uppercase tracking-[0.3em] text-accentSoft">CareerSphere AI</div>
                 <div className="mt-3 text-3xl font-semibold text-white">Launch Ready</div>

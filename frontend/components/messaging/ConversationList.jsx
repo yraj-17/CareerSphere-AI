@@ -34,7 +34,7 @@ function OnlineDot({ online }) {
     <span
       aria-label={online ? 'Online' : 'Offline'}
       title={online ? 'Online' : 'Offline'}
-      className={`block h-2.5 w-2.5 rounded-full border-2 border-white ${online ? 'bg-[#22c55e] shadow-[0_0_0_2px_rgba(34,197,94,0.12)]' : 'bg-slate-300'}`}
+      className={`block h-2.5 w-2.5 rounded-full border-2 border-white ${online ? 'bg-[var(--success)] shadow-[0_0_0_2px_rgba(21,128,61,0.12)]' : 'bg-slate-300'}`}
     />
   );
 }

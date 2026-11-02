@@ -116,7 +116,7 @@ export default function MessageActionMenu({
         absolute ${posClass} ${alignClass} z-50
         w-44 py-1.5 px-1
         rounded-xl border border-slate-200 bg-white
-        shadow-[0_12px_32px_rgba(11,42,91,0.16)]
+        shadow-[0_12px_32px_rgba(16,27,45,0.16)]
         animate-in fade-in zoom-in-95 duration-100
       `}
       role="menu"

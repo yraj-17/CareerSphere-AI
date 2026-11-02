@@ -371,7 +371,7 @@ export default function CareerAssistant() {
       {sidebarOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Conversation history">
           <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute inset-y-0 left-0 flex w-[min(280px,88vw)] flex-col shadow-[16px_0_32px_rgba(11,42,91,0.14)]">
+          <div className="absolute inset-y-0 left-0 flex w-[min(280px,88vw)] flex-col shadow-[16px_0_32px_rgba(16,27,45,0.14)]">
             <div className="min-h-0 flex-1">
               <ConversationSidebar
                 conversations={conversations}
@@ -497,7 +497,7 @@ export default function CareerAssistant() {
               }}
             />
 
-            <form onSubmit={handleSubmit} noValidate className="rounded-xl border border-slate-300 bg-white shadow-[0_8px_24px_rgba(16,47,107,0.08)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
+            <form onSubmit={handleSubmit} noValidate className="rounded-xl border border-slate-300 bg-white shadow-[0_8px_24px_rgba(23,36,58,0.08)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
               <label htmlFor="ai-prompt" className="sr-only">Ask CareerSphere AI</label>
               <textarea
                 id="ai-prompt"
@@ -535,7 +535,7 @@ export default function CareerAssistant() {
 
       {pendingDelete ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-[0_20px_50px_rgba(11,42,91,0.2)]">
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-[0_20px_50px_rgba(16,27,45,0.2)]">
             <h2 id="delete-conversation-title" className="text-base font-semibold text-slate-900">Delete conversation?</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">This will permanently delete “{pendingDelete.title || 'New conversation'}” and its messages.</p>
             <div className="mt-5 flex justify-end gap-2">

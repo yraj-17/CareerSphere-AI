@@ -32,16 +32,16 @@ export default function NetworkingSection() {
         </div>
 
         <div className="relative min-h-[34rem] rounded-[2.5rem] border border-white/10 bg-white/[0.04] p-6 shadow-glow backdrop-blur-xl overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,143,50,0.12),transparent_26%),radial-gradient(circle_at_18%_18%,rgba(64,217,255,0.1),transparent_18%),radial-gradient(circle_at_82%_18%,rgba(155,124,255,0.1),transparent_18%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,91,0.12),transparent_26%),radial-gradient(circle_at_18%_18%,rgba(49,94,155,0.1),transparent_18%),radial-gradient(circle_at_82%_18%,rgba(198,161,91,0.1),transparent_18%)]" />
           <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1000 700" preserveAspectRatio="none">
             {[
               [190, 200], [350, 90], [650, 90], [810, 200], [270, 570], [730, 570]
             ].map(([x, y], i) => (
-              <line key={i} x1="500" y1="350" x2={x} y2={y} stroke={i % 2 === 0 ? 'rgba(255,143,50,0.45)' : 'rgba(64,217,255,0.35)'} strokeWidth="1.4" strokeDasharray="7 8" />
+              <line key={i} x1="500" y1="350" x2={x} y2={y} stroke={i % 2 === 0 ? 'rgba(198,161,91,0.45)' : 'rgba(49,94,155,0.35)'} strokeWidth="1.4" strokeDasharray="7 8" />
             ))}
           </svg>
 
-          <div className="absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-[radial-gradient(circle_at_45%_35%,rgba(255,255,255,0.76),rgba(255,143,50,0.4),rgba(6,10,20,1)_75%)] shadow-[0_0_70px_rgba(255,143,50,0.24)]">
+          <div className="absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-[radial-gradient(circle_at_45%_35%,rgba(255,255,255,0.76),rgba(198,161,91,0.4),rgba(16,27,45,1)_75%)] shadow-[0_0_70px_rgba(198,161,91,0.24)]">
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
               <div className="text-xs uppercase tracking-[0.26em] text-accentSoft">Central Profile</div>
               <div className="mt-2 text-2xl font-semibold text-white">You</div>

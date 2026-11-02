@@ -39,7 +39,7 @@ export default function Navbar() {
           }`}
       >
         <a href="#home" className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 text-sm font-bold text-accent shadow-[0_0_25px_rgba(255,143,50,0.25)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 text-sm font-bold text-accent shadow-[0_0_25px_rgba(198,161,91,0.25)]">
             CS
           </div>
           <div>
@@ -62,7 +62,7 @@ export default function Navbar() {
               Login
             </Link>
           )}
-          <Link href={ctaHref} className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-black shadow-[0_8px_30px_rgba(255,143,50,0.35)] transition hover:-translate-y-0.5 hover:bg-accentSoft">
+          <Link href={ctaHref} className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-black shadow-[0_8px_30px_rgba(23,36,58,0.18)] transition hover:-translate-y-0.5 hover:bg-accentSoft">
             {ctaLabel}
           </Link>
         </div>

@@ -70,7 +70,7 @@ export default function Hero() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="mt-10 flex flex-col gap-4 sm:flex-row"
           >
-            <Link href={ctaHref} className="group inline-flex items-center justify-center rounded-full bg-accent px-7 py-4 text-base font-semibold text-black shadow-[0_20px_45px_rgba(255,143,50,0.28)] transition hover:-translate-y-1 hover:bg-accentSoft">
+            <Link href={ctaHref} className="group inline-flex items-center justify-center rounded-full bg-accent px-7 py-4 text-base font-semibold text-black shadow-[0_20px_45px_rgba(198,161,91,0.28)] transition hover:-translate-y-1 hover:bg-accentSoft">
               {ctaLabel}
               <ArrowRight className="ml-2 transition group-hover:translate-x-1" size={18} />
             </Link>
@@ -120,7 +120,7 @@ export default function Hero() {
               transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
               className="absolute inset-16 rounded-full border border-dashed border-cyan/15"
             />
-            <div className="absolute left-1/2 top-1/2 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.9),rgba(255,143,50,0.55),rgba(14,20,34,0.98)_72%)] shadow-[0_0_70px_rgba(255,143,50,0.28)]">
+            <div className="absolute left-1/2 top-1/2 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.9),rgba(198,161,91,0.55),rgba(16,27,45,0.98)_72%)] shadow-[0_0_70px_rgba(198,161,91,0.28)]">
               <div className="absolute inset-5 rounded-full border border-white/20 bg-[radial-gradient(circle_at_65%_35%,rgba(255,255,255,0.26),transparent_40%),linear-gradient(145deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))]" />
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                 <div className="text-xs uppercase tracking-[0.3em] text-accentSoft">AI Core</div>
@@ -132,7 +132,7 @@ export default function Hero() {
             {cards.map((card, index) => {
               const Icon = card.icon;
               const tint = card.tone === 'orange' ? 'from-accent/30 to-accent/5' : card.tone === 'cyan' ? 'from-cyan/25 to-cyan/5' : 'from-violet/25 to-violet/5';
-              const glow = card.tone === 'orange' ? 'shadow-[0_0_30px_rgba(255,143,50,0.18)]' : card.tone === 'cyan' ? 'shadow-[0_0_30px_rgba(64,217,255,0.16)]' : 'shadow-[0_0_30px_rgba(155,124,255,0.16)]';
+              const glow = card.tone === 'orange' ? 'shadow-[0_0_30px_rgba(198,161,91,0.18)]' : card.tone === 'cyan' ? 'shadow-[0_0_30px_rgba(49,94,155,0.16)]' : 'shadow-[0_0_30px_rgba(198,161,91,0.16)]';
               return (
                 <motion.div
                   key={card.label}

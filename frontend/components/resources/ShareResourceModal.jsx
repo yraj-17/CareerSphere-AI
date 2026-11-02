@@ -95,7 +95,7 @@ export default function ShareResourceModal({ open, resource, onClose, onShared }
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Share Resource">
       <button type="button" aria-label="Close share resource" onClick={onClose} className="absolute inset-0 cursor-default bg-black/30 backdrop-blur-sm" />
-      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(16,47,107,0.18)]">
+      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(23,36,58,0.18)]">
         <div className="border-b border-slate-200 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>

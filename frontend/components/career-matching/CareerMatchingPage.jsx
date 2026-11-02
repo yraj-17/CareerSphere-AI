@@ -111,12 +111,12 @@ function MatchScoreRing({ score }) {
   const circ = 2 * Math.PI * r;
   const pct = Math.min(100, Math.max(0, score));
   const offset = circ - (pct / 100) * circ;
-  const color = pct >= 75 ? '#102f6b' : pct >= 55 ? '#e89b00' : '#f4a300';
+  const color = pct >= 75 ? 'var(--brand-navy)' : pct >= 55 ? 'var(--brand-amber)' : 'var(--brand-yellow)';
 
   return (
     <div className="relative w-24 h-24 flex-shrink-0">
       <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
-        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(221,227,234,0.95)" strokeWidth="7" />
+        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(227,231,237,0.95)" strokeWidth="7" />
         <motion.circle
           cx="44"
           cy="44"
@@ -293,7 +293,7 @@ function ErrorState({ message, onRetry }) {
       <button
         type="button"
         onClick={onRetry}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
       >
         <RefreshCw className="h-4 w-4" />
         Retry
@@ -319,7 +319,7 @@ function EmptyState({ icon: Icon, title, description, linkLabel, linkHref }) {
       {linkHref && (
         <Link
           href={linkHref}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
         >
           {linkLabel}
           <ArrowUpRight className="h-4 w-4" />
@@ -517,7 +517,7 @@ function OpportunityCard({ result, index }) {
               href={result.application_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft hover:-translate-y-0.5 transition-all"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft hover:-translate-y-0.5 transition-all"
             >
               Apply Now
               <ArrowUpRight className="h-4 w-4" />

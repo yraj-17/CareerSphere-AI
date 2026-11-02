@@ -2,27 +2,33 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   Bookmark,
+  BookOpen,
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  GraduationCap,
   ImagePlus,
   Link2,
   Loader2,
+  MapPin,
   MessageCircle,
   MoreHorizontal,
   Pencil,
   Send,
+  Share2,
   Sparkles,
   Trash2,
   Users,
+  UsersRound,
   X,
   Heart,
 } from 'lucide-react';
 import ProfileAvatar from '@/components/common/ProfileAvatar';
+import SharePostModal from '@/components/home/SharePostModal';
 import { useAuth } from '@/context/AuthContext';
 import {
   createPost,
@@ -64,6 +70,25 @@ function displayName(user) {
 
 function profilePhoto(profile, user) {
   return profile?.profile_photo?.url || user?.profile_photo_url || user?.profile_photo?.url || null;
+}
+
+function dateValue(value) {
+  const parsed = Date.parse(value || '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function currentExperience(profile) {
+  const experiences = Array.isArray(profile?.experience) ? profile.experience : [];
+  return experiences
+    .filter((experience) => experience?.currently_working === true && experience.company)
+    .sort((a, b) => dateValue(b.start_date) - dateValue(a.start_date))[0] || null;
+}
+
+function latestEducation(profile) {
+  const education = Array.isArray(profile?.education) ? profile.education : [];
+  return [...education]
+    .filter((entry) => entry?.institution)
+    .sort((a, b) => dateValue(b.start_date) - dateValue(a.start_date) || dateValue(b.updated_at) - dateValue(a.updated_at))[0] || null;
 }
 
 function Avatar({ user, profile, size = 'h-11 w-11' }) {
@@ -300,6 +325,8 @@ function PostCard({ post, onChanged, onDeleted }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [busy, setBusy] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
   const [error, setError] = useState('');
 
   const toggleLike = async () => {
@@ -315,6 +342,13 @@ function PostCard({ post, onChanged, onDeleted }) {
       setLikeCount((count) => count + (next ? -1 : 1));
       setError(extractErrorMessage(likeError));
     }
+  };
+
+  const handlePostShared = (recipients) => {
+    const recipientList = Array.isArray(recipients) ? recipients : [];
+    setShareModalOpen(false);
+    setShareStatus(recipientList.length > 1 ? `Sent to ${recipientList.length} people` : `Sent to ${displayName(recipientList[0])}`);
+    window.setTimeout(() => setShareStatus(''), 2200);
   };
 
   const saveEdit = async () => {
@@ -334,7 +368,7 @@ function PostCard({ post, onChanged, onDeleted }) {
   };
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <article id={`post-${post.id}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
           <Avatar user={post.author} />
@@ -353,9 +387,11 @@ function PostCard({ post, onChanged, onDeleted }) {
       <ResourceAttachment resource={post.resource} />
 
       <div className="mt-4 flex items-center justify-between border-b border-slate-100 pb-3 text-xs text-slate-500"><span>{likeCount ? `${likeCount} ${likeCount === 1 ? 'like' : 'likes'}` : 'Be the first to like this'}</span><button type="button" onClick={() => setCommentsOpen((open) => !open)} className="hover:text-brand-600">{commentCount} {commentCount === 1 ? 'comment' : 'comments'}</button></div>
-      <div className="flex items-center gap-1 pt-2"><button type="button" onClick={toggleLike} className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${liked ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-brand-700'}`}><Heart className={`h-4 w-4 ${liked ? 'fill-current' : ''}`} /> {liked ? 'Liked' : 'Like'}</button><button type="button" onClick={() => setCommentsOpen((open) => !open)} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-700"><MessageCircle className="h-4 w-4" /> Comment</button></div>
+      <div className="flex items-center gap-1 pt-2"><button type="button" onClick={toggleLike} aria-pressed={liked} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-brand-700"><Heart className={`h-4 w-4 transition-colors ${liked ? 'fill-rose-600 text-rose-600' : 'text-slate-500'}`} /> {liked ? 'Liked' : 'Like'}</button><button type="button" onClick={() => setCommentsOpen((open) => !open)} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-700"><MessageCircle className="h-4 w-4" /> Comment</button><button type="button" onClick={() => setShareModalOpen(true)} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-700"><Share2 className="h-4 w-4" /> Share</button></div>
+      {shareStatus && <p className="mt-2 text-center text-xs font-medium text-emerald-700" role="status">{shareStatus}</p>}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       {commentsOpen && <CommentList post={post} onCountChange={(change) => setCommentCount((count) => count + change)} />}
+      <SharePostModal post={post} isOpen={shareModalOpen} onClose={() => setShareModalOpen(false)} onShared={handlePostShared} />
     </article>
   );
 }
@@ -412,24 +448,65 @@ export default function HomeFeedPage() {
 
   const currentUserProfile = profile || {};
   const headline = currentUserProfile.headline || 'Add a headline to help your network understand your focus.';
-  const memberSince = useMemo(() => user?.created_at ? new Date(user.created_at).getFullYear() : null, [user?.created_at]);
+  const activeExperience = currentExperience(currentUserProfile);
+  const recentEducation = latestEducation(currentUserProfile);
 
   if (isLoading || !isAuthenticated || !user) return <div className="flex min-h-[70vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-brand-500" /></div>;
 
   return (
-    <div className="min-h-screen bg-[#f3f5f7] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="min-h-screen bg-[#F5F6F8] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1520px]">
         <div className="mb-6 flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-600">Your professional network</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Home</h1><p className="mt-1 text-sm text-slate-500">A focused space for progress, ideas, and meaningful connections.</p></div><Link href="/dashboard/profile" className="btn-outline hidden px-3 py-2 text-xs sm:inline-flex"><Pencil className="h-3.5 w-3.5" /> Update profile</Link></div>
-        <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)_260px]">
-          <aside className="hidden space-y-4 lg:block">
-            <SideCard className="overflow-hidden p-0"><div className="h-14 bg-gradient-to-r from-[#0B2A5B] to-[#102F6B]" /><div className="px-4 pb-4"><div className="-mt-7"><Avatar user={user} profile={profile} size="h-14 w-14 ring-4 ring-white" /></div><p className="mt-3 truncate text-sm font-bold text-slate-900">{displayName(user)}</p><p className="mt-1 text-xs leading-5 text-slate-500">{headline}</p>{currentUserProfile.location && <p className="mt-2 truncate text-xs text-slate-400">{currentUserProfile.location}</p>}{currentUserProfile.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{currentUserProfile.skills.slice(0, 3).map((skill) => <span key={skill.id || skill.name} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">{skill.name}</span>)}</div>}<Link href="/dashboard/profile" className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-semibold text-brand-600 hover:text-brand-800">View profile <ArrowUpRight className="h-3.5 w-3.5" /></Link></div></SideCard>
-            <SideCard><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Shortcuts</p><nav className="mt-3 space-y-1"><Link href="/dashboard" className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><BriefcaseBusiness className="h-4 w-4" /> Dashboard overview</Link><Link href="/dashboard/resources?filter=saved" className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><Bookmark className="h-4 w-4" /> Saved resources</Link><Link href="/dashboard/networking/my-network" className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><Users className="h-4 w-4" /> My network</Link><Link href="/dashboard/ai" className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><Sparkles className="h-4 w-4" /> AI Career Assistant</Link></nav></SideCard>
-            {memberSince && <p className="px-2 text-[11px] text-slate-400">Member since {memberSince}</p>}
+        <div className="grid items-start gap-6 lg:grid-cols-[210px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)_280px]">
+          <aside className="hidden self-start space-y-3 lg:sticky lg:top-24 lg:block">
+            <SideCard className="p-3">
+              <div className="flex items-start gap-3">
+                <Avatar user={user} profile={profile} size="h-14 w-14" />
+                <div className="min-w-0 pt-0.5">
+                  <p className="truncate text-sm font-bold text-slate-900">{displayName(user)}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500">{headline}</p>
+                </div>
+              </div>
+              {currentUserProfile.location && <p className="mt-2 flex items-center gap-1.5 truncate text-[11px] text-slate-500"><MapPin className="h-3.5 w-3.5 shrink-0 text-amber-600" />{currentUserProfile.location}</p>}
+              {(activeExperience || recentEducation) && (
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  {activeExperience && (
+                    <div className="flex min-w-0 items-start gap-2">
+                      <BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-slate-400">Currently working at</p>
+                        <p className="truncate text-[11px] font-semibold text-slate-700" title={activeExperience.company}>{activeExperience.company}</p>
+                      </div>
+                    </div>
+                  )}
+                  {recentEducation && (
+                    <div className="flex min-w-0 items-start gap-2">
+                      <GraduationCap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-slate-400">Education</p>
+                        <p className="truncate text-[11px] font-semibold text-slate-700" title={recentEducation.institution}>{recentEducation.institution}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <Link href="/dashboard/profile" className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-semibold text-brand-600 hover:text-brand-800">View profile <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+            </SideCard>
+            <SideCard className="p-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Shortcuts</p>
+              <nav className="mt-2 space-y-0.5">
+                <Link href="/dashboard" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><BriefcaseBusiness className="h-3.5 w-3.5" /> Dashboard overview</Link>
+                <Link href="/dashboard/resources?filter=saved" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><Bookmark className="h-3.5 w-3.5" /> Saved resources</Link>
+                <Link href="/dashboard/networking/my-network" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><Users className="h-3.5 w-3.5" /> My network</Link>
+                <Link href="/dashboard/resources" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><BookOpen className="h-3.5 w-3.5" /> Resources</Link>
+                <Link href="/dashboard/communities" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-brand-700"><UsersRound className="h-3.5 w-3.5" /> Communities</Link>
+              </nav>
+            </SideCard>
           </aside>
 
           <main className="min-w-0 space-y-4"><Composer user={user} profile={profile} resources={resources} onCreated={(post) => setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)])} /><div className="flex items-center justify-between px-1"><div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><span className="h-px w-8 bg-slate-300" /> Latest updates</div><span className="text-[11px] text-slate-400">Newest first</span></div>{loading ? <LoadingLine /> : error && !posts.length ? <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{error}</div> : posts.length ? <>{posts.map((post) => <PostCard key={post.id} post={post} onChanged={(updated) => setPosts((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleted={(postId) => setPosts((current) => current.filter((item) => item.id !== postId))} />)}{hasMore && <button type="button" onClick={loadMore} disabled={loadingMore} className="btn-outline w-full py-3 text-xs">{loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className="h-4 w-4" />} Load more posts</button>}</> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-7 text-center shadow-sm sm:p-8"><div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600"><Sparkles className="h-4 w-4" /></div><h2 className="mt-3 text-base font-bold text-slate-900">Share your first update</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">Be the first to share an update with your network.</p></div>}</main>
 
-          <aside className="space-y-4">
+          <aside className="hidden self-start space-y-4 xl:sticky xl:top-24 xl:block">
             <SideCard><div className="flex items-center justify-between"><p className="text-sm font-bold text-slate-900">People to connect with</p><Users className="h-4 w-4 text-amber-600" /></div>{suggestionsLoading ? <div className="mt-4 space-y-3" aria-label="Loading connection suggestions"><div className="h-9 animate-pulse rounded-lg bg-slate-100" /><div className="h-9 animate-pulse rounded-lg bg-slate-100" /></div> : suggestionsError ? <p className="mt-3 text-xs leading-5 text-red-600">{suggestionsError}</p> : suggestions.length > 0 ? <><div className="mt-4 space-y-4">{suggestions.map((person) => <Suggestion key={person.id} person={person} />)}</div><Link href="/dashboard/networking" className="mt-4 block border-t border-slate-100 pt-3 text-center text-xs font-semibold text-brand-600 hover:text-brand-800">Explore more people</Link></> : <p className="mt-3 text-xs leading-5 text-slate-500">No new connection suggestions right now.</p>}</SideCard>
             <SideCard><p className="text-sm font-bold text-slate-900">Keep growing</p><p className="mt-1 text-xs leading-5 text-slate-500">Use CareerSphere tools to turn your next step into a plan.</p><div className="mt-3 space-y-2"><Link href="/dashboard/skill-analysis" className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-brand-50 hover:text-brand-700"><BriefcaseBusiness className="h-4 w-4 text-amber-600" /> Review skill gaps <ArrowUpRight className="ml-auto h-3.5 w-3.5" /></Link><Link href="/dashboard/career-matching" className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-brand-50 hover:text-brand-700"><Sparkles className="h-4 w-4 text-amber-600" /> Explore career matches <ArrowUpRight className="ml-auto h-3.5 w-3.5" /></Link></div></SideCard>
           </aside>

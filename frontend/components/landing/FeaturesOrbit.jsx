@@ -34,9 +34,9 @@ export default function FeaturesOrbit() {
 
         <div className="mt-16 grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="relative min-h-[46rem] rounded-[2.5rem] border border-white/10 bg-white/[0.03] p-6 shadow-glow backdrop-blur-xl">
-            <div className="absolute inset-0 rounded-[2.5rem] bg-[radial-gradient(circle_at_50%_45%,rgba(255,143,50,0.12),transparent_24%),radial-gradient(circle_at_18%_14%,rgba(64,217,255,0.10),transparent_20%),radial-gradient(circle_at_82%_18%,rgba(155,124,255,0.12),transparent_20%)]" />
+            <div className="absolute inset-0 rounded-[2.5rem] bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,91,0.12),transparent_24%),radial-gradient(circle_at_18%_14%,rgba(49,94,155,0.10),transparent_20%),radial-gradient(circle_at_82%_18%,rgba(198,161,91,0.12),transparent_20%)]" />
 
-            <div className="absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/30 bg-[radial-gradient(circle,rgba(255,143,50,0.35),rgba(255,143,50,0.08),rgba(8,12,22,1)_76%)] shadow-[0_0_60px_rgba(255,143,50,0.22)]">
+            <div className="absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/30 bg-[radial-gradient(circle,rgba(198,161,91,0.35),rgba(198,161,91,0.08),rgba(16,27,45,1)_76%)] shadow-[0_0_60px_rgba(198,161,91,0.22)]">
               <div className="absolute inset-4 rounded-full border border-white/10" />
               <div className="absolute inset-0 flex items-center justify-center text-center">
                 <div>
@@ -58,7 +58,7 @@ export default function FeaturesOrbit() {
                     y1="50%"
                     x2={points[0]}
                     y2={points[1]}
-                    stroke={index === active ? 'rgba(255,143,50,0.7)' : 'rgba(255,255,255,0.12)'}
+                    stroke={index === active ? 'rgba(198,161,91,0.7)' : 'rgba(255,255,255,0.12)'}
                     strokeWidth={index === active ? 2 : 1}
                     strokeDasharray="6 8"
                   />
@@ -78,7 +78,7 @@ export default function FeaturesOrbit() {
                     whileHover={{ y: -10, scale: 1.03 }}
                     className={`absolute ${item.position} w-52 rounded-[1.75rem] border p-5 text-left backdrop-blur-xl transition-all ${
                       isActive
-                        ? 'border-accent/40 bg-white/[0.09] shadow-[0_0_50px_rgba(255,143,50,0.18)]'
+                        ? 'border-accent/40 bg-white/[0.09] shadow-[0_0_50px_rgba(198,161,91,0.18)]'
                         : 'border-white/10 bg-white/[0.04]'
                     }`}
                     style={{ transform: `translateZ(${isActive ? 60 : 15}px)` }}

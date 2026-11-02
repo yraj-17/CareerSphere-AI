@@ -25,7 +25,7 @@ const STATUS_CFG = {
   none: {
     label: 'Connect',
     icon: UserPlus,
-    cls: 'bg-accent text-black font-semibold shadow-[0_6px_20px_rgba(255,143,50,0.30)] hover:bg-accentSoft hover:-translate-y-0.5 active:translate-y-0',
+    cls: 'bg-accent text-black font-semibold shadow-[0_6px_20px_rgba(23,36,58,0.16)] hover:bg-accentSoft hover:-translate-y-0.5 active:translate-y-0',
     disabled: false,
   },
   pending: {

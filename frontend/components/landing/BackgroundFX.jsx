@@ -15,7 +15,7 @@ export default function BackgroundFX() {
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-bg">
       <div className="absolute inset-0 bg-hero-radial opacity-70" />
       <div className="absolute inset-0 bg-grid-pattern opacity-60" />
-      <div className="absolute inset-x-0 top-0 h-[24rem] bg-[radial-gradient(circle_at_50%_0%,rgba(16,47,107,0.08),transparent_62%)]" />
+      <div className="absolute inset-x-0 top-0 h-[24rem] bg-[radial-gradient(circle_at_50%_0%,rgba(23,36,58,0.08),transparent_62%)]" />
       <div className="absolute left-1/2 top-40 h-80 w-80 -translate-x-1/2 rounded-full bg-accent/5 blur-[110px]" />
       <div className="absolute right-[8%] top-[18%] h-64 w-64 rounded-full bg-cyan/5 blur-[100px]" />
       <div className="absolute left-[7%] top-[45%] h-72 w-72 rounded-full bg-violet/5 blur-[120px]" />
@@ -29,9 +29,9 @@ export default function BackgroundFX() {
         />
       ))}
       <svg className="absolute inset-0 h-full w-full opacity-30" viewBox="0 0 1440 1200" preserveAspectRatio="none">
-        <path d="M100 220 C280 130, 420 280, 620 210 S980 110, 1240 250" stroke="rgba(16,47,107,0.10)" strokeWidth="1.2" fill="none" />
-        <path d="M130 720 C360 640, 520 840, 760 720 S1110 580, 1320 770" stroke="rgba(16,47,107,0.08)" strokeWidth="1" fill="none" />
-        <path d="M80 990 C260 900, 450 1020, 680 930 S1040 850, 1300 980" stroke="rgba(232,155,0,0.10)" strokeWidth="1" fill="none" />
+        <path d="M100 220 C280 130, 420 280, 620 210 S980 110, 1240 250" stroke="rgba(23,36,58,0.10)" strokeWidth="1.2" fill="none" />
+        <path d="M130 720 C360 640, 520 840, 760 720 S1110 580, 1320 770" stroke="rgba(23,36,58,0.08)" strokeWidth="1" fill="none" />
+        <path d="M80 990 C260 900, 450 1020, 680 930 S1040 850, 1300 980" stroke="rgba(198,161,91,0.10)" strokeWidth="1" fill="none" />
       </svg>
     </div>
   );

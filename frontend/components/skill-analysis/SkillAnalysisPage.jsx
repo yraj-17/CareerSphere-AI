@@ -46,7 +46,7 @@ import { getSkillAnalysis, extractErrorMessage } from '@/services/api';
  * Animated SVG ring for coverage percentages.
  * pct is exactly the integer from coverage.required_pct / overall_pct / recommended_pct.
  */
-function CoverageRing({ pct, label, color, trackColor = 'rgba(221,227,234,0.95)' }) {
+function CoverageRing({ pct, label, color, trackColor = 'rgba(227,231,237,0.95)' }) {
   const r = 52;
   const circ = 2 * Math.PI * r;
   const offset = circ - (Math.min(100, Math.max(0, pct)) / 100) * circ;
@@ -161,7 +161,7 @@ function FilterPill({ label, active, onClick, count }) {
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
         active
-          ? 'bg-accent text-black shadow-[0_4px_20px_rgba(255,143,50,0.3)]'
+          ? 'bg-accent text-black shadow-[0_4px_20px_rgba(23,36,58,0.16)]'
           : 'border border-white/10 text-slate-400 hover:border-white/20 hover:text-white'
       }`}
     >
@@ -252,7 +252,7 @@ function ErrorState({ message, onRetry }) {
       <button
         type="button"
         onClick={onRetry}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
       >
         <RefreshCw className="h-4 w-4" />
         Retry
@@ -278,7 +278,7 @@ function EmptyState({ icon: Icon, title, description, linkLabel, linkHref }) {
       {linkHref && (
         <Link
           href={linkHref}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(255,143,50,0.3)] hover:bg-accentSoft transition-all"
+          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent text-black text-sm font-semibold shadow-[0_8px_30px_rgba(23,36,58,0.18)] hover:bg-accentSoft transition-all"
         >
           {linkLabel}
           <ArrowRight className="h-4 w-4" />
@@ -476,17 +476,17 @@ export default function SkillAnalysisPage() {
             <CoverageRing
               pct={coverage.overall_pct}
               label="Overall"
-              color="#102f6b"
+              color="#17243A"
             />
             <CoverageRing
               pct={coverage.required_pct}
               label="Required"
-              color="#e89b00"
+              color="#C6A15B"
             />
             <CoverageRing
               pct={coverage.recommended_pct}
               label="Recommended"
-              color="#f4a300"
+              color="#D6B875"
             />
           </div>
         </Card>
