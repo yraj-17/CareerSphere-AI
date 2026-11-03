@@ -20,7 +20,8 @@ export default function AppChrome({ children }) {
   return (
     <>
       {isLanding || isDedicatedChat || isCommunities || isResources || isAuthPage ? null : <BackgroundFX />}
-      {isLanding || isDedicatedChat ? null : (
+      {/* Signup renders its own single, minimal header. */}
+      {isLanding || isDedicatedChat || isSignup ? null : (
         <Suspense fallback={<div className="h-[68px] border-b border-slate-200 bg-white min-[1360px]:h-[76px]" aria-hidden="true" />}>
           <Navbar />
         </Suspense>

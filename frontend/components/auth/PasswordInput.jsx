@@ -48,6 +48,8 @@ export default function PasswordInput({
           autoComplete={autoComplete}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={error ? `${id}-error` : undefined}
+          // Password-manager/autofill extensions inject inline styles before hydration.
+          suppressHydrationWarning
           className={`block w-full rounded-xl border pl-10 pr-11 py-2 text-[13px] text-[#172033] placeholder-[#667085] transition-all duration-200 focus:outline-none focus:ring-2 ${borderClass} ${
             disabled ? 'opacity-60 cursor-not-allowed bg-[#F5F6F8]' : ''
           }`}

@@ -6,9 +6,9 @@ import { Check, Circle } from 'lucide-react';
 export default function PasswordRules({ password = '' }) {
   const rules = [
     { id: 'length',    label: 'At least 8 characters',     valid: password.length >= 8 },
-    { id: 'uppercase', label: 'One uppercase letter (A-Z)', valid: /[A-Z]/.test(password) },
-    { id: 'lowercase', label: 'One lowercase letter (a-z)', valid: /[a-z]/.test(password) },
-    { id: 'number',    label: 'One number (0-9)',           valid: /[0-9]/.test(password) },
+    { id: 'uppercase', label: 'One uppercase letter (A–Z)', valid: /[A-Z]/.test(password) },
+    { id: 'lowercase', label: 'One lowercase letter (a–z)', valid: /[a-z]/.test(password) },
+    { id: 'number',    label: 'One number (0–9)',           valid: /[0-9]/.test(password) },
   ];
 
   const allValid = rules.every((r) => r.valid);
@@ -22,7 +22,7 @@ export default function PasswordRules({ password = '' }) {
       <p className={`font-semibold ${allValid ? 'text-[#15803D]' : 'text-[#667085]'}`}>
         {allValid ? '✓ Password requirements met' : 'Password must contain:'}
       </p>
-      <ul className="grid grid-cols-2 gap-x-3 gap-y-1" aria-label="Password requirements">
+      <ul className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2" aria-label="Password requirements">
         {rules.map((rule) => (
           <li
             key={rule.id}
