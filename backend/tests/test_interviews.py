@@ -15,6 +15,7 @@ import uuid
 from datetime import timedelta
 from typing import Optional
 
+import httpx
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -196,6 +197,18 @@ def sequential_preparation(monkeypatch):
     monkeypatch.setattr(svc, "prepare_remaining_questions", _noop)
 
 
+@pytest.fixture(autouse=True)
+def no_verified_bank(monkeypatch):
+    """
+    Lifecycle tests here must not depend on whichever problems happen to be seeded in the
+    dev database: with no verified bank, coding/SQL slots are reserved-unavailable, so the
+    conceptual flow is deterministic. Coding answers are covered in test_practical_assessments.
+    """
+    from app.services import practical_service
+
+    monkeypatch.setattr(practical_service, "_verified_problems", lambda db: [])
+
+
 @pytest.fixture
 def model(monkeypatch):
     fake = FakeModel()
@@ -364,7 +377,7 @@ def test_generation_failure_persists_nothing(user, model):
 def test_invalid_model_output_is_retried_once_then_fails(user, model):
     model.push("GeneratedQuestion", "not json", {"question_text": "short"})
     res = client.post("/api/interviews", json={"target_role": "Data Analyst", "interview_type": "TECHNICAL"}, headers=user["headers"])
-    assert res.status_code == 503
+    assert res.status_code == 502 and res.json()["detail"]["category"] == ai.INVALID_RESPONSE
     assert model.count("GeneratedQuestion") == ai.MAX_ATTEMPTS == 2
 
 
@@ -630,7 +643,9 @@ def test_report_generation_persistence_and_retrieval(user, model):
     assert agg["question_count"] == 4 and agg["answered_count"] == 2 and agg["evaluated_count"] == 2
     practical = agg["sections"]["practical"]
     assert practical["reserved"] == 1 and practical["reached"] == 1 and practical["assessed"] == 0
-    assert practical["score"] is None and practical["items"][0]["status"] == "not_available"
+    # A verified problem assigned to the coding/SQL slot is "awaiting_editor"; with none it is "not_available".
+    # Either way the slot is unscored until candidate code submission is enabled.
+    assert practical["score"] is None and practical["items"][0]["status"] in ("not_available", "awaiting_editor")
     assert agg["sections"]["conceptual"]["score"] == tech and agg["sections"]["behavioral"]["score"] == beh
     assert agg["category_scores"] == {"TECHNICAL": tech, "BEHAVIORAL": beh}
     assert agg["dimension_scores"]["accuracy"] == 90 and agg["dimension_scores"]["structure"] == 60
@@ -883,7 +898,7 @@ def test_aggregate_with_no_evaluations():
 def test_migration_head_and_schema():
     with engine.connect() as conn:
         version = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "019_interview_navigation"
+    assert version == "021_practical_assessments"
     inspector = sa.inspect(engine)
     tables = set(inspector.get_table_names())
     assert {"interview_sessions", "interview_questions", "interview_answers", "interview_reports"} <= tables
@@ -893,3 +908,111 @@ def test_migration_head_and_schema():
     assert "uq_interview_report_session" in {uc["name"] for uc in inspector.get_unique_constraints("interview_reports")}
     fks = inspector.get_foreign_keys("interview_sessions")
     assert any(fk["referred_table"] == "users" and fk["options"].get("ondelete") == "CASCADE" for fk in fks)
+
+
+def test_report_waits_for_an_evaluation_still_running_in_another_request(user, model, monkeypatch):
+    """Ending right after answering: the report must include that answer's score, not compute without it."""
+    from app.db.models import InterviewAIStatus, InterviewAnswer
+
+    interview = _create(user)
+    _answer(user, interview)
+    db = SessionLocal()
+    try:
+        answer = db.query(InterviewAnswer).filter(InterviewAnswer.session_id == interview["id"]).one()
+        answer_id, final_score, final_eval = answer.id, answer.score, answer.evaluation
+        # Simulate the evaluation still in flight in the submitting request: claimed, PENDING, recent.
+        answer.evaluation_status, answer.evaluation_attempts, answer.score = InterviewAIStatus.PENDING, 1, None
+        db.commit()
+    finally:
+        db.close()
+
+    async def finish_later():
+        await asyncio.sleep(0.5)
+        other = SessionLocal()
+        try:
+            row = other.get(InterviewAnswer, answer_id)
+            row.evaluation_status, row.score, row.evaluation = InterviewAIStatus.COMPLETED, final_score, final_eval
+            other.commit()
+        finally:
+            other.close()
+
+    monkeypatch.setattr(svc, "REPORT_INFLIGHT_POLL_SECONDS", 0.1)
+    original = svc._await_inflight_evaluations
+
+    pending_tasks = []
+
+    async def with_concurrent_finish(db, session_id):
+        # The other request finishes its evaluation concurrently; the report must wait for it.
+        pending_tasks.append(asyncio.create_task(finish_later()))
+        await original(db, session_id)
+
+    monkeypatch.setattr(svc, "_await_inflight_evaluations", with_concurrent_finish)
+    client.post(f"/api/interviews/{interview['id']}/complete", headers=user["headers"])
+    report = client.post(f"/api/interviews/{interview['id']}/report/generate", headers=user["headers"]).json()
+    assert report["aggregates"]["evaluated_count"] == 1
+    assert report["overall_score"] == final_score
+    assert model.count("TechnicalEvaluation") == 1  # waited; did not re-evaluate the claimed answer
+
+
+# ---------------------------------------------------------------------------
+# First-question failures are categorised (the real _call_model transport mapping)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "error, category, phrase",
+    [
+        (httpx.ReadTimeout("timed out"), ai.LLM_TIMEOUT, "busy with other requests"),
+        (httpx.ConnectError("refused"), ai.LLM_UNAVAILABLE, "can't reach the AI model"),
+    ],
+)
+def test_first_question_transport_failures_are_categorised_and_persist_nothing(user, monkeypatch, error, category, phrase):
+    calls = []
+
+    async def chat(**kwargs):
+        calls.append(kwargs)
+        raise error
+
+    monkeypatch.setattr(ai._client, "chat", chat)  # the real _call_model maps the transport error
+    res = client.post("/api/interviews", json={"target_role": "Frontend Developer", "interview_type": "TECHNICAL",
+                                               "difficulty": "INTERMEDIATE", "duration_minutes": 15, "question_count": 6},
+                      headers=user["headers"])
+    assert res.status_code == 503
+    detail = res.json()["detail"]
+    assert detail["stage"] == "generation" and detail["category"] == category and phrase in detail["message"]
+    assert "Nothing was saved" in detail["message"]
+    assert type(error).__name__ not in json.dumps(detail)  # no raw exception names or internals
+    assert len(calls) == 1  # transport failures are not retried within the request
+    assert client.get("/api/interviews", headers=user["headers"]).json()["total"] == 0
+
+
+def test_retry_after_a_failed_first_question_creates_exactly_one_session(user, model):
+    model.push("GeneratedQuestion", AIServiceError("ReadTimeout"))
+    first = client.post("/api/interviews", json={"target_role": "Frontend Developer", "interview_type": "TECHNICAL"}, headers=user["headers"])
+    assert first.status_code == 503
+    second = client.post("/api/interviews", json={"target_role": "Frontend Developer", "interview_type": "TECHNICAL"}, headers=user["headers"])
+    assert second.status_code == 201
+    assert client.get("/api/interviews", headers=user["headers"]).json()["total"] == 1
+    detail = client.get(f"/api/interviews/{second.json()['id']}", headers=user["headers"]).json()
+    assert [q["question_order"] for q in detail["questions"]] == [1] and detail["questions"][0]["kind"] == "question"
+
+
+def test_database_failure_while_saving_rolls_back_completely(user, model, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session as OrmSession
+
+    original_flush = OrmSession.flush
+
+    def failing_flush(self, *args, **kwargs):
+        if any(isinstance(obj, InterviewSession) for obj in self.new):
+            raise OperationalError("INSERT", {}, Exception("database unavailable"))
+        return original_flush(self, *args, **kwargs)
+
+    monkeypatch.setattr(OrmSession, "flush", failing_flush)
+    res = client.post("/api/interviews", json={"target_role": "Frontend Developer", "interview_type": "TECHNICAL"}, headers=user["headers"])
+    monkeypatch.setattr(OrmSession, "flush", original_flush)
+    assert res.status_code == 500
+    detail = res.json()["detail"]
+    assert detail["stage"] == "persistence" and detail["category"] == "database_persistence"
+    assert "database unavailable" not in json.dumps(detail)
+    assert client.get("/api/interviews", headers=user["headers"]).json()["total"] == 0

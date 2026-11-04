@@ -330,7 +330,14 @@ export default function InterviewSetupPage() {
   const practical = practicalCount(form.interviewType, form.questionCount);
   const plannedSlots = plan?.blueprint?.question_slots || [];
   const availableKinds = new Set(plan?.assessment_kinds_available || []);
-  const reservedKinds = [...new Set(plannedSlots.filter((s) => s.kind !== 'question' && !availableKinds.has(s.kind)).map((s) => s.kind))];
+  // Practical slots that won't be assessed: kinds not enabled here, or no verified assessment for this role.
+  const reservedKinds = [
+    ...new Set(
+      plannedSlots
+        .filter((s) => s.kind !== 'question' && (!availableKinds.has(s.kind) || s.assessment_available === false))
+        .map((s) => s.kind)
+    ),
+  ];
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -803,8 +810,9 @@ export default function InterviewSetupPage() {
                 )}
                 {reservedKinds.length > 0 && (
                   <p className="mt-2 rounded-lg border border-[rgba(198,161,91,0.35)] bg-[rgba(198,161,91,0.1)] p-2 text-xs leading-5 text-[var(--text-secondary)]">
-                    {reservedKinds.map((k) => PRACTICAL_KIND_LABELS[k] || k).join(', ')} slots are reserved in this plan. The assessment
-                    environment isn&apos;t enabled yet, so those slots will be shown and skipped, and are not scored.
+                    {reservedKinds.map((k) => PRACTICAL_KIND_LABELS[k] || k).join(', ')} slots are reserved in this plan but can&apos;t be
+                    assessed here yet (no verified assessment exists for this role and competency), so they will be
+                    shown and skipped, and are not scored.
                   </p>
                 )}
               </div>

@@ -124,6 +124,23 @@ export const PRACTICAL_KIND_LABELS = {
   scenario: 'Practical scenario',
 };
 
+/** Report status of a practical slot (backend: interview_scoring._practical_section). */
+export const PRACTICAL_STATUS_LABELS = {
+  not_available: 'No verified assessment',
+  awaiting_editor: 'Verified problem assigned · code submission not available (not scored)',
+  not_reached: 'Not reached',
+  not_answered: 'Not answered',
+  not_assessed: 'Not assessed',
+  assessed: 'Assessed',
+};
+
+/** How a practical result was produced. */
+export const PRACTICAL_METHOD_LABELS = {
+  deterministic: 'Auto-graded',
+  ai_rubric: 'AI-reviewed, not executed',
+  judge0: 'Executed on Judge0',
+};
+
 export function slotKindLabel(kind) {
   return kind === 'question' ? 'Conceptual' : PRACTICAL_KIND_LABELS[kind] || 'Practical';
 }

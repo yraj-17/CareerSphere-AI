@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, BigInteger, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, BigInteger, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -1254,9 +1254,16 @@ class InterviewQuestion(Base):
     draft_revision = Column(BigInteger, nullable=False, default=0, server_default="0")
     draft_updated_at = Column(DateTime(timezone=True), nullable=True)
     first_viewed_at = Column(DateTime(timezone=True), nullable=True)
+    # Coding slots: the problem assigned to this question (backend-controlled).
+    problem_id = Column(String(36), ForeignKey("coding_problems.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Practical slots: backend-only spec of the assigned assessment (problem slug, scenario
+    # id, or calculation parameters). Answers are derived from it server-side; only a
+    # public view (practical_service.public_view) ever reaches the client.
+    practical = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     session = relationship("InterviewSession", back_populates="questions")
+    problem = relationship("CodingProblem")
     answer = relationship("InterviewAnswer", back_populates="question", cascade="all, delete-orphan", uselist=False)
 
 
@@ -1332,3 +1339,108 @@ class InterviewRoleProfile(Base):
     analysis = Column(JSON, nullable=False)
     model_name = Column(String(120), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Coding assessment (Judge0)
+# ---------------------------------------------------------------------------
+
+
+class CodingProblem(Base):
+    """
+    A coding problem. Everything that decides correctness — tests, checker, limits,
+    reference solutions — is stored here and only ever read by the backend.
+    """
+
+    __tablename__ = "coding_problems"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    slug = Column(String(120), nullable=False, unique=True, index=True)
+    title = Column(String(200), nullable=False)
+    category = Column(String(20), nullable=False, default="dsa", server_default="dsa", index=True)  # dsa | frontend | backend | sql | bash
+    difficulty = Column(String(10), nullable=False)  # EASY | MEDIUM | HARD
+    statement = Column(Text, nullable=False)
+    input_format = Column(Text, nullable=False, default="")
+    output_format = Column(Text, nullable=False, default="")
+    constraints = Column(Text, nullable=False, default="")
+    examples = Column(JSON, nullable=False, default=list)  # [{input, output, explanation}] — public
+    instructions = Column(Text, nullable=True)
+    starter_code = Column(JSON, nullable=False, default=dict)  # {LANGUAGE_KEY: code}
+    languages = Column(JSON, nullable=False, default=list)  # allowed LANGUAGE_KEYs
+    checker = Column(JSON, nullable=False, default=dict)  # see coding_checkers
+    time_limit_seconds = Column(Float, nullable=False, default=2.0)
+    memory_limit_kb = Column(Integer, nullable=False, default=256000)
+    roles = Column(JSON, nullable=False, default=list)  # interview role slugs
+    competencies = Column(JSON, nullable=False, default=list)
+    estimated_minutes = Column(Integer, nullable=False, default=15)
+    reference_solutions = Column(JSON, nullable=False, default=dict)  # {LANGUAGE_KEY: code} — never exposed
+    harness = Column(JSON, nullable=True)  # runtime harness (coding_harness), e.g. {"type": "bash_workspace"}
+    content_hash = Column(String(64), nullable=True)  # seeded bank entry hash; a change clears verified_at
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verification = Column(JSON, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    test_cases = relationship(
+        "CodingTestCase", back_populates="problem", cascade="all, delete-orphan", order_by="CodingTestCase.ordinal"
+    )
+
+
+class CodingTestCase(Base):
+    """One test. Hidden tests (and every expected output) never leave the backend."""
+
+    __tablename__ = "coding_test_cases"
+    __table_args__ = (UniqueConstraint("problem_id", "ordinal", name="uq_coding_test_case_ordinal"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    problem_id = Column(String(36), ForeignKey("coding_problems.id", ondelete="CASCADE"), nullable=False, index=True)
+    ordinal = Column(Integer, nullable=False)
+    input = Column(Text, nullable=False)
+    expected_output = Column(Text, nullable=False)
+    is_hidden = Column(Boolean, nullable=False, default=True)
+    weight = Column(Float, nullable=False, default=1.0)
+    is_required = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    problem = relationship("CodingProblem", back_populates="test_cases")
+
+
+class CodingSubmission(Base):
+    """
+    A Run (samples / custom input) or Submit (all tests) of candidate code.
+    The idempotency key is unique per user, so retries and concurrent duplicates
+    resolve to the same row. Judge0 tokens are stored so polling can resume after
+    an interrupted request or a restart.
+    """
+
+    __tablename__ = "coding_submissions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_coding_submission_idempotency"),
+        Index("ix_coding_submissions_question_created", "question_id", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(String(36), ForeignKey("interview_questions.id", ondelete="CASCADE"), nullable=False)
+    problem_id = Column(String(36), ForeignKey("coding_problems.id", ondelete="RESTRICT"), nullable=False, index=True)
+    submission_type = Column(String(10), nullable=False)  # RUN | SUBMIT
+    language = Column(String(20), nullable=False)
+    language_label = Column(String(80), nullable=False)
+    source_code = Column(Text, nullable=False)
+    custom_input = Column(Text, nullable=True)
+    idempotency_key = Column(String(64), nullable=False)
+    status = Column(String(12), nullable=False, default="QUEUED")  # QUEUED | RUNNING | COMPLETED | FAILED
+    verdict = Column(String(30), nullable=True)
+    judge_tokens = Column(JSON, nullable=True)  # [{"token", "ordinal", "kind"}]
+    results = Column(JSON, nullable=True)  # per-test outcomes (backend copy)
+    tests_passed = Column(Integer, nullable=True)
+    tests_total = Column(Integer, nullable=True)
+    correctness_score = Column(Float, nullable=True)
+    max_time_seconds = Column(Float, nullable=True)
+    max_memory_kb = Column(Integer, nullable=True)
+    compile_output = Column(Text, nullable=True)
+    error = Column(String(300), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)

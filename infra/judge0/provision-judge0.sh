@@ -47,7 +47,7 @@ CREDS="$INSTALL_DIR/credentials.env"
 if [ ! -f "$CREDS" ]; then
   umask 077
   {
-    echo "JUDGE0_URL=http://${JUDGE0_BIND_IP}:2358"
+    echo "JUDGE0_API_URL=http://${JUDGE0_BIND_IP}:2358"
     echo "JUDGE0_AUTH_TOKEN=$(openssl rand -hex 32)"
     echo "JUDGE0_AUTHZ_TOKEN=$(openssl rand -hex 32)"
     echo "JUDGE0_REDIS_PASSWORD=$(openssl rand -hex 24)"
@@ -100,7 +100,7 @@ echo "Waiting for Judge0 API..."
 for _ in $(seq 1 60); do
   if curl -fsS -H "X-Auth-Token: ${JUDGE0_AUTH_TOKEN}" "http://${JUDGE0_BIND_IP}:2358/languages" >/dev/null 2>&1; then
     echo "Judge0 is up at http://${JUDGE0_BIND_IP}:2358"
-    echo "Backend settings are in ${CREDS} (JUDGE0_URL and JUDGE0_AUTH_TOKEN)."
+    echo "Backend settings are in ${CREDS} (JUDGE0_API_URL and JUDGE0_AUTH_TOKEN)."
     exit 0
   fi
   sleep 5

@@ -75,7 +75,10 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT_SECONDS: float = 240.0
     OLLAMA_SKILL_GAP_TIMEOUT_SECONDS: float = 360.0
     # AI Interviewer — per-call model budget; each call is retried at most once.
-    OLLAMA_INTERVIEW_TIMEOUT_SECONDS: float = 120.0
+    # The hosted model serves one request at a time and this budget includes time queued
+    # behind other features' requests, so it matches the Career Assistant's budget
+    # (OLLAMA_TIMEOUT_SECONDS) instead of being the shortest one (was 120 s).
+    OLLAMA_INTERVIEW_TIMEOUT_SECONDS: float = 240.0
     INTERVIEW_AI_MAX_CONCURRENCY: int = 2
     # Answers that reach the backend within this window after the deadline are
     # still accepted (covers request latency); later submissions are rejected.
@@ -89,6 +92,29 @@ class Settings(BaseSettings):
     INTERVIEW_TRANSCRIPTION_TIMEOUT_SECONDS: float = 90.0
     INTERVIEW_MAX_AUDIO_BYTES: int = 8 * 1024 * 1024
     INTERVIEW_MAX_AUDIO_SECONDS: int = 180
+
+    # Judge0 code execution (isolated CPU VM; never the app host or the Qwen server).
+    # Backend-only: the token is never sent to the frontend or written to logs.
+    # Empty URL/token means coding execution is unavailable (endpoints return 503).
+    JUDGE0_API_URL: str = ""
+    JUDGE0_AUTH_TOKEN: str = ""
+    JUDGE0_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    JUDGE0_READ_TIMEOUT_SECONDS: float = 20.0
+    JUDGE0_MAX_RETRIES: int = 2  # transient transport errors / 502-504 only
+    JUDGE0_POLL_INTERVAL_SECONDS: float = 0.6
+    # How long a request waits for results before returning "running" (the client
+    # then polls the submission endpoint, which resumes from the stored Judge0 tokens).
+    JUDGE0_INLINE_WAIT_SECONDS: float = 25.0
+    JUDGE0_BATCH_SIZE: int = 20  # must not exceed MAX_SUBMISSION_BATCH_SIZE on the Judge0 host
+    JUDGE0_LANGUAGES_CACHE_SECONDS: int = 600
+
+    # Coding assessment limits (enforced by the backend; never taken from the client)
+    CODING_MAX_SOURCE_BYTES: int = 64 * 1024
+    CODING_MAX_CUSTOM_INPUT_BYTES: int = 16 * 1024
+    CODING_RUN_RATE_LIMIT_PER_MINUTE: int = 10
+    CODING_SUBMIT_RATE_LIMIT_PER_MINUTE: int = 4
+    CODING_MAX_SUBMISSIONS_PER_QUESTION: int = 20
+    CODING_INFLIGHT_LOCK_SECONDS: int = 120
     # Gemini (semantic reranking only; deterministic scores remain authoritative)
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.1-flash-lite"

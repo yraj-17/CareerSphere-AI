@@ -46,3 +46,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Self-hosted Monaco Editor assets (copied from node_modules by scripts/copy-monaco.js)
+frontend/public/monaco/

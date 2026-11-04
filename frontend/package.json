@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-monaco.js",
     "dev": "next dev -p 3000",
+    "prebuild": "node scripts/copy-monaco.js",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint .",
@@ -11,10 +13,12 @@
     "test:ci": "jest --runInBand --ci --forceExit"
   },
   "dependencies": {
+    "@monaco-editor/react": "4.7.0",
     "axios": "^1.20.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.475.0",
+    "monaco-editor": "0.52.2",
     "next": "^16.3.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

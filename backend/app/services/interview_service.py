@@ -28,6 +28,7 @@ Reliability
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -35,7 +36,7 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -85,6 +86,8 @@ from app.services import interview_ai_service as ai
 from app.services import interview_blueprint as blueprints
 from app.services import interview_role_service as roles
 from app.services import interview_scoring as scoring
+from app.services import network_calc
+from app.services import practical_service as practicals
 from app.services import transcription_service
 
 logger = logging.getLogger(__name__)
@@ -109,6 +112,36 @@ def _grace() -> timedelta:
     return timedelta(seconds=max(0, settings.INTERVIEW_SUBMISSION_GRACE_SECONDS))
 
 
+# How long report generation waits for answer evaluations already running in another request.
+REPORT_INFLIGHT_WAIT_SECONDS = 150.0
+REPORT_INFLIGHT_POLL_SECONDS = 1.0
+
+
+async def _await_inflight_evaluations(db: Session, session_id: str) -> None:
+    """
+    An answer submitted just before the interview ended may still be evaluating in its own
+    request (claimed, PENDING). Wait — bounded — for those, so the report scores them instead
+    of silently computing without them. Abandoned claims are not waited on (stale window).
+    """
+    deadline = asyncio.get_running_loop().time() + REPORT_INFLIGHT_WAIT_SECONDS
+    while True:
+        fresh = utcnow() - _stale_after()
+        inflight = (
+            db.query(InterviewAnswer.id)
+            .filter(
+                InterviewAnswer.session_id == session_id,
+                InterviewAnswer.evaluation_status == InterviewAIStatus.PENDING,
+                InterviewAnswer.evaluation_attempts > 0,
+                InterviewAnswer.updated_at >= fresh,
+            )
+            .count()
+        )
+        if not inflight or asyncio.get_running_loop().time() >= deadline:
+            return
+        await asyncio.sleep(REPORT_INFLIGHT_POLL_SECONDS)
+        db.expire_all()
+
+
 def _stale_after() -> timedelta:
     """A PENDING claim older than this is treated as abandoned (e.g. server restart mid-call)."""
     return timedelta(seconds=settings.OLLAMA_INTERVIEW_TIMEOUT_SECONDS * ai.MAX_ATTEMPTS + 60)
@@ -120,11 +153,14 @@ def _error(code: int, message: str, **extra) -> HTTPException:
     return HTTPException(status_code=code, detail=message)
 
 
-# Practical assessment engines that are enabled in this build. Slots of any other
-# practical kind are reserved by the blueprint, shown to the candidate as
-# "not available yet", and excluded from scoring — never replaced by a
-# theoretical question. Later phases add "coding", "sql", "calculation", "scenario".
-AVAILABLE_PRACTICAL_KINDS: frozenset[str] = frozenset()
+# Practical assessment kinds that can be answered inside the interview:
+#   coding / sql  verified problems, answered in the code editor and executed on Judge0;
+#                 the latest completed SUBMIT is the answer (coding_service.record_interview_answer)
+#   calculation   deterministic IPv4 tasks, auto-graded (network_calc)
+#   scenario      curated scenarios, AI-reviewed against a fixed rubric (not executed)
+# A slot with no verified assessment is shown as unavailable and excluded from scoring —
+# never replaced by a theoretical question.
+AVAILABLE_PRACTICAL_KINDS: frozenset[str] = frozenset({"coding", "sql", "calculation", "scenario"})
 
 PRACTICAL_KIND_LABELS = {
     "coding": "Coding assessment",
@@ -138,8 +174,16 @@ def practical_available(kind: str) -> bool:
     return kind == "question" or kind in AVAILABLE_PRACTICAL_KINDS
 
 
+def _is_code(question: InterviewQuestion) -> bool:
+    return (question.kind or "question") in practicals.EXECUTABLE_KINDS
+
+
 def _answerable(question: InterviewQuestion) -> bool:
-    return practical_available(question.kind or "question")
+    kind = question.kind or "question"
+    if kind == "question":
+        return True
+    spec = question.practical if isinstance(question.practical, dict) else None
+    return practical_available(kind) and spec is not None and spec.get("type") == kind
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +313,12 @@ def _question_out(question: InterviewQuestion, report_completed: bool) -> Interv
         created_at=question.created_at,
         answer=_answer_out(question.answer, report_completed) if question.answer else None,
         status=question_status(question),
-        draft_text=question.draft_text if question.answer is None else None,
-        draft_meta=question.draft_meta if question.answer is None else None,
+        # Code questions keep their editor draft after a submission (candidates may resubmit).
+        draft_text=question.draft_text if question.answer is None or _is_code(question) else None,
+        draft_meta=question.draft_meta if question.answer is None or _is_code(question) else None,
         draft_revision=question.draft_revision or 0,
         draft_updated_at=question.draft_updated_at,
+        practical=practicals.public_view(question),
     )
 
 
@@ -485,7 +531,7 @@ async def analyze_role_title(db: Session, user: User, title: str) -> RoleSummary
     return _role_summary_out(role)
 
 
-def _build_blueprint(role: roles.ResolvedRole, payload: InterviewCreateRequest) -> dict:
+def _build_blueprint(db: Session, role: roles.ResolvedRole, payload: InterviewCreateRequest) -> dict:
     try:
         return blueprints.build_blueprint(
             role,
@@ -493,6 +539,7 @@ def _build_blueprint(role: roles.ResolvedRole, payload: InterviewCreateRequest) 
             difficulty=payload.difficulty,
             total_questions=payload.question_count,
             focus_areas=payload.focus_areas,
+            practical_supply=practicals.practical_supply(db, role),
         )
     except ValueError as exc:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
@@ -502,7 +549,7 @@ async def preview_blueprint(db: Session, user: User, payload: InterviewCreateReq
     role = await resolve_role(db, user, payload.target_role, payload.job_description)
     return BlueprintPreviewResponse(
         role=_role_summary_out(role),
-        blueprint=_build_blueprint(role, payload),
+        blueprint=_build_blueprint(db, role, payload),
         assessment_kinds_available=sorted(AVAILABLE_PRACTICAL_KINDS),
     )
 
@@ -558,12 +605,13 @@ async def _generate_for_slot(
             previous_questions=previous,
             off_role_check=lambda text: roles.off_role_terms(text, role, allowed_context),
         )
-    except ai.InterviewAIError:
-        raise _error(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "The AI interviewer couldn't prepare a question right now. Please try again.",
-            stage="generation",
+    except ai.InterviewAIError as exc:
+        code, message = GENERATION_FAILURES.get(exc.category, GENERATION_FAILURES[ai.INVALID_RESPONSE])
+        logger.warning(
+            "[Interview] question generation failed: category=%s slot=%s competency=%s role=%s",
+            exc.category, slot["position"], slot["competency_id"], role.slug or "custom",
         )
+        raise _error(code, message, stage="generation", category=exc.category)
     return InterviewQuestion(
         question_order=slot["position"],
         question_text=generated.question_text,
@@ -575,9 +623,36 @@ async def _generate_for_slot(
     )
 
 
-def _reserved_practical_question(blueprint: dict, slot: dict) -> InterviewQuestion:
-    """A practical slot whose assessment engine is not enabled yet: recorded, shown, and not scored."""
+# Candidate-facing explanation per failure category (no internals). Nothing has been saved when
+# the first question fails, so "try again" is always safe: it never duplicates a session.
+GENERATION_FAILURES = {
+    ai.LLM_TIMEOUT: (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "The AI model is busy with other requests, so your first question took too long to prepare. "
+        "Nothing was saved — please try again in a minute.",
+    ),
+    ai.LLM_UNAVAILABLE: (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "The AI interviewer can't reach the AI model right now. Nothing was saved — please try again shortly.",
+    ),
+    ai.INVALID_RESPONSE: (
+        status.HTTP_502_BAD_GATEWAY,
+        "The AI model returned a question that couldn't be read. Nothing was saved — please try again.",
+    ),
+    ai.VALIDATION_REJECTED: (
+        status.HTTP_502_BAD_GATEWAY,
+        "The AI model didn't produce a question that fits this role and competency. Nothing was saved — please try again.",
+    ),
+}
+
+
+def _reserved_practical_question(blueprint: dict, slot: dict, reason: Optional[str] = None) -> InterviewQuestion:
+    """A practical slot that cannot be assessed: recorded with the reason, shown, and not scored."""
     label = PRACTICAL_KIND_LABELS.get(slot["kind"], "Practical assessment")
+    reason = reason or (
+        "This practical slot is reserved for this interview. The assessment environment is not "
+        "enabled yet, so it is skipped and not scored."
+    )
     return InterviewQuestion(
         question_order=slot["position"],
         question_text=f"{label}: {slot['competency']}",
@@ -585,10 +660,8 @@ def _reserved_practical_question(blueprint: dict, slot: dict) -> InterviewQuesti
         kind=slot["kind"],
         competency=slot["competency"],
         difficulty=InterviewDifficulty(blueprint["difficulty"]),
-        interviewer_context=(
-            "This practical slot is reserved for this interview. The assessment environment is not "
-            "enabled yet, so it is skipped and not scored."
-        ),
+        interviewer_context=reason,
+        practical=practicals.unavailable_spec(reason),
     )
 
 
@@ -608,7 +681,7 @@ async def create_interview(db: Session, user: User, payload: InterviewCreateRequ
         )
 
     role = await resolve_role(db, user, payload.target_role, payload.job_description)
-    blueprint = _build_blueprint(role, payload)
+    blueprint = _build_blueprint(db, role, payload)
     # The first slot is always conceptual (practical slots are never placed first).
     # Generate it before persisting anything, so a model failure never leaves
     # behind a session whose clock is already running.
@@ -652,11 +725,21 @@ async def create_interview(db: Session, user: User, payload: InterviewCreateRequ
         started_at=now,
         deadline_at=now + timedelta(minutes=payload.duration_minutes),
     )
-    db.add(session)
-    db.flush()
-    first_question.session_id = session.id
-    db.add(first_question)
-    db.commit()
+    try:
+        db.add(session)
+        db.flush()
+        first_question.session_id = session.id
+        db.add(first_question)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()  # all-or-nothing: no session without its first question
+        logger.exception("[Interview] could not persist the new interview for user %s", user.id)
+        raise _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Your interview couldn't be saved. Nothing was created — please try again.",
+            stage="persistence",
+            category="database_persistence",
+        )
     return get_interview(db, user, session.id)
 
 
@@ -718,6 +801,7 @@ async def _ensure_blueprint(db: Session, user: User, session: InterviewSession) 
         difficulty=session.difficulty.value,
         total_questions=max(blueprints.MIN_QUESTIONS, min(blueprints.MAX_QUESTIONS, session.max_questions)),
         focus_areas=list(session.focus_areas or []),
+        practical_supply=practicals.practical_supply(db, role),
     )
     session.blueprint = blueprint
     session.role_slug, session.role_source = role.slug, role.source
@@ -731,8 +815,13 @@ async def _prepare_position(db: Session, user: User, session: InterviewSession, 
     slot = blueprints.slot_at(blueprint, position)
     if slot is None:
         return None
-    if not practical_available(slot["kind"]):
-        return _reserved_practical_question(blueprint, slot)
+    if slot["kind"] != "question":
+        if slot.get("assessment_available") is False:
+            return _reserved_practical_question(blueprint, slot, practicals.UNAVAILABLE_REASON)
+        spec = practicals.assign(db, user.id, session, slot)
+        if spec is None:
+            return _reserved_practical_question(blueprint, slot, practicals.UNAVAILABLE_REASON)
+        return practicals.build_question(blueprint, slot, spec, answerable=practical_available(slot["kind"]))
     return await _generate_for_slot(
         db,
         user,
@@ -897,19 +986,21 @@ def save_draft(
         raise _error(status.HTTP_404_NOT_FOUND, "Question not found in this interview.")
     if not _answerable(question):
         raise _error(status.HTTP_409_CONFLICT, "This practical assessment is not available yet.", status="ASSESSMENT_UNAVAILABLE")
-    if question.answer is not None:
+    code = _is_code(question)
+    if question.answer is not None and not code:
         raise _error(status.HTTP_409_CONFLICT, "This question has already been submitted.", status="ALREADY_SUBMITTED")
 
     now = utcnow()
-    answer_exists = db.query(InterviewAnswer.id).filter(InterviewAnswer.question_id == question_id).exists()
+    conditions = [
+        InterviewQuestion.id == question_id,
+        InterviewQuestion.session_id == session.id,
+        InterviewQuestion.draft_revision < payload.revision,
+    ]
+    if not code:  # a draft can never touch a submitted written answer
+        conditions.append(~db.query(InterviewAnswer.id).filter(InterviewAnswer.question_id == question_id).exists())
     result = db.execute(
         update(InterviewQuestion)
-        .where(
-            InterviewQuestion.id == question_id,
-            InterviewQuestion.session_id == session.id,
-            InterviewQuestion.draft_revision < payload.revision,
-            ~answer_exists,
-        )
+        .where(*conditions)
         .values(
             draft_text=payload.text,
             draft_meta=payload.meta,
@@ -968,10 +1059,77 @@ def _claim(db: Session, model, row_id: str, allow_fresh_pending: bool) -> bool:
     return result.rowcount == 1
 
 
+async def _run_scenario_evaluation(db: Session, session: InterviewSession, answer: InterviewAnswer) -> None:
+    question = answer.question
+    scenario_id = (question.practical or {}).get("scenario_id")
+    scenario = practicals.SCENARIO_BY_ID[scenario_id]
+    rubric = practicals.scenario_rubric(scenario_id)
+    try:
+        result = await ai.evaluate_scenario(
+            role=session.target_role,
+            role_summary=(session.blueprint or {}).get("role", {}).get("summary", ""),
+            difficulty=question.difficulty.value,
+            title=scenario.title,
+            context=scenario.context,
+            tasks=list(scenario.tasks),
+            rubric=rubric,
+            answer_text=answer.answer_text,
+        )
+    except ai.InterviewAIError:
+        db.refresh(answer)
+        answer.evaluation_status = InterviewAIStatus.FAILED
+        db.commit()
+        return
+    ratings = {c.id: c.score for c in result.criteria}
+    comments = {c.id: c.comment for c in result.criteria}
+    score = practicals.rubric_score(rubric, ratings)
+    db.refresh(answer)
+    answer.score = score
+    answer.evaluation = {
+        "method": "ai_rubric",
+        "label": practicals.SCENARIO_LABEL,
+        "score": score,
+        "criteria": [
+            {"id": c["id"], "title": c["title"], "points": c["points"], "score": ratings[c["id"]], "comment": comments[c["id"]]}
+            for c in rubric
+        ],
+        "strengths": result.strengths,
+        "improvements": result.improvements,
+        "feedback": result.feedback,
+        "key_points": result.key_points,
+    }
+    answer.evaluated_at = utcnow()
+    answer.evaluation_status = InterviewAIStatus.COMPLETED
+    db.commit()
+
+
+def _calculation_evaluation(question: InterviewQuestion, answers: dict) -> dict:
+    graded = network_calc.grade(question.practical["task"], answers)
+    wrong = [f["label"] for f in graded["fields"] if not f["correct"]]
+    return {
+        "method": "deterministic",
+        "label": network_calc.LABEL,
+        "score": graded["score"],
+        "correct": graded["correct"],
+        "total": graded["total"],
+        "fields": graded["fields"],
+        "strengths": [f"{graded['correct']} of {graded['total']} values correct."] if graded["correct"] else [],
+        "improvements": [f"Re-check: {', '.join(wrong)}."] if wrong else [],
+        "feedback": (
+            "Every value is correct." if not wrong else
+            "Each value is compared with the result computed by Python's ipaddress module. Review the fields marked incorrect."
+        ),
+        "key_points": [],
+    }
+
+
 async def _run_evaluation(db: Session, session: InterviewSession, answer_id: str) -> None:
     """Evaluate one claimed answer and persist the outcome. Never raises for model failures."""
     answer = db.get(InterviewAnswer, answer_id)
     question = answer.question
+    if (question.kind or "question") == "scenario":
+        await _run_scenario_evaluation(db, session, answer)
+        return
     role_summary, competency_description = "", ""
     if session.blueprint:
         role_summary = session.blueprint.get("role", {}).get("summary", "")
@@ -1024,8 +1182,6 @@ async def submit_answer(
     question = next((q for q in session.questions if q.id == payload.question_id), None)
     if question is None:
         raise _error(status.HTTP_404_NOT_FOUND, "Question not found in this interview.")
-    if question.answer is not None:
-        raise _error(status.HTTP_409_CONFLICT, "This question has already been answered.", answer_id=question.answer.id)
     if not _answerable(question):
         # A typed answer must never stand in for a coding/SQL/practical assessment.
         raise _error(
@@ -1033,18 +1189,49 @@ async def submit_answer(
             "This practical assessment is not available yet, so it can't be answered as text.",
             status="ASSESSMENT_UNAVAILABLE",
         )
+    if _is_code(question):
+        # Code is answered only by executing it: a typed answer never stands in for a submission.
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "This is a coding assessment: submit your code with Submit Solution.",
+            status="CODE_SUBMISSION_REQUIRED",
+        )
+    if question.answer is not None:
+        raise _error(status.HTTP_409_CONFLICT, "This question has already been answered.", answer_id=question.answer.id)
     if payload.answer_source == "VOICE" and session.interaction_mode != InterviewMode.VOICE:
         raise _error(status.HTTP_400_BAD_REQUEST, "Voice answers are only accepted in voice interviews.")
 
+    kind = question.kind or "question"
+    calculation = None
+    if kind == "calculation":
+        if payload.structured_answer is None:
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "This calculation expects an answer for each field.")
+        try:
+            calculation = _calculation_evaluation(question, payload.structured_answer)
+        except network_calc.CalcAnswerError as exc:
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
+        answer_text = network_calc.answer_summary(question.practical["task"], payload.structured_answer)
+    else:
+        if payload.structured_answer is not None:
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "This question expects a written answer.")
+        if not payload.answer_text:
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Answer cannot be empty.")
+        answer_text = payload.answer_text
+
+    now = utcnow()
     answer = InterviewAnswer(
         session_id=session.id,
         question_id=question.id,
-        answer_text=payload.answer_text,
+        answer_text=answer_text,
         answer_source=InterviewMode(payload.answer_source),
-        submitted_at=utcnow(),
-        evaluation_status=InterviewAIStatus.PENDING,
+        submitted_at=now,
+        evaluation_status=InterviewAIStatus.COMPLETED if calculation else InterviewAIStatus.PENDING,
         evaluation_attempts=0,
     )
+    if calculation:  # deterministic: graded on submission, no model call
+        answer.score = calculation["score"]
+        answer.evaluation = calculation
+        answer.evaluated_at = now
     db.add(answer)
     # The submitted answer now holds this text; the draft is no longer needed.
     question.draft_text = None
@@ -1055,7 +1242,7 @@ async def submit_answer(
         db.rollback()
         raise _error(status.HTTP_409_CONFLICT, "This question has already been answered.")
 
-    if _claim(db, InterviewAnswer, answer.id, True):
+    if calculation is None and _claim(db, InterviewAnswer, answer.id, True):
         await _run_evaluation(db, session, answer.id)
 
     db.expire_all()
@@ -1107,6 +1294,13 @@ def complete_interview(db: Session, user: User, interview_id: str) -> InterviewS
     return get_interview(db, user, interview_id)
 
 
+def _practical_difficulty(q: InterviewQuestion) -> Optional[dict]:
+    spec = q.practical if isinstance(q.practical, dict) else None
+    if (q.kind or "question") == "question" or spec is None or spec.get("type") != q.kind:
+        return None
+    return practicals.difficulty_view(spec)
+
+
 def _report_rows(session: InterviewSession) -> list[dict]:
     rows = []
     for q in session.questions:
@@ -1119,6 +1313,17 @@ def _report_rows(session: InterviewSession) -> list[dict]:
                 "competency": q.competency,
                 "category": q.category,
                 "kind": q.kind or "question",
+                "available": _answerable(q),
+                # A verified coding/SQL problem is assigned, but candidate code submission is not part
+                # of the interview flow until the code editor phase — reported distinctly, never scored.
+                "problem_assigned": bool(
+                    q.problem_id
+                    and (q.kind or "question") in practicals.EXECUTABLE_KINDS
+                    and isinstance(q.practical, dict)
+                    and q.practical.get("type") == q.kind
+                ),
+                "difficulty": _practical_difficulty(q),
+                "method": (a.evaluation or {}).get("method") if evaluated else None,
                 "answered": a is not None,
                 "score": a.score if evaluated else None,
                 "dimensions": (a.evaluation or {}).get("dimensions") if evaluated else None,
@@ -1156,6 +1361,12 @@ async def generate_report(db: Session, user: User, interview_id: str) -> Intervi
             raise _error(status.HTTP_409_CONFLICT, "The report is already being generated.")
         raise _error(status.HTTP_409_CONFLICT, "The retry limit for this report has been reached.")
 
+    # Code submitted before the deadline but still executing is settled first, so its
+    # Judge0 result is part of the report (imported here: coding_service imports this module).
+    from app.services import coding_service
+
+    await coding_service.settle_pending_submissions(db, session.id)
+
     # Give unevaluated answers one more bounded attempt so the report covers as much as possible.
     for question in session.questions:
         answer = question.answer
@@ -1163,6 +1374,7 @@ async def generate_report(db: Session, user: User, interview_id: str) -> Intervi
             continue
         if _claim(db, InterviewAnswer, answer.id, True):
             await _run_evaluation(db, session, answer.id)
+    await _await_inflight_evaluations(db, session.id)
 
     db.expire_all()
     session = _session_query(db).filter(InterviewSession.id == interview_id).first()

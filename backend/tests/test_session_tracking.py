@@ -591,12 +591,14 @@ def test_18_no_new_migration():
     assert "017_ai_interviews.py" in files
     assert "018_interview_role_engine.py" in files
     assert "019_interview_navigation.py" in files
+    assert "020_coding_assessment.py" in files
+    assert "021_practical_assessments.py" in files
     ids = sorted(
         int(f.split("_")[0])
         for f in files
         if f.split("_")[0].isdigit()
     )
-    assert max(ids) == 19
+    assert max(ids) == 21
 
 
 # ===========================================================================

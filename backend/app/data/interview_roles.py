@@ -30,7 +30,7 @@ from typing import Optional
 
 PRACTICAL_KINDS = ("coding", "sql", "calculation", "scenario")
 CODING_LANGUAGES = ("CPP", "JAVA", "PYTHON", "JAVASCRIPT")
-LANGUAGE_LABELS = {"CPP": "C++17", "JAVA": "Java 17", "PYTHON": "Python 3", "JAVASCRIPT": "JavaScript (Node.js)"}
+# Labels shown to candidates come from the Judge0 server itself (coding_languages.py).
 
 
 @dataclass(frozen=True)
@@ -425,13 +425,13 @@ ROLES: tuple[InterviewRole, ...] = (
         (
             C("dba-backup", "Backup & Recovery", "Backup & Recovery", 2, "scenario", ("postgresql", "mysql", "oracle", "sql server"),
               "Backup strategies, point-in-time recovery, RPO/RTO."),
-            C("dba-performance", "Performance Tuning", "Performance & Optimization", 2, "sql", ("sql", "postgresql", "mysql", "oracle", "sql server"),
+            C("dba-performance", "Performance Tuning", "Performance & Optimization", 2, "scenario", ("sql", "postgresql", "mysql", "oracle", "sql server"),
               "Execution plans, indexes, configuration, vacuum/statistics."),
             C("dba-ha", "High Availability & Replication", "Availability", 1.5, None, ("postgresql", "mysql", "oracle", "sql server"),
               "Replication, failover, clustering."),
             C("dba-security", "Database Security & Access", "Security", 1.5, None, ("sql",), "Roles, privileges, auditing, encryption."),
             C("sql-queries", "SQL Queries", "SQL", 1.5, "sql", ("sql",), "Querying system and user data."),
-            C("transactions", "Transactions & Concurrency", "Transactions & Concurrency", 1.5, None, ("sql",), "Isolation, locking, deadlocks."),
+            C("transactions", "Transactions & Concurrency", "Transactions & Concurrency", 1.5, "scenario", ("sql",), "Isolation, locking, deadlocks."),
             C("dba-monitoring", "Monitoring & Troubleshooting", "Operations", 1, "scenario", ("linux", "sql"), "Diagnosing slowdowns and outages."),
         ),
         ("sql", "scenario"), ("dba", "db administrator", "database admin", "postgres dba", "oracle dba", "sql server dba", "mysql dba"),
@@ -501,7 +501,7 @@ ROLES: tuple[InterviewRole, ...] = (
             C("sysadmin-security", "System Security & Patching", "Security", 1, None, ("linux",), "Hardening, patching, access control."),
         ),
         ("scenario", "coding"), ("sysadmin", "systems administrator", "it administrator", "windows administrator"),
-        ("PYTHON",),
+        ("PYTHON", "BASH"),
     ),
     InterviewRole(
         "linux-administrator", "Linux Administrator", "Infrastructure",
@@ -514,7 +514,7 @@ ROLES: tuple[InterviewRole, ...] = (
             C("linux-security", "Security & Hardening", "Security", 1, None, ("linux",), "SSH, SELinux/AppArmor, patching."),
         ),
         ("scenario", "coding"), ("linux admin", "linux system administrator", "linux engineer", "unix administrator"),
-        ("PYTHON",),
+        ("PYTHON", "BASH"),
     ),
     InterviewRole(
         "cloud-engineer", "Cloud Engineer", "Cloud",
@@ -549,7 +549,7 @@ ROLES: tuple[InterviewRole, ...] = (
             C("devops-cloud", "Cloud Services", "Cloud", 1, None, ("aws", "azure", "gcp"), "Cloud building blocks for delivery."),
         ),
         ("coding", "scenario"), ("devops", "devops specialist", "build and release engineer", "platform engineer", "release engineer"),
-        ("PYTHON",), "devops-engineer",
+        ("PYTHON", "BASH"), "devops-engineer",
     ),
     InterviewRole(
         "site-reliability-engineer", "Site Reliability Engineer", "DevOps",
@@ -559,7 +559,7 @@ ROLES: tuple[InterviewRole, ...] = (
             C("incident-management", "Incident Management", "Reliability", 1.5, "scenario", (), "On-call, incident command, postmortems."),
         ),
         ("scenario", "coding"), ("sre", "reliability engineer", "production engineer"),
-        ("PYTHON",), "devops-engineer",
+        ("PYTHON", "BASH"), "devops-engineer",
     ),
 
     # --- Security ------------------------------------------------------------------

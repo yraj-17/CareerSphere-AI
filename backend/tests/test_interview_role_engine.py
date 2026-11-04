@@ -15,7 +15,8 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
-from app.data.interview_roles import CODING_LANGUAGES, PRACTICAL_KINDS, ROLES, TECH_TERMS
+from app.data.coding_languages import LANGUAGE_BY_KEY
+from app.data.interview_roles import PRACTICAL_KINDS, ROLES, TECH_TERMS
 from app.db.models import InterviewRoleProfile
 from app.db.session import SessionLocal
 from app.main import app
@@ -40,6 +41,18 @@ def sequential_preparation(monkeypatch):
         return None
 
     monkeypatch.setattr(svc, "prepare_remaining_questions", _noop)
+
+
+@pytest.fixture(autouse=True)
+def no_verified_bank(monkeypatch):
+    """
+    Lifecycle tests here must not depend on whichever problems happen to be seeded in the
+    dev database: with no verified bank, coding/SQL slots are reserved-unavailable, so the
+    conceptual flow is deterministic. Coding answers are covered in test_practical_assessments.
+    """
+    from app.services import practical_service
+
+    monkeypatch.setattr(practical_service, "_verified_problems", lambda db: [])
 
 
 REQUIRED_ROLES = {
@@ -113,7 +126,7 @@ def test_catalog_role_is_well_formed(role):
     assert practical, "every role needs practical-capable competencies"
     assert practical <= set(PRACTICAL_KINDS)
     assert set(role.practical_kinds) <= practical and role.practical_kinds
-    assert set(role.languages) <= set(CODING_LANGUAGES)
+    assert set(role.languages) <= set(LANGUAGE_BY_KEY)  # general languages plus BASH for ops roles
     if any(c.practical == "coding" for c in role.competencies):
         assert role.languages, "coding practicals need at least one executable language"
 
@@ -390,7 +403,9 @@ def test_each_role_gets_a_role_driven_interview(user, model, title, slug):
         assert f"ASSIGNED COMPETENCY: {question['competency']}" in prompt
         assert model.count("RoleAnalysis") == (0 if slug else 1)
 
-        # Advance once: the reserved practical slot is recorded, then the next conceptual slot is generated.
+        # Advance once. An answerable practical slot (scenario / calculation with an assigned
+        # assessment) becomes the current question; a slot that cannot be assessed here is
+        # recorded as unavailable and the next conceptual slot is generated.
         client.post(
             f"/api/interviews/{interview['id']}/answers",
             json={"question_id": question["id"], "answer_text": "My answer."},
@@ -398,10 +413,18 @@ def test_each_role_gets_a_role_driven_interview(user, model, title, slug):
         )
         nxt = client.post(f"/api/interviews/{interview['id']}/next-question", headers=user["headers"]).json()
         kinds = [q["kind"] for q in nxt["questions"]]
-        assert kinds == ["question", bp["question_slots"][1]["kind"], "question"]
-        assert kinds[1] != "question" and nxt["questions"][1]["assessment_available"] is False
-        assert nxt["current_question"]["competency"] == bp["question_slots"][2]["competency"]
-        assert f"ASSIGNED COMPETENCY: {bp['question_slots'][2]['competency']}" in _question_prompts(model)[-1]
+        slot = bp["question_slots"][1]
+        assert slot["kind"] != "question" and kinds[1] == slot["kind"]
+        if slot["kind"] in AVAILABLE_PRACTICAL_KINDS and slot.get("assessment_available"):
+            assert kinds == ["question", slot["kind"]]
+            assert nxt["questions"][1]["assessment_available"] is True
+            assert nxt["questions"][1]["practical"]["available"] is True
+            assert nxt["current_question"]["id"] == nxt["questions"][1]["id"]
+        else:
+            assert kinds == ["question", slot["kind"], "question"]
+            assert nxt["questions"][1]["assessment_available"] is False
+            assert nxt["current_question"]["competency"] == bp["question_slots"][2]["competency"]
+            assert f"ASSIGNED COMPETENCY: {bp['question_slots'][2]['competency']}" in _question_prompts(model)[-1]
     finally:
         _end(user, interview)
         if slug is None:
@@ -446,7 +469,8 @@ def test_persistently_off_role_output_fails_instead_of_being_shown(user, model):
     drift = {"question_text": "Explain how Kubernetes schedules pods across nodes in a cluster."}
     model.push("GeneratedQuestion", drift, drift)
     res = client.post("/api/interviews", json={"target_role": "Network Engineer", "interview_type": "TECHNICAL"}, headers=user["headers"])
-    assert res.status_code == 503 and res.json()["detail"]["stage"] == "generation"
+    assert res.status_code == 502 and res.json()["detail"]["stage"] == "generation"
+    assert res.json()["detail"]["category"] == "validation_rejected"  # rejected, never shown
     assert client.get("/api/interviews", headers=user["headers"]).json()["total"] == 0
 
 
@@ -545,7 +569,9 @@ def test_report_separates_conceptual_practical_and_competencies(user, model):
     assert competencies == {s["competency"] for s in interview["blueprint"]["question_slots"] if s["kind"] == "question"}
     practical = agg["sections"]["practical"]
     assert practical["reserved"] == 1 and practical["kinds"] == ["sql"] and practical["score"] is None
-    assert practical["items"][0]["status"] == "not_available"
+    # Verified SQL problem assigned -> "awaiting_editor" (unscored until code submission is enabled);
+    # with no verified problem in the bank -> "not_available".
+    assert practical["items"][0]["status"] in ("not_available", "awaiting_editor")
     assert agg["sections"]["conceptual"]["evaluated"] == 2
     assert report["overall_score"] == agg["sections"]["conceptual"]["score"]  # practical never silently folded in
     assert "Practical assessments are scored separately" in agg["methodology"]

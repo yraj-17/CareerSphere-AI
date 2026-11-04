@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { AlertCircle, AlertTriangle, ArrowLeft, Loader2, PlayCircle, RotateCcw } from 'lucide-react';
 import { extractErrorMessage, generateInterviewReport, getInterview, getInterviewReport } from '@/services/api';
 import AnswerFeedback, { ScoreBar } from '@/components/interview/AnswerFeedback';
+import { levelLabel } from '@/components/interview/PracticalTask';
 import {
   DIMENSION_LABELS,
+  PRACTICAL_METHOD_LABELS,
+  PRACTICAL_STATUS_LABELS,
   SCORE_DISCLAIMER,
   STATUS_META,
   categoryLabel,
@@ -188,7 +191,16 @@ export default function InterviewResultsPage({ interviewId }) {
               )}
               {aggregates && (
                 <p className="mt-3 text-xs text-slate-500">
-                  {aggregates.evaluated_count} of {aggregates.answered_count} answers scored · {aggregates.question_count} questions asked
+                  {(() => {
+                    // The overall score covers conceptual/behavioral answers; practical work is scored separately.
+                    const items = aggregates.sections?.practical?.items || [];
+                    const practicalAnswered = items.filter((i) => i.status === 'assessed' || i.status === 'not_assessed').length;
+                    const practicalAssessed = items.filter((i) => i.status === 'assessed').length;
+                    if (!practicalAnswered) {
+                      return `${aggregates.evaluated_count} of ${aggregates.answered_count} answers scored · ${aggregates.question_count} questions asked`;
+                    }
+                    return `${aggregates.evaluated_count} of ${aggregates.answered_count - practicalAnswered} answers scored · ${practicalAssessed} practical assessed separately · ${aggregates.question_count} questions asked`;
+                  })()}
                 </p>
               )}
             </div>
@@ -251,8 +263,7 @@ export default function InterviewResultsPage({ interviewId }) {
                     <p className="mt-1 text-sm text-slate-700">Score: {aggregates.sections.practical.score}/100 (scored separately from conceptual answers)</p>
                   ) : (
                     <p className="mt-1 text-sm text-amber-900">
-                      Not assessed in this interview. Practical slots were reserved, but the assessment environment isn&apos;t enabled yet, so
-                      they are excluded from every score above.
+                      No practical slot was assessed in this interview, so practical work is excluded from every score above.
                     </p>
                   )}
                   <ul className="mt-2 space-y-1 text-sm text-slate-700">
@@ -260,9 +271,19 @@ export default function InterviewResultsPage({ interviewId }) {
                       <li key={item.position} className="flex justify-between gap-3">
                         <span>
                           Q{item.position}. {slotKindLabel(item.kind)} · {item.competency}
+                          {item.difficulty?.difficulty && ` · ${levelLabel(item.difficulty.difficulty)}`}
+                          {item.difficulty?.difficulty_fallback && (
+                            <span className="block text-xs text-sky-800">
+                              Closest verified level used: {levelLabel(item.difficulty.difficulty)} instead of the planned{' '}
+                              {levelLabel(item.difficulty.planned_difficulty)} (no verified{' '}
+                              {levelLabel(item.difficulty.planned_difficulty).toLowerCase()} assessment for this competency yet)
+                            </span>
+                          )}
                         </span>
                         <span className="shrink-0 text-xs font-semibold text-slate-500">
-                          {{ not_available: 'Not available yet', not_reached: 'Not reached', assessed: 'Assessed', not_assessed: 'Not assessed' }[item.status] || item.status}
+                          {item.status === 'assessed'
+                            ? `${item.score}/100 · ${PRACTICAL_METHOD_LABELS[item.method] || 'Assessed'}`
+                            : PRACTICAL_STATUS_LABELS[item.status] || item.status}
                         </span>
                       </li>
                     ))}
@@ -388,16 +409,28 @@ export default function InterviewResultsPage({ interviewId }) {
               </summary>
               {question.answer ? (
                 <div className="mt-4 space-y-4">
-                  <div className="surface-card-subtle">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">{question.answer.answer_text}</p>
-                  </div>
+                  {question.answer.evaluation?.method === 'judge0' ? (
+                    <div className="surface-card-subtle">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Your submitted code · {question.answer.evaluation.language_label}
+                      </p>
+                      <pre className="mt-1.5 max-h-96 overflow-auto rounded-lg bg-[#101B2D] p-3 font-mono text-xs leading-5 text-[#E6EAF2]">
+                        {question.answer.answer_text}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="surface-card-subtle">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">{question.answer.answer_text}</p>
+                    </div>
+                  )}
                   <AnswerFeedback answer={question.answer} />
                 </div>
               ) : question.assessment_available === false ? (
                 <p className="mt-3 text-sm text-amber-900">
-                  This {slotKindLabel(question.kind).toLowerCase()} slot was reserved for a practical assessment. The assessment environment
-                  isn&apos;t enabled yet, so it was skipped and is not included in any score.
+                  {question.practical?.reason ||
+                    `This ${slotKindLabel(question.kind).toLowerCase()} slot was reserved for a practical assessment that isn't available yet, so it was skipped.`}{' '}
+                  It is not included in any score.
                 </p>
               ) : question.draft_text ? (
                 <div className="mt-3 space-y-2">

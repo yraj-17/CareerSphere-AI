@@ -3,6 +3,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, TrendingUp } from 'lucide-react';
 import { DIMENSION_LABELS, scoreBand } from '@/components/interview/interviewConstants';
+import { PracticalResult } from '@/components/interview/PracticalTask';
 
 export function ScoreBar({ label, value }) {
   return (
@@ -106,7 +107,10 @@ export default function AnswerFeedback({ answer, onRetry, retrying = false, comp
         </div>
       )}
 
-      <p className="text-sm leading-6 text-slate-700">{evaluation.feedback}</p>
+      {!compact && <PracticalResult evaluation={evaluation} />}
+
+      {/* Executed answers: the Judge0 result line above already states the verdict and test counts. */}
+      {!(evaluation.method === 'judge0' && !compact) && <p className="text-sm leading-6 text-slate-700">{evaluation.feedback}</p>}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FeedbackList title="Strengths" items={evaluation.strengths} icon={CheckCircle2} tone="text-emerald-700" />

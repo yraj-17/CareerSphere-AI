@@ -128,18 +128,40 @@ class InterviewCreateRequest(BaseModel):
         return self
 
 
+MAX_STRUCTURED_FIELDS = 20
+MAX_STRUCTURED_VALUE_LENGTH = 100
+
+
 class InterviewAnswerSubmitRequest(BaseModel):
     question_id: str = Field(..., min_length=1, max_length=36)
-    answer_text: str = Field(..., max_length=MAX_ANSWER_LENGTH)
+    # Written answers. Calculation slots send structured_answer instead (field key -> value);
+    # their answer text is then built by the server.
+    answer_text: str = Field("", max_length=MAX_ANSWER_LENGTH)
+    structured_answer: Optional[dict[str, str]] = None
     answer_source: Literal["TEXT", "VOICE"] = "TEXT"
 
     @field_validator("answer_text")
     @classmethod
-    def non_empty_answer(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
+    def strip_answer(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("structured_answer")
+    @classmethod
+    def bounded_structured(cls, value: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+        if value is None:
+            return None
+        if len(value) > MAX_STRUCTURED_FIELDS:
+            raise ValueError("Too many answer fields.")
+        for key, item in value.items():
+            if len(key) > 40 or len(item) > MAX_STRUCTURED_VALUE_LENGTH:
+                raise ValueError("Answer field is too long.")
+        return value
+
+    @model_validator(mode="after")
+    def has_answer(self) -> "InterviewAnswerSubmitRequest":
+        if not self.answer_text and not self.structured_answer:
             raise ValueError("Answer cannot be empty.")
-        return cleaned
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +178,39 @@ class DimensionScores(BaseModel):
     reflection: Optional[int] = None
 
 
+class CalculationFieldOut(BaseModel):
+    key: str
+    label: str
+    given: str
+    expected: str
+    correct: bool
+
+
+class RubricCriterionOut(BaseModel):
+    id: str
+    title: str
+    points: int
+    score: int
+    comment: str = ""
+
+
 class AnswerEvaluationOut(BaseModel):
     score: int
-    dimensions: DimensionScores
+    # Conceptual / behavioral answers: AI-rated dimensions. Practical answers carry a
+    # method instead: "deterministic" (calculation fields) or "ai_rubric" (scenario criteria).
+    dimensions: Optional[DimensionScores] = None
+    # "judge0": coding/SQL answers, scored only from real test execution
+    method: Optional[Literal["deterministic", "ai_rubric", "judge0"]] = None
+    label: Optional[str] = None
+    fields: Optional[list[CalculationFieldOut]] = None
+    correct: Optional[int] = None
+    total: Optional[int] = None
+    criteria: Optional[list[RubricCriterionOut]] = None
+    verdict: Optional[str] = None
+    verdict_label: Optional[str] = None
+    language: Optional[str] = None
+    language_label: Optional[str] = None
+    submission_id: Optional[str] = None
     strengths: list[str]
     improvements: list[str]
     feedback: str
@@ -196,6 +248,9 @@ class InterviewQuestionOut(BaseModel):
     draft_meta: Optional[dict] = None
     draft_revision: int = 0
     draft_updated_at: Optional[datetime] = None
+    # Practical slots: public view of the assigned assessment (scenario text, calculation
+    # fields, problem reference) or {"available": false, "reason": ...}. Never answers.
+    practical: Optional[dict] = None
 
 
 class InterviewSessionSummary(BaseModel):
@@ -365,6 +420,32 @@ class BehavioralEvaluation(_EvaluationBase):
     reflection: int = _Score
 
 
+class CriterionRating(BaseModel):
+    id: str = Field(..., min_length=1, max_length=60)
+    score: int = _Score
+    comment: str = Field("", max_length=400)
+
+
+class ScenarioEvaluation(BaseModel):
+    """Model output for a practical scenario: one rating per rubric criterion (scored by the backend)."""
+
+    criteria: list[CriterionRating] = Field(..., min_length=1, max_length=10)
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    feedback: str = Field(..., min_length=10, max_length=1200)
+    key_points: list[str] = Field(default_factory=list)
+
+    @field_validator("strengths", "improvements", mode="before")
+    @classmethod
+    def clean_feedback_lists(cls, value) -> list[str]:
+        return _clean_text_list(value, max_items=4, max_len=300)
+
+    @field_validator("key_points", mode="before")
+    @classmethod
+    def clean_key_points(cls, value) -> list[str]:
+        return _clean_text_list(value, max_items=5, max_len=300)
+
+
 class GeneratedNarrative(BaseModel):
     summary: str = Field(..., min_length=20, max_length=1500)
     strengths: list[str] = Field(default_factory=list)
@@ -463,7 +544,8 @@ class RoleAnalysis(BaseModel):
 # Navigation and drafts
 # ---------------------------------------------------------------------------
 
-MAX_DRAFT_META_BYTES = 64 * 1024
+# Large enough for per-language code drafts (each source is capped by CODING_MAX_SOURCE_BYTES).
+MAX_DRAFT_META_BYTES = 512 * 1024
 
 
 class NavigateRequest(BaseModel):

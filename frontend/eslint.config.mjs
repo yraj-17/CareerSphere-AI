@@ -18,5 +18,6 @@ export default defineConfig([
     '.next/**',
     'coverage/**',
     'node_modules/**',
+    'public/monaco/**', // vendored Monaco bundle copied by scripts/copy-monaco.js
   ]),
 ]);

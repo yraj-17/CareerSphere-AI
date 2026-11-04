@@ -112,6 +112,39 @@ describe('InterviewResultsPage', () => {
     expect(generateInterviewReport).not.toHaveBeenCalled(); // stored report, no model rerun
   });
 
+  test('a coding answer shows the submitted code and its Judge0 result', async () => {
+    const code = 'def count_pairs(values, target):\n    return 0\n';
+    const codingAnswer = {
+      ...ANSWER, id: 'a2', question_id: 'q3', answer_text: code, score: 100,
+      evaluation: {
+        score: 100, method: 'judge0', label: 'Executed on Judge0 — scored by test results', verdict: 'ACCEPTED', verdict_label: 'Accepted',
+        correct: 8, total: 8, language: 'PYTHON', language_label: 'Python (3.8.1)', strengths: [], improvements: [],
+        feedback: 'Accepted: 8 of 8 tests passed (Python (3.8.1)).', key_points: [],
+      },
+    };
+    getInterview.mockResolvedValue({
+      ...INTERVIEW,
+      questions: [...INTERVIEW.questions, { id: 'q3', question_order: 3, question_text: 'Coding assessment: Pairs', category: 'TECHNICAL', kind: 'coding', competency: 'Data Structures', difficulty: 'INTERMEDIATE', created_at: '', answer: codingAnswer }],
+    });
+    const practical = {
+      reserved: 1, reached: 1, assessed: 1, score: 100, available: true, kinds: ['coding'],
+      items: [{ position: 3, kind: 'coding', competency: 'Data Structures', status: 'assessed', score: 100, method: 'judge0',
+        difficulty: { difficulty: 'EASY', planned_difficulty: 'EASY', difficulty_fallback: false } }],
+    };
+    getInterviewReport.mockResolvedValue({
+      ...REPORT,
+      aggregates: { ...REPORT.aggregates, answered_count: 2, question_count: 3, sections: { practical } },
+    });
+    render(<InterviewResultsPage interviewId="iv-1" />);
+    expect(await screen.findByText('Your submitted code · Python (3.8.1)')).toBeInTheDocument();
+    // The overall score covers the conceptual answer; the coding answer is counted as practical.
+    expect(screen.getByText('1 of 1 answers scored · 1 practical assessed separately · 3 questions asked')).toBeInTheDocument();
+    expect(screen.getByText('100/100 · Executed on Judge0')).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === 'PRE' && el.textContent === code)).toBeInTheDocument();
+    expect(screen.getByText('Executed on Judge0 — scored by test results')).toBeInTheDocument();
+    expect(screen.getByText(/8 of 8 tests passed \(/)).toBeInTheDocument();
+  });
+
   test('generates a pending report automatically', async () => {
     getInterview.mockResolvedValue(INTERVIEW);
     getInterviewReport.mockResolvedValue({ ...REPORT, status: 'PENDING', narrative: null, overall_score: null, aggregates: null, can_retry: true });
@@ -179,7 +212,7 @@ describe('InterviewResultsPage role engine', () => {
     expect(screen.queryByText('Behavioral', { selector: 'p' })).not.toBeInTheDocument(); // no behavioral score, not shown
     expect(screen.getByText(/excluded from every score above/i)).toBeInTheDocument();
     expect(screen.getByText('Q3. SQL · SQL Queries')).toBeInTheDocument();
-    expect(screen.getByText('Not available yet')).toBeInTheDocument();
+    expect(screen.getByText('No verified assessment')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Role competencies' })).toBeInTheDocument();
     expect(screen.getByText('Not assessed')).toBeInTheDocument();
     expect(screen.getByText(/was reserved for a practical assessment/i)).toBeInTheDocument();

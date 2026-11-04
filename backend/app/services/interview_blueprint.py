@@ -26,6 +26,12 @@ Priority: role → focus areas → difficulty → type. Profile data is not an i
 * Practical slots cycle through the role's preferred practical kinds, picking
   the highest-weighted unused competency of each kind (so a Frontend interview
   gets a JavaScript coding task and a React implementation task, not two of one).
+* Practical supply: when the caller passes the set of (kind, competency) that has a
+  verified problem / validated scenario / calculation engine, practical slots are
+  planned only on supplied competencies (focus areas are still preferred). If the
+  role has no supplied practical competency at all, the slots are still planned
+  (they are mandatory) but marked assessment_available = False — never filled with
+  unrelated material.
 * Conceptual slots take the highest-weighted competencies, preferring ones not
   already covered by a practical slot; with more slots than competencies, extra
   slots are apportioned by weight (largest remainder).
@@ -154,6 +160,7 @@ def build_blueprint(
     difficulty: str,
     total_questions: int,
     focus_areas: Iterable[str] = (),
+    practical_supply: set[tuple[str, str]] | None = None,
 ) -> dict:
     if not MIN_QUESTIONS <= total_questions <= MAX_QUESTIONS:
         raise ValueError(f"total_questions must be between {MIN_QUESTIONS} and {MAX_QUESTIONS}")
@@ -173,6 +180,10 @@ def build_blueprint(
     pool, matched_focus = _pool(role, focus_areas)
     focused_ids = {c["id"] for c in role.competencies if c["focus"] in matched_focus}
     practical_pool = [c for c in pool if c["practical"]]
+    if practical_supply is not None:
+        # Plan practical work only where it can really be assessed; keep the full pool
+        # only when nothing is supplied (those slots are then marked unavailable).
+        practical_pool = [c for c in practical_pool if (c["practical"], c["id"]) in practical_supply] or practical_pool
     if matched_focus:
         # Prefer practical work inside the chosen focus; fall back to the whole role
         # because practical slots are mandatory for technical interviews.
@@ -214,6 +225,11 @@ def build_blueprint(
     else:
         slots = [_slot(i, "question", "BEHAVIORAL", comp) for i, comp in enumerate(behavioral_comps, start=1)]
 
+    if practical_supply is not None:
+        for s in slots:
+            if s["kind"] != "question":
+                s["assessment_available"] = (s["kind"], s["competency_id"]) in practical_supply
+
     slot_counts: dict[str, int] = {}
     for s in slots:
         if s["category"] == "TECHNICAL":
@@ -245,6 +261,7 @@ def build_blueprint(
             for c in role.competencies
         ],
         "role_practical_kinds": role.practical_kinds,
+        "practical_supply_checked": practical_supply is not None,
         "question_slots": slots,
     }
 

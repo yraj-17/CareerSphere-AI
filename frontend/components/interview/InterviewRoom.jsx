@@ -25,6 +25,9 @@ import {
   submitInterviewAnswer,
 } from '@/services/api';
 import AnswerFeedback from '@/components/interview/AnswerFeedback';
+import { CalculationForm, PracticalUnavailable, ScenarioBrief } from '@/components/interview/PracticalTask';
+import CodingWorkspace from '@/components/interview/coding/CodingWorkspace';
+import { isCodeQuestion } from '@/components/interview/coding/codingUtils';
 import VoiceAnswerPanel from '@/components/interview/VoiceAnswerPanel';
 import useSpeechSynthesis from '@/hooks/useSpeechSynthesis';
 import {
@@ -40,6 +43,7 @@ import {
 } from '@/components/interview/interviewConstants';
 
 const AUTOSAVE_DELAY_MS = 800;
+const CODE_AUTOSAVE_DELAY_MS = 1200;
 const PREPARING_POLL_MS = 2500;
 
 export const QUESTION_STATUS = {
@@ -53,6 +57,17 @@ export const QUESTION_STATUS = {
 };
 
 /** Monotonic per-tab sequence: never repeats or goes backwards, even within one millisecond. */
+/**
+ * A draft counts as started if it has text, (calculations) at least one filled field,
+ * or (code) the candidate has edited the starter code.
+ */
+function draftHasContent(draft) {
+  if (!draft) return false;
+  if ((draft.text || '').trim()) return true;
+  if (draft.meta?.code) return Boolean(draft.meta.edited) && Object.values(draft.meta.code).some((src) => String(src || '').trim());
+  return Object.values(draft.meta?.answers || {}).some((value) => String(value || '').trim());
+}
+
 function makeSequencer() {
   let last = 0;
   return () => {
@@ -188,7 +203,8 @@ export default function InterviewRoom({ interviewId }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [position, setPosition] = useState(null);
-  // Local drafts keyed by question ID: { text, source, revision, savedRevision, saving, error }
+  // Local drafts keyed by question ID: { text, meta, source, revision, savedRevision, saving, error }
+  // (meta holds structured answers, e.g. calculation fields: { answers: { key: value } })
   const [drafts, setDrafts] = useState({});
   const [submittingId, setSubmittingId] = useState(null);
   const [submitError, setSubmitError] = useState('');
@@ -201,6 +217,8 @@ export default function InterviewRoom({ interviewId }) {
   const [nextSeq] = useState(makeSequencer);
   const latestNavSeq = useRef(0);
   const saveTimers = useRef({});
+  // Per-question coding workspace UI state (last result, tab, polling) kept across navigation.
+  const workspaceCaches = useRef({});
   const draftsRef = useRef(drafts);
   const timeUpHandled = useRef(false);
 
@@ -217,10 +235,16 @@ export default function InterviewRoom({ interviewId }) {
     setDrafts((prev) => {
       const next = { ...prev };
       for (const q of data.questions || []) {
-        if (q.answer) {
+        if (q.answer && !isCodeQuestion(q)) {
           delete next[q.id];
-        } else if (!next[q.id] && q.draft_text) {
-          next[q.id] = { text: q.draft_text, source: 'TEXT', revision: q.draft_revision, savedRevision: q.draft_revision };
+        } else if (!next[q.id] && (q.draft_text || q.draft_meta)) {
+          next[q.id] = {
+            text: q.draft_text || '',
+            meta: q.draft_meta || null,
+            source: 'TEXT',
+            revision: q.draft_revision,
+            savedRevision: q.draft_revision,
+          };
         }
       }
       return next;
@@ -297,7 +321,7 @@ export default function InterviewRoom({ interviewId }) {
       const { revision } = draft;
       setDrafts((prev) => (prev[questionId] ? { ...prev, [questionId]: { ...prev[questionId], saving: true } } : prev));
       try {
-        const result = await saveInterviewDraft(interviewId, questionId, { text: draft.text, revision });
+        const result = await saveInterviewDraft(interviewId, questionId, { text: draft.text || '', meta: draft.meta || null, revision });
         setDrafts((prev) => {
           const current = prev[questionId];
           if (!current) return prev;
@@ -326,6 +350,28 @@ export default function InterviewRoom({ interviewId }) {
     window.clearTimeout(saveTimers.current[questionId]);
     saveTimers.current[questionId] = window.setTimeout(() => persistDraft(questionId), AUTOSAVE_DELAY_MS);
   };
+
+  const updateDraftAnswers = (questionId, answers) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [questionId]: { ...(prev[questionId] || {}), text: '', meta: { answers }, source: 'TEXT', revision: nextSeq() },
+    }));
+    window.clearTimeout(saveTimers.current[questionId]);
+    saveTimers.current[questionId] = window.setTimeout(() => persistDraft(questionId), AUTOSAVE_DELAY_MS);
+  };
+
+  // Code drafts: { language, code: { LANG: source }, custom_input, edited } in draft meta.
+  const updateCodeDraft = useCallback(
+    (questionId, meta) => {
+      setDrafts((prev) => ({
+        ...prev,
+        [questionId]: { ...(prev[questionId] || {}), text: '', meta, source: 'TEXT', revision: nextSeq() },
+      }));
+      window.clearTimeout(saveTimers.current[questionId]);
+      saveTimers.current[questionId] = window.setTimeout(() => persistDraft(questionId), CODE_AUTOSAVE_DELAY_MS);
+    },
+    [nextSeq, persistDraft]
+  );
 
   useEffect(
     () => () => {
@@ -379,16 +425,18 @@ export default function InterviewRoom({ interviewId }) {
     async (question, { silent = false } = {}) => {
       const draft = draftsRef.current[question.id];
       const text = draft?.text || '';
-      if (!text.trim() || text.length > DEFAULT_MAX_ANSWER_LENGTH) return;
+      const structured = question.kind === 'calculation';
+      if (structured ? !draftHasContent(draft) : !text.trim() || text.length > DEFAULT_MAX_ANSWER_LENGTH) return;
       window.clearTimeout(saveTimers.current[question.id]);
       setSubmittingId(question.id);
       if (!silent) setSubmitError('');
       try {
-        const result = await submitInterviewAnswer(interviewId, {
-          questionId: question.id,
-          answerText: text,
-          answerSource: draft?.source || 'TEXT',
-        });
+        const result = await submitInterviewAnswer(
+          interviewId,
+          structured
+            ? { questionId: question.id, structuredAnswer: draft?.meta?.answers || {}, answerSource: 'TEXT' }
+            : { questionId: question.id, answerText: text, answerSource: draft?.source || 'TEXT' }
+        );
         applyInterview(result.interview);
         speech.stop();
       } catch (error) {
@@ -434,7 +482,7 @@ export default function InterviewRoom({ interviewId }) {
     timeUpHandled.current = true;
     (async () => {
       const pending = (interview?.questions || []).filter(
-        (q) => !q.answer && q.assessment_available !== false && (draftsRef.current[q.id]?.text || '').trim()
+        (q) => !q.answer && !isCodeQuestion(q) && q.assessment_available !== false && draftHasContent(draftsRef.current[q.id])
       );
       await Promise.allSettled(pending.map((q) => submitQuestion(q, { silent: true })));
       await finishInterview();
@@ -459,9 +507,9 @@ export default function InterviewRoom({ interviewId }) {
     (q) => {
       if (!q) return 'PREPARING';
       if (q.status === 'NOT_STARTED' || q.status === 'SKIPPED') {
-        if ((drafts[q.id]?.text || '').trim()) return 'IN_PROGRESS';
+        if (draftHasContent(drafts[q.id])) return 'IN_PROGRESS';
       }
-      if (q.status === 'IN_PROGRESS' && drafts[q.id] && !(drafts[q.id].text || '').trim()) return 'NOT_STARTED';
+      if (q.status === 'IN_PROGRESS' && drafts[q.id] && !draftHasContent(drafts[q.id])) return 'NOT_STARTED';
       return q.status || 'NOT_STARTED';
     },
     [drafts]
@@ -523,8 +571,13 @@ export default function InterviewRoom({ interviewId }) {
   const isLast = position === total;
   const plannedSlot = interview.blueprint?.question_slots?.[(position || 1) - 1];
 
+  const isCode = isCodeQuestion(selected) && selected?.assessment_available !== false;
+  const isCalculation = selected?.kind === 'calculation' && selected?.practical?.available;
+  const isScenario = selected?.kind === 'scenario' && selected?.practical?.available;
+  const canSubmit = isCalculation ? draftHasContent(draft) : Boolean(draftText.trim()) && !overLimit;
+
   let saveState = null;
-  if (draft && draftText) {
+  if (draft && draftHasContent(draft)) {
     if (draft.saving) saveState = 'Saving draft...';
     else if (draft.error) saveState = 'Draft not saved — will retry';
     else if (draft.savedRevision === draft.revision) saveState = 'Draft saved';
@@ -652,13 +705,14 @@ export default function InterviewRoom({ interviewId }) {
                   {QUESTION_STATUS[statusOf(selected)].label}
                 </span>
               </div>
-              {selected.interviewer_context && selected.assessment_available !== false && (
+              {/* Code questions: the problem panel carries the title and statement, so the editor gets the space. */}
+              {selected.interviewer_context && selected.assessment_available !== false && !isCode && (
                 <p className="mt-2 text-sm text-slate-500">{selected.interviewer_context}</p>
               )}
-              {selected.assessment_available !== false && (
+              {selected.assessment_available !== false && !isCode && (
                 <p className="mt-2 text-lg font-medium leading-8 text-slate-900">{selected.question_text}</p>
               )}
-              {isVoice && speech.supported && !selected.answer && selected.assessment_available !== false && (
+              {isVoice && speech.supported && !selected.answer && selected.assessment_available !== false && !isCalculation && !isCode && (
                 <button
                   type="button"
                   onClick={() => (speech.speaking ? speech.stop() : speech.speak(selected.question_text))}
@@ -671,13 +725,20 @@ export default function InterviewRoom({ interviewId }) {
             </div>
 
             {selected.assessment_available === false ? (
-              <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-                <p className="font-semibold">{slotKindLabel(selected.kind)} assessment · {selected.competency}</p>
-                <p className="mt-1">
-                  This practical slot is reserved in your interview plan. The assessment environment isn&apos;t enabled yet, so it can&apos;t be
-                  answered and is not scored. It is never replaced with a theoretical question.
-                </p>
-              </div>
+              <PracticalUnavailable question={selected} />
+            ) : isCode ? (
+              <CodingWorkspace
+                key={selected.id}
+                interviewId={interviewId}
+                question={selected}
+                targetRole={interview.target_role}
+                draftMeta={draft?.meta || selected.draft_meta || null}
+                onDraftChange={(meta) => updateCodeDraft(selected.id, meta)}
+                saveState={saveState}
+                readOnly={timeUp}
+                onSubmissionComplete={() => refresh().catch(() => {})}
+                cache={(workspaceCaches.current[selected.id] ||= {})}
+              />
             ) : selected.answer ? (
               <>
                 <div className="surface-card-subtle">
@@ -691,8 +752,41 @@ export default function InterviewRoom({ interviewId }) {
                 />
                 <p className="text-xs text-slate-500">{SCORE_DISCLAIMER} Your full report is available when the interview ends.</p>
               </>
+            ) : isCalculation ? (
+              <>
+                <CalculationForm
+                  practical={selected.practical}
+                  values={draft?.meta?.answers}
+                  onChange={(answers) => updateDraftAnswers(selected.id, answers)}
+                  disabled={submittingId === selected.id || timeUp}
+                />
+                <p className="text-xs text-slate-500" aria-live="polite">
+                  {saveState || 'Drafts are saved automatically. Submitted answers can’t be edited.'}
+                </p>
+                {submitError && (
+                  <p className="text-sm text-red-700" role="alert">
+                    {submitError}
+                  </p>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => submitQuestion(selected)}
+                    disabled={!canSubmit || Boolean(submittingId) || timeUp}
+                    className="btn-primary"
+                  >
+                    {submittingId === selected.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Send className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {submittingId === selected.id ? 'Checking your answers...' : 'Submit answers'}
+                  </button>
+                </div>
+              </>
             ) : (
               <>
+                {isScenario && <ScenarioBrief practical={selected.practical} />}
                 {isVoice && (
                   <VoiceAnswerPanel
                     key={selected.id}
@@ -740,7 +834,7 @@ export default function InterviewRoom({ interviewId }) {
                   <button
                     type="button"
                     onClick={() => submitQuestion(selected)}
-                    disabled={!draftText.trim() || overLimit || Boolean(submittingId) || timeUp}
+                    disabled={!canSubmit || Boolean(submittingId) || timeUp}
                     className="btn-primary"
                   >
                     {submittingId === selected.id ? (

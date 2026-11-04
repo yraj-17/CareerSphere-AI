@@ -38,14 +38,14 @@ Never expose Judge0 publicly.
 Copy two values from `/opt/judge0/credentials.env` into the backend `.env`:
 
 ```
-JUDGE0_URL=http://192.168.56.20:2358
+JUDGE0_API_URL=http://127.0.0.1:2358   # dev: through the SSH/SSM tunnel (never the public IP)
 JUDGE0_AUTH_TOKEN=<token>
 ```
 
 ## Verify real execution
 
 ```bash
-backend/.venv/Scripts/python infra/judge0/verify_judge0.py --url $JUDGE0_URL --token $JUDGE0_AUTH_TOKEN
+backend/.venv/Scripts/python infra/judge0/verify_judge0.py --env-file .env
 ```
 
 This runs real programs in C++, Java, Python and JavaScript and checks every verdict
@@ -58,3 +58,26 @@ Memory Limit Exceeded) and that the sandbox has no network access.
 - CPU 2 s default / 10 s max; wall 5 s / 20 s; memory 256 MB / 512 MB; 64 processes; 1 MB output files.
 - Token authentication on every request; separate admin token.
 - Asynchronous submissions only (no blocking waits, no callbacks); batches of up to 20.
+
+## Runtimes and limits verified on the CareerSphere instance
+
+| Use | Judge0 language | Notes |
+|---|---|---|
+| C++ | C++ (GCC 9.2.0), id 54 | compiled with `-std=c++17 -O2` |
+| Java | Java (OpenJDK 13.0.1), id 62 | public class must be `Main`; Java 17 is not installed |
+| Python | Python (3.8.1), id 71 | |
+| JavaScript | JavaScript (Node.js 12.14.0), id 63 | no `?.`, `??`, `replaceAll` |
+| Bash | Bash (5.0.0), id 46 | coreutils, GNU sed 4.7, **mawk** (no gawk), no `bc` |
+| SQL | SQL (SQLite 3.27.2), id 82 | runs `cat script.sql \| sqlite3 db.sqlite`: stdin is ignored, so the backend builds schema + seed data + candidate SQL into one script (fresh database per execution); window functions available |
+
+- **Program stdout is truncated at exactly 64 KiB (65 536 bytes).** Problem-bank expected
+  outputs are kept below 60 000 bytes (enforced when seeding), and a candidate whose
+  output reaches the cap gets an explicit "output truncated" reason.
+- Inputs of ~2 MB per test are accepted.
+
+## Problem bank
+
+From `backend/`: `python -m scripts.seed_coding_bank --verify` seeds the curated bank
+(idempotent) and verifies every problem on this instance: each reference solution must be
+Accepted, each known-wrong solution rejected, and each starter template must run. Only
+verified problems are assigned to interviews.

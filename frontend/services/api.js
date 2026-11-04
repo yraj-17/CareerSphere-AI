@@ -1101,10 +1101,60 @@ export const saveInterviewDraft = async (interviewId, questionId, { text, meta =
   return response.data;
 };
 
-export const submitInterviewAnswer = async (interviewId, { questionId, answerText, answerSource = 'TEXT' }) => {
+// ---------------------------------------------------------------------------
+// Coding assessment (all execution goes through FastAPI; the browser never talks to Judge0)
+// ---------------------------------------------------------------------------
+
+// Run/submit wait up to ~25 s server-side before returning a still-running submission.
+const CODING_EXECUTION_TIMEOUT_MS = 45000;
+
+export const getCodingLanguages = async () => {
+  const response = await apiClient.get('/api/coding/languages');
+  return response.data; // { execution_available, languages: [{ key, label, monaco_language, notes }] }
+};
+
+export const getCodingProblem = async (interviewId, questionId) => {
+  const response = await apiClient.get(`/api/interviews/${interviewId}/questions/${questionId}/problem`);
+  return response.data;
+};
+
+export const runCode = async (interviewId, questionId, { language, sourceCode, customInput = null, idempotencyKey }) => {
+  const body = { language, source_code: sourceCode, idempotency_key: idempotencyKey };
+  if (customInput !== null && customInput !== undefined) body.custom_input = customInput;
+  const response = await apiClient.post(`/api/interviews/${interviewId}/questions/${questionId}/run`, body, {
+    timeout: CODING_EXECUTION_TIMEOUT_MS,
+  });
+  return response.data;
+};
+
+export const submitCode = async (interviewId, questionId, { language, sourceCode, idempotencyKey }) => {
+  const response = await apiClient.post(
+    `/api/interviews/${interviewId}/questions/${questionId}/submit`,
+    { language, source_code: sourceCode, idempotency_key: idempotencyKey },
+    { timeout: CODING_EXECUTION_TIMEOUT_MS }
+  );
+  return response.data;
+};
+
+export const getCodingSubmission = async (interviewId, submissionId) => {
+  const response = await apiClient.get(`/api/interviews/${interviewId}/coding-submissions/${submissionId}`, { timeout: 20000 });
+  return response.data;
+};
+
+export const listCodingSubmissions = async (interviewId, questionId) => {
+  const response = await apiClient.get(`/api/interviews/${interviewId}/questions/${questionId}/submissions`);
+  return response.data.submissions;
+};
+
+export const submitInterviewAnswer = async (
+  interviewId,
+  { questionId, answerText = '', structuredAnswer = null, answerSource = 'TEXT' }
+) => {
+  const body = { question_id: questionId, answer_text: answerText, answer_source: answerSource };
+  if (structuredAnswer) body.structured_answer = structuredAnswer; // calculation fields
   const response = await apiClient.post(
     `/api/interviews/${interviewId}/answers`,
-    { question_id: questionId, answer_text: answerText, answer_source: answerSource },
+    body,
     { timeout: INTERVIEW_AI_TIMEOUT_MS }
   );
   return response.data;

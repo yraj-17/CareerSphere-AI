@@ -21,6 +21,7 @@ from app.api.notifications import router as notifications_router
 from app.api.resources import router as resources_router
 from app.api.posts import router as posts_router
 from app.api.interviews import router as interviews_router
+from app.api.coding import router as coding_router
 from app.schemas.auth import HealthResponse
 from app.services.qdrant_service import ping_qdrant, ensure_default_collections
 from app.services.storage_service import ping_minio, ensure_bucket
@@ -157,6 +158,7 @@ app.include_router(notifications_router, prefix=settings.API_V1_STR)
 app.include_router(resources_router, prefix=settings.API_V1_STR)
 app.include_router(posts_router, prefix=settings.API_V1_STR)
 app.include_router(interviews_router, prefix=settings.API_V1_STR)
+app.include_router(coding_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":

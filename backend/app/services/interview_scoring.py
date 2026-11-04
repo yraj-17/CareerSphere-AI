@@ -35,10 +35,12 @@ METHODOLOGY = (
     "Conceptual and behavioral answers are each scored from AI-rated dimensions using fixed weights "
     "for their category (technical: accuracy 40%, reasoning 25%, relevance 20%, clarity 15%; "
     "behavioral: structure 30%, relevance 25%, clarity 25%, reflection 20%). The overall interview "
-    "score is the mean of evaluated answer scores. Practical assessments are scored separately "
-    "(coding: 70% weighted test results + 30% AI code review) and are only combined once they are "
-    "assessed; practical slots that were not assessed are reported but never scored. Unanswered or "
-    "unevaluated questions are excluded."
+    "score is the mean of evaluated answer scores. Practical assessments are scored separately: "
+    "calculations are auto-graded against values computed deterministically (Python ipaddress); "
+    "practical scenarios are AI-reviewed against a fixed rubric and are not executed; coding uses "
+    "70% weighted test results + 30% AI code review once the in-interview editor is enabled. Practical "
+    "slots with no verified assessment are reported but never scored. Unanswered or unevaluated "
+    "questions are excluded."
 )
 
 
@@ -78,26 +80,51 @@ def _competency_scores(conceptual_rows: list[dict]) -> list[dict]:
 
 
 def _practical_section(rows: list[dict], blueprint: Optional[dict], available: Iterable[str]) -> dict:
+    """
+    Practical slots, one item each:
+      not_available  no verified assessment for this slot (or the kind is not enabled)
+      awaiting_editor  a verified coding/SQL problem is assigned, but candidate code submission
+                     is not enabled in the interview yet (code editor phase) — not scored
+      not_reached    planned but never prepared (interview ended first)
+      not_answered   prepared and answerable but not submitted
+      not_assessed   submitted, evaluation pending or failed
+      assessed       scored (method: deterministic | ai_rubric | ...)
+    """
     available = set(available)
     planned = [s for s in (blueprint or {}).get("question_slots", []) if s.get("kind", "question") != "question"]
     reached = {row["question_order"]: row for row in rows if row.get("kind", "question") != "question"}
     items = []
     for slot in planned:
         row = reached.get(slot["position"])
-        if slot["kind"] not in available:
+        if row is not None and not row.get("available", True):
+            item_status = "awaiting_editor" if row.get("problem_assigned") else "not_available"
+        elif row is None and (slot["kind"] not in available or slot.get("assessment_available") is False):
             item_status = "not_available"
         elif row is None:
             item_status = "not_reached"
+        elif row.get("score") is not None:
+            item_status = "assessed"
+        elif row.get("answered"):
+            item_status = "not_assessed"
         else:
-            item_status = "assessed" if row.get("score") is not None else "not_assessed"
-        items.append({"position": slot["position"], "kind": slot["kind"], "competency": slot["competency"], "status": item_status})
-    assessed = [reached[i["position"]]["score"] for i in items if i["status"] == "assessed"]
+            item_status = "not_answered"
+        items.append({
+            "position": slot["position"],
+            "kind": slot["kind"],
+            "competency": slot["competency"],
+            "status": item_status,
+            "score": row.get("score") if row is not None and item_status == "assessed" else None,
+            "method": row.get("method") if row is not None and item_status == "assessed" else None,
+            # {difficulty, planned_difficulty, difficulty_fallback} of the assigned assessment, if any
+            "difficulty": row.get("difficulty") if row is not None else None,
+        })
+    assessed = [i["score"] for i in items if i["status"] == "assessed"]
     return {
         "reserved": len(planned),
         "reached": len(reached),
         "assessed": len(assessed),
         "score": _mean(assessed),
-        "available": bool(planned) and all(slot["kind"] in available for slot in planned),
+        "available": bool(planned) and all(i["status"] not in ("not_available", "awaiting_editor") for i in items),
         "kinds": sorted({slot["kind"] for slot in planned}),
         "items": items,
     }

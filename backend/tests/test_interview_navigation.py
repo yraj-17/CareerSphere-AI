@@ -20,7 +20,7 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.services import interview_service as svc
 from app.services.ollama_service import AIServiceError
-from tests.test_interviews import _shift_deadline, model, other_user, user  # noqa: F401 — fixtures/helpers
+from tests.test_interviews import _shift_deadline, model, no_verified_bank, other_user, user  # noqa: F401 — fixtures/helpers (no_verified_bank is autouse)
 
 client = TestClient(app)
 
