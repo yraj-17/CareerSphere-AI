@@ -15,6 +15,16 @@ class User(Base):
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    # Networking eligibility is explicit rather than inferred from names,
+    # usernames, or email addresses.  Existing rows are treated as ordinary
+    # active members by the migration; test/demo/system data must be marked at
+    # creation time or by an operator-maintained data migration.
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_test_account = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_demo_account = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_system_account = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_discoverable = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -24,6 +34,25 @@ class User(Base):
 
     def __repr__(self):
         return f"<User username={self.username} email={self.email}>"
+
+
+class UserBlock(Base):
+    """A directed block between two users.
+
+    Blocks are intentionally separate from connection state.  A block in
+    either direction prevents discovery and connection requests in both
+    directions.
+    """
+
+    __tablename__ = "user_blocks"
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_user_block_pair"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    blocker_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blocked_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class MediaObject(Base):
@@ -270,11 +299,55 @@ class Opportunity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    # ── Provider provenance (migration 024) ───────────────────────────────
+    # ``source`` is the provider key (greenhouse, lever, ashby, adzuna, remotive);
+    # ``source_board`` the company board / feed it came from.  Missing values are
+    # stored as NULL — nothing is inferred or invented.
+    source_board = Column(String(120), nullable=True, index=True)
+    source_attribution = Column(String(300), nullable=True)
+    job_url = Column(String(1000), nullable=True)
+    country = Column(String(80), nullable=True, index=True)
+    work_mode = Column(String(20), nullable=True, index=True)  # remote | hybrid | onsite
+    employment_type = Column(String(40), nullable=True, index=True)  # full_time | part_time | contract | internship | temporary
+    experience_min_years = Column(Integer, nullable=True)
+    experience_max_years = Column(Integer, nullable=True)
+    salary_currency = Column(String(10), nullable=True)
+    salary_period = Column(String(20), nullable=True)
+    salary_text = Column(String(200), nullable=True)
+    source_updated_at = Column(DateTime(timezone=True), nullable=True)
+    first_seen_at = Column(DateTime(timezone=True), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
+    inactive_reason = Column(String(40), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+
     required_skills = relationship("OpportunityRequiredSkill", back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityRequiredSkill.name")
     preferred_skills = relationship("OpportunityPreferredSkill", back_populates="opportunity", cascade="all, delete-orphan", order_by="OpportunityPreferredSkill.name")
 
     def __repr__(self):
         return f"<Opportunity id={self.id} title={self.title} source={self.source}>"
+
+
+class JobSyncRun(Base):
+    """One synchronisation attempt of one job source (provider + board/feed)."""
+
+    __tablename__ = "job_sync_runs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider = Column(String(40), nullable=False, index=True)
+    source_board = Column(String(120), nullable=True)
+    trigger = Column(String(20), nullable=False, default="scheduled")  # scheduled | manual | startup | cli
+    status = Column(String(20), nullable=False)  # running | success | error
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    fetched_count = Column(Integer, nullable=False, default=0)
+    kept_count = Column(Integer, nullable=False, default=0)
+    inserted_count = Column(Integer, nullable=False, default=0)
+    updated_count = Column(Integer, nullable=False, default=0)
+    unchanged_count = Column(Integer, nullable=False, default=0)
+    deactivated_count = Column(Integer, nullable=False, default=0)
+    invalid_count = Column(Integer, nullable=False, default=0)
+    error_message = Column(String(500), nullable=True)
 
 
 class OpportunityRequiredSkill(Base):
@@ -1260,6 +1333,15 @@ class InterviewQuestion(Base):
     # id, or calculation parameters). Answers are derived from it server-side; only a
     # public view (practical_service.public_view) ever reaches the client.
     practical = Column(JSON, nullable=True)
+    # Follow-ups: a follow-up question points at its parent (unique: at most one per parent).
+    # Follow-ups use question_order = FOLLOW_UP_ORDER_OFFSET + parent order, outside the
+    # blueprint positions, so they never take a planned slot.
+    parent_question_id = Column(
+        String(36), ForeignKey("interview_questions.id", ondelete="CASCADE"), nullable=True, unique=True
+    )
+    # On a parent: NULL | PENDING | CREATED | SKIPPED | FAILED — claimed atomically, so a
+    # follow-up is generated at most once per parent.
+    follow_up_state = Column(String(10), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     session = relationship("InterviewSession", back_populates="questions")
@@ -1444,3 +1526,12 @@ class CodingSubmission(Base):
     error = Column(String(300), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    # AI Code Review (SUBMIT only; one per submission). Code quality only — execution
+    # correctness always comes from the Judge0 fields above.
+    ai_review_status = Column(String(12), nullable=True)  # NULL | PENDING | RUNNING | COMPLETED | FAILED
+    ai_review_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    ai_review = Column(JSON, nullable=True)
+    ai_quality_score = Column(Float, nullable=True)  # computed by the backend from criterion scores
+    ai_review_model = Column(String(80), nullable=True)
+    ai_review_updated_at = Column(DateTime(timezone=True), nullable=True)
+    ai_reviewed_at = Column(DateTime(timezone=True), nullable=True)

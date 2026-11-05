@@ -130,6 +130,18 @@ class ConnectionManager:
 
         return delivered
 
+    async def send_to_all(
+        self,
+        event_type: str,
+        data: dict,
+        exclude_user_id: str | None = None,
+    ) -> None:
+        """Broadcast an event to every local user, optionally excluding one."""
+        for user_id in list(self._connections.keys()):
+            if user_id == exclude_user_id:
+                continue
+            await self.send_to_user(user_id, event_type, data)
+
     async def send_to_conversation(
         self,
         conversation_id: str,

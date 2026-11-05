@@ -17,6 +17,7 @@ from app.api.networking import router as networking_router
 from app.api.communities import router as communities_router
 from app.api.messaging import router as messaging_router
 from app.api.messaging_ws import router as messaging_ws_router
+from app.api.presence_ws import router as presence_ws_router
 from app.api.notifications import router as notifications_router
 from app.api.resources import router as resources_router
 from app.api.posts import router as posts_router
@@ -28,6 +29,7 @@ from app.services.storage_service import ping_minio, ensure_bucket
 from app.services.redis_pubsub_manager import pubsub_manager
 from app.services.messaging_fanout import start_fanout_listener, stop_fanout_listener
 from app.services.presence_fanout import start_presence_listener, stop_presence_listener
+from app.services.job_sync_service import start_job_sync_scheduler, stop_job_sync_scheduler
 
 
 @asynccontextmanager
@@ -82,8 +84,15 @@ async def lifespan(app: FastAPI):
     else:
         print("[Startup] WARNING: Distributed presence listener failed to start — cross-instance presence disabled.")
 
+    # Real job listings for Career Matching: periodic provider sync (Redis-locked).
+    if start_job_sync_scheduler():
+        print(f"[Startup] Job sync scheduler started (every {settings.JOB_SYNC_INTERVAL_MINUTES} min).")
+    else:
+        print("[Startup] Job sync scheduler disabled (JOB_SYNC_ENABLED=false).")
+
     yield
     # --- Shutdown ---
+    await stop_job_sync_scheduler()
     # Stop the fanout pattern listener.
     await stop_fanout_listener()
     # Stop the distributed presence listener.
@@ -154,6 +163,7 @@ app.include_router(networking_router, prefix=settings.API_V1_STR)
 app.include_router(communities_router, prefix=settings.API_V1_STR)
 app.include_router(messaging_router, prefix=settings.API_V1_STR)
 app.include_router(messaging_ws_router, prefix=settings.API_V1_STR)
+app.include_router(presence_ws_router, prefix=settings.API_V1_STR)
 app.include_router(notifications_router, prefix=settings.API_V1_STR)
 app.include_router(resources_router, prefix=settings.API_V1_STR)
 app.include_router(posts_router, prefix=settings.API_V1_STR)

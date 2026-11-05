@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Award,
+  BrainCircuit,
   Briefcase,
   Camera,
   CheckCircle2,
@@ -497,6 +498,27 @@ function CopyButton({ text }) {
   );
 }
 
+function AIRecommendation({ text }) {
+  if (!text) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-[#FCF8EF] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700">
+            <BrainCircuit className="h-4 w-4" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-800">AI Recommendation</p>
+            <p className="mt-1 text-xs text-slate-500">A generated improvement for this profile section</p>
+          </div>
+        </div>
+      </div>
+      <p className="mt-4 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-900 sm:text-[15px]">{text}</p>
+    </div>
+  );
+}
+
 function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
   if (loading && !optimization) {
     return (
@@ -564,14 +586,24 @@ function ProfileOptimizationPanel({ optimization, loading, onRefresh }) {
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{section.score}/100</span>
                   <span className="rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-xs font-semibold capitalize text-brand-500">{section.status.replaceAll('_', ' ')}</span>
                 </div>
-                {section.current ? <p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Current</p> : null}
-                {section.current ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{section.current}</p> : null}
+                {section.current ? (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Current profile</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{section.current}</p>
+                  </div>
+                ) : null}
               </div>
               <CopyButton text={section.suggestion} />
             </div>
-            <p className="mt-4 text-xs uppercase tracking-wide text-slate-500">Suggestion</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{section.suggestion}</p>
-            <p className="mt-3 text-sm leading-6 text-slate-500">{section.reason}</p>
+            <div className="mt-4">
+              <AIRecommendation text={section.suggestion} />
+            </div>
+            {section.reason ? (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Why this matters</p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{section.reason}</p>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

@@ -12,10 +12,11 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_user, get_db
-from app.db.models import Connection, Profile, ProfileProject, User
+from app.db.models import Connection, Profile, ProfileProject, User, UserBlock
 from app.schemas.networking import (
     ConnectionResponse,
     ConnectionStatusResponse,
@@ -368,19 +369,48 @@ def discover_users(
     """
     Simple people discovery.
 
-    - Excludes the authenticated user from results.
+    - Returns only active, non-deleted, non-test/demo/system, discoverable
+      accounts.
+    - Excludes the authenticated user, blocked users, and every user pair that
+      already has a connection row (including pending requests).
     - Optionally filters by ``?q=`` (case-insensitive username or full-name match).
-    - Returns profile basics + connection status for each user.
-    - No AI, no vector search, no recommendations.
+    - Returns public profile basics only.
+    - No fallback, mock, or seeded recommendation records are added.
     """
-    # Base query: all users except the current user, with their profile eagerly loaded
+    # Base query: only eligible public accounts, with their profile eagerly
+    # loaded.  Relationship and block checks are correlated subqueries so the
+    # count and page use the same eligibility rules without N+1 queries.
     query = (
         db.query(User)
-        .outerjoin(Profile, Profile.user_id == User.id)
         .options(
             joinedload(User.profile).joinedload(Profile.profile_photo)
         )
-        .filter(User.id != current_user.id)
+        .filter(
+            User.id != current_user.id,
+            User.is_active.is_(True),
+            User.is_deleted.is_(False),
+            User.is_test_account.is_(False),
+            User.is_demo_account.is_(False),
+            User.is_system_account.is_(False),
+            User.is_discoverable.is_(True),
+            ~exists().where(
+                or_(
+                    (Connection.requester_id == current_user.id)
+                    & (Connection.receiver_id == User.id),
+                    (Connection.receiver_id == current_user.id)
+                    & (Connection.requester_id == User.id),
+                )
+            ),
+            ~exists().where(
+                or_(
+                    (UserBlock.blocker_id == current_user.id)
+                    & (UserBlock.blocked_id == User.id),
+                    (UserBlock.blocker_id == User.id)
+                    & (UserBlock.blocked_id == current_user.id),
+                )
+            ),
+        )
+        .distinct()
     )
 
     if q and q.strip():
@@ -392,31 +422,12 @@ def discover_users(
         )
 
     total = query.count()
-    users = query.order_by(User.username.asc()).offset(offset).limit(limit).all()
-
-    # Build connection-status map for the returned users in one pass
-    # (avoids N+1: one query per returned user)
-    user_ids = [u.id for u in users]
-    conn_map: dict[str, str] = {}
-    if user_ids:
-        ca_vals, cb_vals = zip(
-            *[Connection.canonical_pair(current_user.id, uid) for uid in user_ids]
-        )
-        rows = (
-            db.query(Connection)
-            .filter(
-                Connection.canonical_a.in_(ca_vals),
-                Connection.canonical_b.in_(cb_vals),
-            )
-            .all()
-        )
-        # Index by canonical pair so we can look up per-user
-        pair_to_status: dict[tuple[str, str], str] = {
-            (c.canonical_a, c.canonical_b): c.status.value for c in rows
-        }
-        for uid in user_ids:
-            ca, cb = Connection.canonical_pair(current_user.id, uid)
-            conn_map[uid] = pair_to_status.get((ca, cb), "none")
+    users = (
+        query.order_by(User.username.asc(), User.id.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     result_users = []
     for user in users:
@@ -424,7 +435,10 @@ def discover_users(
         result_users.append(
             _build_user_response(
                 user=user,
-                connection_status=conn_map.get(user.id, "none"),
+                # Discovery returns request-eligible users only, so there is
+                # no pending/accepted state to expose on these cards.  Keep
+                # the field for response compatibility with existing clients.
+                connection_status="none",
                 profile=profile,
             )
         )

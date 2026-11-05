@@ -17,12 +17,14 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, PanelLeftDashed, Search, X } from 'lucide-react';
+import { ArrowLeft, MessageSquare, PanelLeftDashed, Search, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import ConversationList from '@/components/messaging/ConversationList';
 import ChatWindow from '@/components/messaging/ChatWindow';
 import ForwardModal from '@/components/messaging/ForwardModal';
 import { compareMessages } from '@/components/messaging/messageDateUtils';
 import { useMessagingWebSocket, WS_STATE } from '@/hooks/useMessagingWebSocket';
+import { usePresence } from '@/components/common/PresenceProvider';
 import {
   listConversations,
   listMessages,
@@ -52,6 +54,8 @@ function mergeMessages(existing, incoming) {
 }
 
 export default function MessagingPage({ currentUser, initialConvId = null }) {
+  const router = useRouter();
+
   // ── Conversation list ──────────────────────────────────────────────────────
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(true);
@@ -71,7 +75,7 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   const [pinnedMessage, setPinnedMessage] = useState(null);
 
   // ── Presence ───────────────────────────────────────────────────────────────
-  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const { onlineUsers, markOnline, markOffline } = usePresence();
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const typingTimerRef = useRef(null);
 
@@ -283,18 +287,12 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
   }, [currentUser?.id]);
 
   const handleUserOnline = useCallback((userId) => {
-    if (!userId) return;
-    setOnlineUsers((prev) => new Set([...prev, userId]));
-  }, []);
+    markOnline(userId);
+  }, [markOnline]);
 
   const handleUserOffline = useCallback((userId) => {
-    if (!userId) return;
-    setOnlineUsers((prev) => {
-      const next = new Set(prev);
-      next.delete(userId);
-      return next;
-    });
-  }, []);
+    markOffline(userId);
+  }, [markOffline]);
 
   // ── Phase 5.8 — WS management event handlers ──────────────────────────────
 
@@ -388,6 +386,14 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     setMobileSidebarOpen(true);
     setSelectedConv(null);
   }, []);
+
+  const handleExitMessaging = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1 && router.back) {
+      router.back();
+      return;
+    }
+    router.push('/dashboard/home');
+  }, [router]);
 
   const handleOpenSidebar = useCallback(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -537,6 +543,15 @@ export default function MessagingPage({ currentUser, initialConvId = null }) {
     <div className="flex h-full min-h-0 flex-col bg-slate-50" style={mobile ? undefined : { minHeight: '100vh' }}>
       <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4">
         <div className="flex min-w-0 items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleExitMessaging}
+            aria-label="Back to dashboard"
+            title="Back to dashboard"
+            className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 shadow-sm transition-all duration-200 hover:-translate-x-0.5 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_6px_16px_rgba(16,27,45,0.12)] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+          >
+            <ArrowLeft className="h-[18px] w-[18px] transition-transform duration-200 group-hover:-translate-x-0.5" />
+          </button>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
             <MessageSquare className="h-4 w-4" />
           </span>

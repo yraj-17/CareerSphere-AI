@@ -228,10 +228,12 @@ describe('DiscoverPeoplePage', () => {
     expect(sendConnectionRequest).toHaveBeenCalledWith('target-42');
   });
 
-  // ── 11. After successful connect, button changes to Pending ──────────────────
-  test('11. after successful connect, connection_status becomes pending', async () => {
+  // ── 11. After successful connect, recommendations refresh ───────────────────
+  test('11. after successful connect, recommendations refresh and remove the user', async () => {
     const user = makeUser('abc');
-    getNetworkingUsers.mockResolvedValue(PAGE_RESPONSE([user]));
+    getNetworkingUsers
+      .mockResolvedValueOnce(PAGE_RESPONSE([user]))
+      .mockResolvedValueOnce(PAGE_RESPONSE([]));
     sendConnectionRequest.mockResolvedValue({ id: 'c1', status: 'pending' });
 
     await act(async () => { render(<DiscoverPeoplePage />); });
@@ -241,10 +243,8 @@ describe('DiscoverPeoplePage', () => {
       fireEvent.click(screen.getByRole('button', { name: /connect with test userabc/i }));
     });
 
-    await waitFor(() => {
-      // After success the optimistic update turns it to pending
-      expect(screen.getByRole('button', { name: /pending/i })).toBeDisabled();
-    });
+    await waitFor(() => expect(screen.getByTestId('empty-state')).toBeInTheDocument());
+    expect(getNetworkingUsers).toHaveBeenCalledTimes(2);
   });
 
   // ── 12. API error shows error state ──────────────────────────────────────────
@@ -286,6 +286,7 @@ describe('DiscoverPeoplePage', () => {
     await waitFor(() => screen.getByTestId('empty-state'));
 
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
+    expect(screen.getByText('No new people to discover yet.')).toBeInTheDocument();
   });
 
   // ── 15. Sensitive fields not rendered ────────────────────────────────────────

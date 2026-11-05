@@ -320,17 +320,39 @@ Use one initialization path. init_db.py creates the SQLAlchemy schema and stamps
 
 The backend checks PostgreSQL during application import, so PostgreSQL must be available before starting Uvicorn.
 
-### 7. Seed and index optional career data
+### 7. Import real job listings and index career knowledge
 
-The repository includes backend scripts for local opportunity data and retrieval indexes:
+Career Matching uses genuine job listings imported from public company job boards
+(Greenhouse, Lever, Ashby) and, when configured, Adzuna. There is no demo job data.
+Configure the boards in `.env` (`JOB_GREENHOUSE_BOARDS`, `JOB_LEVER_BOARDS`,
+`JOB_ASHBY_BOARDS` — see `.env.example`), then import once:
 
 ~~~bash
-python -m scripts.seed_opportunities
-python -m scripts.index_opportunities
+python -m scripts.sync_jobs            # all configured providers
+python -m scripts.sync_jobs --status   # provider health only
+~~~
+
+The API keeps listings fresh automatically (`JOB_SYNC_INTERVAL_MINUTES`, Redis-locked so
+only one instance syncs). Admins listed in `ADMIN_EMAILS` can call
+`POST /api/career-matching/admin/sync` and `GET /api/career-matching/providers/status`.
+Withdrawn listings are deactivated after a complete board fetch; listings not seen for
+7 days, past their deadline, or (aggregators) older than `JOB_LISTING_MAX_AGE_DAYS` are
+marked inactive.
+
+Provider terms: Adzuna requires a licence for revenue/lead-generating use and an
+"Adzuna" attribution link on every listing; Remotive (`REMOTIVE_ENABLED`) forbids showing
+its jobs behind a sign-up wall without permission, so it is off by default.
+
+To remove the old Phase 3.2 demo opportunities from an existing database (migration
+024 also does this): `python -m scripts.cleanup_demo_opportunities --apply`.
+
+Career-knowledge retrieval index:
+
+~~~bash
 python -m scripts.index_career_knowledge
 ~~~
 
-The indexing commands require the configured embedding provider and Qdrant. If Ollama is running in Compose, pull the embedding model inside the container before indexing:
+The indexing command requires the configured embedding provider and Qdrant. If Ollama is running in Compose, pull the embedding model inside the container before indexing:
 
 ~~~bash
 docker exec careersphere-ollama ollama pull nomic-embed-text
@@ -438,7 +460,14 @@ SQLite is not supported by the backend configuration.
 | QDRANT_API_KEY | Optional Qdrant API key |
 | QDRANT_COLLECTION_PROFILES | Profile vector collection |
 | QDRANT_COLLECTION_CONTENT | Career-content vector collection |
-| QDRANT_COLLECTION_OPPORTUNITIES | Opportunity vector collection |
+| QDRANT_COLLECTION_OPPORTUNITIES | Legacy opportunity vector collection (only used by the demo-data cleanup script) |
+| JOB_GREENHOUSE_BOARDS / JOB_LEVER_BOARDS / JOB_ASHBY_BOARDS | Verified public company boards, `slug=Company Name,...` |
+| JOB_SYNC_LOCATION_KEYWORDS / JOB_SYNC_INCLUDE_GLOBAL_REMOTE | Import filter (India + global remote by default) |
+| JOB_SYNC_ENABLED / JOB_SYNC_INTERVAL_MINUTES / JOB_SYNC_ON_STARTUP | Automatic job synchronisation |
+| JOB_LISTING_MAX_AGE_DAYS | Expiry for aggregator listings without a deadline |
+| ADZUNA_APP_ID / ADZUNA_APP_KEY / ADZUNA_COUNTRY / ADZUNA_QUERIES | Adzuna search API (optional, licence required for commercial use) |
+| REMOTIVE_ENABLED / REMOTIVE_CATEGORIES | Remotive (off by default; see its terms) |
+| ADMIN_EMAILS | Accounts allowed to trigger job sync and view provider status |
 | EMBEDDING_PROVIDER | Embedding provider, default ollama |
 | EMBEDDING_MODEL | Embedding model, default nomic-embed-text |
 | EMBEDDING_DIMENSION | Optional explicit vector dimension |

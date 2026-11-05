@@ -73,21 +73,23 @@ def ensure_tables():
 @pytest.fixture()
 def db():
     """
-    DB session that is always rolled back on teardown.
-    The service functions commit internally; the rollback here undoes those
-    commits for test isolation because PostgreSQL supports transactional DDL
-    only for schema, not data — so we rely on the explicit rollback.
-
-    Note: because the service commits inside the *same* connection, the
-    rollback at the end of each test undoes all data changes made during
-    that test.
+    DB session whose fixture-created users are marked as test accounts on
+    teardown. Service functions commit internally, so a final rollback alone
+    cannot undo their data changes.
     """
     session = SessionLocal()
     try:
         yield session
     finally:
-        session.rollback()
-        session.close()
+        try:
+            session.rollback()
+            session.query(User).filter(User.username.like("svc_test_%")).update(
+                {User.is_test_account: True},
+                synchronize_session=False,
+            )
+            session.commit()
+        finally:
+            session.close()
 
 
 @pytest.fixture()

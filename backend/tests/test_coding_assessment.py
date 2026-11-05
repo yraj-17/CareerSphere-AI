@@ -767,7 +767,10 @@ def test_completed_submit_is_recorded_as_the_scored_answer(assessed):
     q = _question_state(assessed)
     assert q["status"] == "ANSWERED" and q["answer"]["evaluation_status"] == "COMPLETED"
     ev = q["answer"]["evaluation"]
-    assert q["answer"]["score"] == 100 and ev["method"] == "judge0" and ev["verdict"] == "ACCEPTED"
+    assert ev["method"] == "judge0" and ev["verdict"] == "ACCEPTED" and ev["correctness_score"] == 100
+    # The (mocked) AI review ran in the background: quality 75 -> combined 0.7*100 + 0.3*75 = 92.5
+    assert ev["review_status"] == "COMPLETED" and ev["quality_score"] == 75.0 and ev["coding_score"] == 92.5
+    assert q["answer"]["score"] == 93  # 92.5 rounded half-up, as displayed
     assert (ev["correct"], ev["total"], ev["language"], ev["submission_id"]) == (5, 5, "PYTHON", body["id"])
     assert q["answer"]["answer_text"] == "#fake:sum"  # the submitted source is the answer
     assert "SECRET" not in json.dumps(q)  # no hidden test data through the interview API either
@@ -778,7 +781,10 @@ def test_latest_submission_replaces_the_answer_and_older_ones_never_do(assessed)
     second = _submit(assessed, "#fake:small-only").json()
     q = _question_state(assessed)
     assert q["answer"]["evaluation"]["submission_id"] == second["id"] and q["answer"]["evaluation"]["verdict"] == "WRONG_ANSWER"
-    assert q["answer"]["score"] == round(100 * 3 / 7)  # weighted correctness: tests weigh 1,1,1,2,2 and the 3 light ones pass
+    # weighted correctness: tests weigh 1,1,1,2,2 and the 3 light ones pass -> 300/7
+    assert round(q["answer"]["evaluation"]["correctness_score"], 2) == round(100 * 3 / 7, 2)
+    assert q["answer"]["evaluation"]["coding_score"] == round(0.7 * (100 * 3 / 7) + 0.3 * 75.0, 1)  # with the AI quality score
+    assert q["answer"]["score"] == int(0.7 * (100 * 3 / 7) + 0.3 * 75.0 + 0.5)
     db = SessionLocal()
     try:
         older = db.get(CodingSubmission, first["id"])
@@ -816,7 +822,9 @@ def test_report_settles_running_submission_and_scores_it_from_judge0(assessed, j
     finally:
         db.close()
     q = _question_state(assessed)
-    assert q["answer"]["evaluation"]["submission_id"] == started["id"] and q["answer"]["score"] == 100
+    ev = q["answer"]["evaluation"]
+    assert ev["submission_id"] == started["id"] and ev["correctness_score"] == 100
+    assert ev["review_status"] == "COMPLETED" and q["answer"]["score"] == 93  # review settled before the report
     late = _submit(assessed, "#fake:wrong")
     assert late.status_code == 409  # interview ended: no more submissions
     assert report["status"] in ("COMPLETED", "FAILED")

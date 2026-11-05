@@ -42,6 +42,9 @@ class Scenario:
     estimated_minutes: int = 15
     difficulties: tuple[str, ...] = ALL_LEVELS
     deliverable: str = "A written answer addressing every task."
+    # Technologies the scenario itself is built on (e.g. the service's runtime). Follow-up
+    # questions may ask about them even if they belong to another role's catalogue.
+    stack: tuple[str, ...] = ()
 
 
 def K(id: str, title: str, points: int, expectations: str) -> Criterion:
@@ -249,6 +252,7 @@ CMD ["npm", "start"]""",
               "Pin a specific base image (not latest; slim/alpine), copy package files first for layer caching, `npm ci --omit=dev`, NODE_ENV=production, .dockerignore, run as non-root user, run node directly (signal handling), healthcheck."),
             K("verify", "Verification", 10, "Checks memory with docker stats/metrics after the fix and adds alerting on OOM kills/restarts."),
         ),
+        stack=("node.js", "npm"),
     ),
     Scenario(
         "devops-k8s-pending-no-endpoints", "Kubernetes rollout stuck",

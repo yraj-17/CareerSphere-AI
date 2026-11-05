@@ -58,7 +58,7 @@ function ConnectionRow({ connection, selected, busy, onToggle }) {
         <span className="block truncate text-sm font-semibold text-slate-900">{name}</span>
         <span className="block truncate text-xs text-slate-500">{user.headline || `@${user.username}`}</span>
       </span>
-      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selected ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-400 bg-white text-transparent'}`} aria-hidden="true">
+      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selected ? 'border-brand-600 bg-brand-600 !text-white' : 'border-slate-400 bg-white text-transparent'}`} aria-hidden="true">
         <Check className="h-3.5 w-3.5" />
       </span>
     </button>
@@ -190,7 +190,7 @@ export default function SharePostModal({ isOpen, post, onClose, onShared }) {
           <button type="button" onClick={copyPostLink} disabled={sharing} className="inline-flex items-center gap-2 text-sm font-semibold text-brand-700 hover:text-brand-900 disabled:opacity-50"><Link2 className="h-4 w-4" />{copyStatus || 'Copy link to post'}</button>
           <div className="flex items-center gap-2">
             <button type="button" onClick={handleClose} disabled={sharing} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-            <button type="button" onClick={shareSelected} disabled={!selectedConnections.length || sharing} className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">{sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send</button>
+            <button type="button" onClick={shareSelected} disabled={!selectedConnections.length || sharing} className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold !text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">{sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send</button>
           </div>
         </div>
       </div>

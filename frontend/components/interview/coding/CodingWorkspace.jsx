@@ -21,6 +21,7 @@ import {
   getCodingProblem,
   getCodingSubmission,
   listCodingSubmissions,
+  retryCodeReview,
   runCode,
   submitCode,
 } from '@/services/api';
@@ -42,6 +43,10 @@ import {
 } from '@/components/interview/coding/codingUtils';
 
 export const POLL_INTERVAL_MS = 1500;
+// The AI review loads independently of (and much more slowly than) the Judge0 result.
+export const REVIEW_POLL_INTERVAL_MS = 4000;
+export const REVIEW_POLL_TIMEOUT_MS = 6 * 60 * 1000;
+const reviewPending = (submission) => ['PENDING', 'RUNNING'].includes(submission?.ai_review?.status);
 export const POLL_TIMEOUT_MS = 120000;
 const MAX_POLL_FAILURES = 5;
 const FORMATTABLE = new Set(['javascript']);
@@ -117,10 +122,17 @@ function Splitter({ orientation, value, onChange, containerRef, label, min = 20,
 function AnswerSummary({ answer }) {
   const ev = answer?.evaluation;
   if (!ev || ev.method !== 'judge0') return null;
+  const correctness = ev.correctness_score ?? null;
+  let quality = 'AI code review pending';
+  if (ev.review_status === 'COMPLETED' && ev.quality_score !== null && ev.quality_score !== undefined) {
+    quality = `AI code quality ${Math.round(ev.quality_score)}/100 · combined ${Math.round(ev.coding_score)}/100`;
+  } else if (ev.review_status === 'FAILED') {
+    quality = 'AI code review unavailable — scored on correctness only';
+  }
   return (
     <p className={`rounded-md border px-2 py-1 text-xs ${TONE_CLASSES[toneOf(ev.verdict)]}`}>
-      Recorded answer: <span className="font-semibold">{ev.verdict_label}</span> · {ev.correct}/{ev.total} tests · score {answer.score}/100 (
-      {ev.language_label}). Submitting again replaces it.
+      Recorded answer: <span className="font-semibold">{ev.verdict_label}</span> · {ev.correct}/{ev.total} tests
+      {correctness !== null && <> · correctness {Math.round(correctness)}/100</>} · {quality} ({ev.language_label}). Submitting again replaces it.
     </p>
   );
 }
@@ -150,6 +162,9 @@ export default function CodingWorkspace({
   const [wordWrap, setWordWrap] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [retryingReview, setRetryingReview] = useState(false);
+  const reviewTimer = useRef(null);
+  const reviewToken = useRef(0);
 
   const mounted = useRef(true);
   const busyRef = useRef(false);
@@ -170,7 +185,9 @@ export default function CodingWorkspace({
     return () => {
       mounted.current = false;
       pollToken.current += 1; // stops any polling loop for this question
+      reviewToken.current += 1;
       window.clearTimeout(pollTimer.current);
+      window.clearTimeout(reviewTimer.current);
     };
   }, []);
 
@@ -254,16 +271,61 @@ export default function CodingWorkspace({
   };
 
   // ---------------------------------------------------------------- execution + polling
+  // Poll a submission's AI review on its own (slow) loop; the Judge0 result is already shown.
+  const pollReview = useCallback(
+    (submission) => {
+      const token = ++reviewToken.current;
+      const startedAt = Date.now();
+      const tick = async () => {
+        if (token !== reviewToken.current || !mounted.current) return;
+        try {
+          const latest = await getCodingSubmission(interviewId, submission.id);
+          if (token !== reviewToken.current || !mounted.current) return;
+          setView((prev) => (prev.submission?.id === latest.id ? { ...prev, submission: latest } : prev));
+          if (!reviewPending(latest)) {
+            onSubmissionComplete?.(latest); // refresh the recorded answer (combined score) in the room
+            return;
+          }
+        } catch {
+          // transient: try again on the next tick
+        }
+        if (Date.now() - startedAt < REVIEW_POLL_TIMEOUT_MS) reviewTimer.current = window.setTimeout(tick, REVIEW_POLL_INTERVAL_MS);
+      };
+      window.clearTimeout(reviewTimer.current);
+      reviewTimer.current = window.setTimeout(tick, REVIEW_POLL_INTERVAL_MS);
+    },
+    [interviewId, onSubmissionComplete]
+  );
+
   const finish = useCallback(
     (submission) => {
       busyRef.current = false;
       if (!mounted.current) return;
       setView({ submission, phase: 'done', error: '' });
       refreshHistory();
-      if (submission.submission_type === 'SUBMIT') onSubmissionComplete?.(submission);
+      if (submission.submission_type === 'SUBMIT') {
+        onSubmissionComplete?.(submission);
+        if (reviewPending(submission)) pollReview(submission);
+      }
     },
-    [onSubmissionComplete, refreshHistory]
+    [onSubmissionComplete, pollReview, refreshHistory]
   );
+
+  const retryReview = async () => {
+    const submission = view.submission;
+    if (!submission || retryingReview) return;
+    setRetryingReview(true);
+    try {
+      const latest = await retryCodeReview(interviewId, submission.id);
+      if (!mounted.current) return;
+      setView((prev) => (prev.submission?.id === latest.id ? { ...prev, submission: latest } : prev));
+      onSubmissionComplete?.(latest);
+    } catch (error) {
+      if (mounted.current) setView((prev) => ({ ...prev, error: codingErrorMessage(error, 'The review could not be retried.') }));
+    } finally {
+      if (mounted.current) setRetryingReview(false);
+    }
+  };
 
   const poll = useCallback(
     (submission) => {
@@ -310,13 +372,15 @@ export default function CodingWorkspace({
     [finish, interviewId]
   );
 
-  // Returning to a question whose run/submission was still executing: resume polling it.
+  // Returning to a question whose run/submission (or its AI review) was still pending: resume polling it.
   useEffect(() => {
     const pending = cache.view?.submission;
     if (pending && isPending(pending)) {
       busyRef.current = true;
       setView({ submission: pending, phase: 'polling', error: '' });
       poll(pending);
+    } else if (pending && reviewPending(pending)) {
+      pollReview(pending);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -600,6 +664,8 @@ export default function CodingWorkspace({
             onRefreshHistory={refreshHistory}
             onSelectHistory={selectHistory}
             onCheckStatus={checkStatus}
+            onRetryReview={retryReview}
+            retryingReview={retryingReview}
           />
         </div>
       </div>

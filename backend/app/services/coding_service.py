@@ -37,6 +37,9 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException, status
+from datetime import timedelta
+
+from sqlalchemy import and_, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -61,6 +64,7 @@ from app.db.models import (
     User,
 )
 from app.db.redis_client import redis_client
+from app.db.session import SessionLocal
 from app.schemas.coding import (
     ExampleOut,
     HiddenTestResult,
@@ -75,6 +79,8 @@ from app.schemas.coding import (
 )
 from app.services import coding_harness as harness
 from app.services import coding_verdicts as verdicts
+from app.services import code_review
+from app.services import interview_ai_service as ai
 from app.services import interview_service
 from app.services.judge0_client import ExecutionRequest, ExecutionResult, Judge0Client, Judge0Error, resolve_languages
 
@@ -321,6 +327,8 @@ def _finalize(db: Session, submission: CodingSubmission, problem: CodingProblem,
     submission.results = stored
     submission.compile_output = (compile_output or "")[:VISIBLE_OUTPUT_LIMIT] or None
     submission.status = STATUS_COMPLETED
+    if submission.submission_type == "SUBMIT" and submission.verdict != verdicts.JUDGE_ERROR:
+        submission.ai_review_status = REVIEW_PENDING  # reviewed asynchronously; never blocks the verdict
     submission.completed_at = interview_service.utcnow()
     db.commit()
     _release_inflight(submission.user_id, submission.id)
@@ -337,6 +345,226 @@ def _finalize(db: Session, submission: CodingSubmission, problem: CodingProblem,
 
 
 EXECUTED_ANSWER_LABEL = "Executed on Judge0 — scored by test results"
+
+# ---------------------------------------------------------------------------
+# AI Code Review (asynchronous; one per completed SUBMIT; never changes a verdict)
+# ---------------------------------------------------------------------------
+
+REVIEW_PENDING, REVIEW_RUNNING, REVIEW_COMPLETED, REVIEW_FAILED = "PENDING", "RUNNING", "COMPLETED", "FAILED"
+REVIEW_MAX_ATTEMPTS = 3  # claims per submission (each claim makes at most ai.MAX_ATTEMPTS model calls)
+REPORT_REVIEW_WAIT_SECONDS = 150.0
+
+
+def _review_stale_after() -> timedelta:
+    return timedelta(seconds=settings.OLLAMA_INTERVIEW_TIMEOUT_SECONDS * ai.MAX_ATTEMPTS + 60)
+
+
+def coding_score_of(submission: CodingSubmission) -> Optional[float]:
+    if submission.ai_review_status != REVIEW_COMPLETED:
+        return None
+    return code_review.combined_score(submission.correctness_score, submission.ai_quality_score)
+
+
+def review_out(submission: CodingSubmission):
+    from app.schemas.coding import CodeReviewCriterionOut, CodeReviewOut
+
+    status_ = submission.ai_review_status
+    if submission.submission_type != "SUBMIT" or status_ is None:
+        return None
+    compiled = submission.verdict != verdicts.COMPILATION_ERROR
+    note = code_review.EXECUTION_NOTE if compiled else (
+        "Judge0 reported a compilation error, so nothing was executed. The review explains likely causes from the code only."
+    )
+    if status_ != REVIEW_COMPLETED:
+        return CodeReviewOut(
+            status=status_, note=note, compiled=compiled,
+            can_retry=status_ == REVIEW_FAILED and submission.ai_review_attempts < REVIEW_MAX_ATTEMPTS,
+        )
+    review = submission.ai_review or {}
+    criteria = review.get("criteria") or {}
+    return CodeReviewOut(
+        status=status_,
+        note=note,
+        compiled=compiled,
+        quality_score=submission.ai_quality_score,
+        criteria=[CodeReviewCriterionOut(**c) for c in code_review.criteria_view(criteria)],
+        summary=review.get("summary", ""),
+        strengths=review.get("strengths", []),
+        weaknesses=review.get("weaknesses", []),
+        improvements=review.get("improvements", []),
+        alternative_approaches=review.get("alternative_approaches", []),
+        time_complexity=review.get("time_complexity", ""),
+        space_complexity=review.get("space_complexity", ""),
+        missing_edge_cases=review.get("missing_edge_cases", []),
+        recommendations=review.get("recommendations", []),
+        reviewed_at=submission.ai_reviewed_at,
+    )
+
+
+def execution_facts(submission: CodingSubmission) -> str:
+    """Aggregate Judge0 outcome only — never hidden inputs or outputs."""
+    label = verdicts.VERDICT_LABELS.get(submission.verdict, submission.verdict or "unknown")
+    if submission.verdict == verdicts.COMPILATION_ERROR:
+        return f"{label}: the code did not compile, so no test was executed."
+    return (
+        f"{label}; {submission.tests_passed or 0} of {submission.tests_total or 0} tests passed "
+        f"(weighted correctness {round(submission.correctness_score or 0)}/100); "
+        f"max time {submission.max_time_seconds}s, max memory {submission.max_memory_kb} KB."
+    )
+
+
+def _claim_review(db: Session, submission_id: str) -> bool:
+    """Atomically take the review job: PENDING/FAILED, or RUNNING but abandoned. Bounded attempts."""
+    now = interview_service.utcnow()
+    result = db.execute(
+        update(CodingSubmission)
+        .where(
+            CodingSubmission.id == submission_id,
+            CodingSubmission.submission_type == "SUBMIT",
+            CodingSubmission.status == STATUS_COMPLETED,
+            CodingSubmission.ai_review_attempts < REVIEW_MAX_ATTEMPTS,
+            or_(
+                CodingSubmission.ai_review_status.in_([REVIEW_PENDING, REVIEW_FAILED]),
+                and_(
+                    CodingSubmission.ai_review_status == REVIEW_RUNNING,
+                    CodingSubmission.ai_review_updated_at < now - _review_stale_after(),
+                ),
+            ),
+        )
+        .values(
+            ai_review_status=REVIEW_RUNNING,
+            ai_review_attempts=CodingSubmission.ai_review_attempts + 1,
+            ai_review_updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return result.rowcount == 1
+
+
+async def run_review(db: Session, submission_id: str) -> bool:
+    """Review one submission if it can be claimed. Returns True if this call produced a review."""
+    if not _claim_review(db, submission_id):
+        return False
+    db.expire_all()
+    submission = db.get(CodingSubmission, submission_id)
+    problem = db.get(CodingProblem, submission.problem_id)
+    question = db.get(InterviewQuestion, submission.question_id)
+    session = question.session
+    role = interview_service.blueprints.role_from_blueprint(session.blueprint) if session.blueprint else None
+    try:
+        result = await ai.review_code(
+            role=role.title if role else session.target_role,
+            role_summary=role.summary if role else "",
+            difficulty=problem.difficulty,
+            title=problem.title,
+            statement=problem.statement,
+            constraints=problem.constraints,
+            examples=list(problem.examples or []),
+            language_label=submission.language_label,
+            source_code=submission.source_code,
+            execution_facts=execution_facts(submission),
+        )
+    except ai.InterviewAIError as exc:
+        submission.ai_review_status = REVIEW_FAILED
+        submission.ai_review = {"error_category": exc.category}
+        submission.ai_review_updated_at = interview_service.utcnow()
+        db.commit()
+        logger.warning("[Coding] AI review of %s failed (%s, attempt %d)", submission.id, exc.category, submission.ai_review_attempts)
+        apply_review_to_answer(db, submission)
+        return False
+    criteria = result.criteria.model_dump()
+    now = interview_service.utcnow()
+    submission.ai_review = result.model_dump()
+    submission.ai_quality_score = code_review.quality_score(criteria)
+    submission.ai_review_status = REVIEW_COMPLETED
+    submission.ai_review_model = settings.OLLAMA_MODEL
+    submission.ai_reviewed_at = now
+    submission.ai_review_updated_at = now
+    db.commit()
+    logger.info("[Coding] AI review of %s completed: quality=%s", submission.id, submission.ai_quality_score)
+    apply_review_to_answer(db, submission)
+    return True
+
+
+async def review_submission(submission_id: str) -> None:
+    """Background task (own DB session): review a completed SUBMIT once."""
+    db = SessionLocal()
+    try:
+        await run_review(db, submission_id)
+    except Exception:  # noqa: BLE001 — a review failure must never affect anything else
+        logger.exception("[Coding] AI review task failed for %s", submission_id)
+    finally:
+        db.close()
+
+
+def apply_review_to_answer(db: Session, submission: CodingSubmission) -> bool:
+    """
+    If this submission is the question's recorded answer and the report is not finalised,
+    reflect the review: quality score, combined coding score (correctness 70% + quality 30%)
+    and review status. A finalised report is never changed; the review stays on the submission.
+    """
+    answer = db.query(InterviewAnswer).filter(InterviewAnswer.question_id == submission.question_id).first()
+    if answer is None or (answer.evaluation or {}).get("submission_id") != submission.id:
+        return False
+    report_done = (
+        db.query(InterviewReport.id)
+        .filter(InterviewReport.session_id == submission.session_id, InterviewReport.status == InterviewAIStatus.COMPLETED)
+        .first()
+    )
+    if report_done:
+        return False
+    evaluation = dict(answer.evaluation or {})
+    combined = coding_score_of(submission)
+    evaluation["review_status"] = submission.ai_review_status
+    evaluation["quality_score"] = submission.ai_quality_score if combined is not None else None
+    evaluation["coding_score"] = combined
+    answer.evaluation = evaluation
+    # The answer score is the combined score once it exists; until then, correctness only.
+    answer.score = code_review.round_half_up(combined if combined is not None else (submission.correctness_score or 0))
+    db.commit()
+    return True
+
+
+async def settle_pending_reviews(db: Session, session_id: str, wait_seconds: Optional[float] = None) -> None:
+    """Before a report: run unstarted reviews of recorded answers, and wait (bounded) for running ones."""
+    import asyncio
+
+    wait_seconds = REPORT_REVIEW_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    answered_ids = {
+        (a.evaluation or {}).get("submission_id")
+        for a in db.query(InterviewAnswer).filter(InterviewAnswer.session_id == session_id).all()
+    }
+    answered_ids.discard(None)
+    if not answered_ids:
+        return
+    deadline = asyncio.get_running_loop().time() + wait_seconds
+    while True:
+        db.expire_all()
+        for row in db.query(CodingSubmission).filter(CodingSubmission.id.in_(answered_ids)).all():
+            if row.ai_review_status == REVIEW_PENDING:
+                await run_review(db, row.id)
+        db.expire_all()
+        running = [
+            r for r in db.query(CodingSubmission).filter(CodingSubmission.id.in_(answered_ids)).all()
+            if r.ai_review_status in (REVIEW_PENDING, REVIEW_RUNNING)
+        ]
+        if not running or asyncio.get_running_loop().time() >= deadline:
+            return
+        await asyncio.sleep(1.0)
+
+
+async def retry_review(db: Session, user: User, interview_id: str, submission_id: str) -> SubmissionOut:
+    submission = _owned_submission(db, user, interview_id, submission_id)
+    if submission.submission_type != "SUBMIT" or submission.ai_review_status is None:
+        raise _error(status.HTTP_409_CONFLICT, "Only completed submissions get an AI code review.", status="NOT_REVIEWABLE")
+    if submission.ai_review_status in (REVIEW_FAILED, REVIEW_PENDING):
+        if submission.ai_review_attempts >= REVIEW_MAX_ATTEMPTS:
+            raise _error(status.HTTP_409_CONFLICT, "The retry limit for this code review has been reached.", status="RETRY_LIMIT")
+        await run_review(db, submission.id)
+    db.expire_all()
+    submission = db.get(CodingSubmission, submission_id)
+    return serialize(submission, db.get(CodingProblem, submission.problem_id))
 
 
 def record_interview_answer(db: Session, submission: CodingSubmission) -> bool:
@@ -375,6 +603,12 @@ def record_interview_answer(db: Session, submission: CodingSubmission) -> bool:
         "language_label": submission.language_label,
         "submission_id": submission.id,
         "submission_created_at": submission.created_at.isoformat(),
+        # Correctness (Judge0) and code quality (AI review) are kept separate; the combined
+        # score exists only once the review has completed (see apply_review_to_answer).
+        "correctness_score": submission.correctness_score,
+        "review_status": submission.ai_review_status,
+        "quality_score": None,
+        "coding_score": None,
         "strengths": [],
         "improvements": [],
         "feedback": f"{verdict_label}: {passed} of {total} tests passed ({submission.language_label}).",
@@ -400,6 +634,8 @@ def record_interview_answer(db: Session, submission: CodingSubmission) -> bool:
     except IntegrityError:  # a concurrent finalisation created the row first; retry as an update
         db.rollback()
         return record_interview_answer(db, submission)
+    if submission.ai_review_status == REVIEW_COMPLETED:  # review finished before the answer was recorded
+        apply_review_to_answer(db, submission)
     return True
 
 
@@ -671,6 +907,8 @@ def serialize(submission: CodingSubmission, problem: CodingProblem) -> Submissio
         created_at=submission.created_at,
         completed_at=submission.completed_at,
         results=results,
+        ai_review=review_out(submission),
+        coding_score=coding_score_of(submission),
     )
 
 

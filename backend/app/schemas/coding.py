@@ -154,7 +154,71 @@ class SubmissionOut(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     results: list[Union[VisibleTestResult, HiddenTestResult]] = Field(default_factory=list)
+    # SUBMIT only: AI code quality review (loaded asynchronously; never affects the verdict)
+    ai_review: Optional["CodeReviewOut"] = None
+    # Correctness x 0.70 + AI quality x 0.30 — only when both exist (never manufactured)
+    coding_score: Optional[float] = None
 
 
 class SubmissionListResponse(BaseModel):
     submissions: list[SubmissionOut]
+
+
+# ---------------------------------------------------------------------------
+# AI Code Review (model output schema + API view)
+# ---------------------------------------------------------------------------
+
+class CodeReviewCriteria(BaseModel):
+    """One integer 0-100 per rubric criterion (code_review.CRITERIA). Out-of-range values are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    problem_solving: int = Field(..., ge=0, le=100)
+    code_quality: int = Field(..., ge=0, le=100)
+    efficiency: int = Field(..., ge=0, le=100)
+    time_complexity: int = Field(..., ge=0, le=100)
+    space_complexity: int = Field(..., ge=0, le=100)
+    edge_cases: int = Field(..., ge=0, le=100)
+
+
+class CodeReviewResult(BaseModel):
+    """What the model must return. Every field is required; the backend computes all aggregates."""
+
+    criteria: CodeReviewCriteria
+    summary: str = Field(..., min_length=10, max_length=800)
+    strengths: list[str] = Field(..., max_length=6)
+    weaknesses: list[str] = Field(..., max_length=6)
+    improvements: list[str] = Field(..., max_length=6)
+    alternative_approaches: list[str] = Field(..., max_length=4)
+    time_complexity: str = Field(..., min_length=1, max_length=200)
+    space_complexity: str = Field(..., min_length=1, max_length=200)
+    missing_edge_cases: list[str] = Field(..., max_length=6)
+    recommendations: list[str] = Field(..., max_length=6)
+
+
+class CodeReviewCriterionOut(BaseModel):
+    id: str
+    title: str
+    weight: int
+    score: Optional[int] = None
+
+
+class CodeReviewOut(BaseModel):
+    label: str = "AI Code Review"
+    status: Literal["PENDING", "RUNNING", "COMPLETED", "FAILED"]
+    note: str = ""
+    quality_score: Optional[float] = None  # backend-computed weighted score
+    criteria: list[CodeReviewCriterionOut] = Field(default_factory=list)
+    summary: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    alternative_approaches: list[str] = Field(default_factory=list)
+    time_complexity: str = ""  # AI estimate
+    space_complexity: str = ""  # AI estimate
+    missing_edge_cases: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    compiled: bool = True  # False when Judge0 reported a compilation error (review explains, never "verifies")
+    can_retry: bool = False
+    reviewed_at: Optional[datetime] = None
+SubmissionOut.model_rebuild()

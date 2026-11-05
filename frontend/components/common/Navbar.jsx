@@ -126,6 +126,13 @@ function getUserName(user) {
   return fullName || user?.username || 'User';
 }
 
+function getProfileMenuName(user) {
+  const firstName = user?.first_name?.trim();
+  const fullName = [firstName, user?.last_name?.trim()].filter(Boolean).join(' ');
+
+  return fullName && fullName.length <= 10 ? fullName : firstName || getUserName(user);
+}
+
 function getInitial(user) {
   return (user?.first_name?.[0] || user?.username?.[0] || 'U').toUpperCase();
 }
@@ -145,7 +152,7 @@ function CountBadge({ count, label }) {
   return (
     <span
       aria-label={label}
-      className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+      className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none !text-white"
     >
       {text}
     </span>
@@ -290,14 +297,14 @@ function NavLink({ item, pathname, searchParams, onClick, compact = false, badge
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       title={!compact ? item.label : undefined}
-      className={`group flex h-11 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
+      className={`group flex h-11 min-w-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 min-[1600px]:text-sm ${
         active
           ? 'nav-active'
           : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
       } ${compact ? 'justify-start' : 'justify-center'}`}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-      <span className={compact ? 'truncate' : 'inline'}>{item.label}</span>
+      <span className={compact ? 'truncate' : 'min-w-0 truncate'}>{item.label}</span>
       <CountBadge count={badgeCount} label={badgeLabel || `${item.label} unread count`} />
     </Link>
   );
@@ -327,6 +334,7 @@ export default function Navbar() {
   const userRef = useRef(null);
 
   const userName = getUserName(user);
+  const profileMenuName = getProfileMenuName(user);
   const userInitial = getInitial(user);
   const profilePhotoUrl = getProfilePhotoUrl(user);
   const isNetworkingActive = pathname.startsWith('/dashboard/networking') || pathname.startsWith('/dashboard/communities') || pathname.startsWith('/dashboard/resources');
@@ -506,12 +514,12 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm">
-      <div className="hidden min-h-[76px] w-full items-center gap-3 px-4 py-3 min-[1360px]:flex lg:px-5 2xl:px-8">
-        <div className="flex w-[clamp(220px,16vw,260px)] shrink-0 items-center">
+      <div className="hidden min-h-[76px] w-full items-center gap-2 px-4 py-3 min-[1360px]:flex lg:px-5 2xl:px-8">
+        <div className="flex w-[clamp(210px,15vw,240px)] shrink-0 items-center">
           <Brand />
         </div>
 
-        <nav className="flex min-w-0 flex-1 items-center justify-center gap-1" aria-label="Primary navigation">
+        <nav className="flex min-w-0 flex-1 items-center justify-between gap-1.5 overflow-visible pr-4" aria-label="Primary navigation">
           {primaryNav.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} searchParams={searchParams} />
           ))}
@@ -523,7 +531,7 @@ export default function Navbar() {
               aria-haspopup="menu"
               aria-expanded={netOpen}
               aria-label="Connect & Explore menu"
-              className={`group flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${
+              className={`group flex h-11 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg border px-2 text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 min-[1600px]:text-sm ${
                 isNetworkingActive
                   ? 'border-brand-200 bg-brand-50 text-brand-600'
                   : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-600'
@@ -577,8 +585,8 @@ export default function Navbar() {
           />
         </nav>
 
-        <div className="flex w-[clamp(200px,14vw,220px)] shrink-0 items-center justify-end gap-2">
-          <div className="relative" ref={notificationDesktopRef}>
+        <div className="flex w-[clamp(188px,13vw,208px)] shrink-0 items-center justify-end gap-1">
+          <div className="relative shrink-0" ref={notificationDesktopRef}>
             <button
               type="button"
               aria-label="Notifications"
@@ -608,14 +616,14 @@ export default function Navbar() {
             )}
           </div>
 
-          <div className="relative" ref={userRef}>
+          <div className="relative min-w-0 shrink-0" ref={userRef}>
             <button
               type="button"
               onClick={() => setUserOpen((open) => !open)}
               aria-haspopup="menu"
               aria-expanded={userOpen}
               aria-label="User profile menu"
-            className="flex h-11 max-w-[210px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            className="flex h-11 max-w-[190px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <ProfileAvatar
                 src={profilePhotoUrl}
@@ -626,7 +634,7 @@ export default function Navbar() {
                 className="h-7 w-7"
               />
               <span className="hidden min-w-0 text-sm font-medium text-slate-700 xl:block">
-                <span className="block truncate">{userName}</span>
+                <span className="block truncate">{profileMenuName}</span>
               </span>
               <ChevronDown
                 className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform duration-150 ${

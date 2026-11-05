@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
@@ -14,6 +14,16 @@ from app.schemas.coding import (
     SubmitSolutionRequest,
 )
 from app.services import coding_service as svc
+from app.services import interview_service
+
+
+def _schedule_follow_ups(background_tasks: BackgroundTasks, out: SubmissionOut, interview_id: str, user: User) -> None:
+    """After a completed SUBMIT: AI review (once per submission) and the question's follow-up (once)."""
+    if out.submission_type != "SUBMIT" or out.status != "COMPLETED":
+        return
+    if out.ai_review is not None and out.ai_review.status == "PENDING":
+        background_tasks.add_task(svc.review_submission, out.id)
+    background_tasks.add_task(interview_service.generate_follow_up_task, interview_id, user.id, out.question_id)
 
 
 router = APIRouter(tags=["Coding Assessment"])
@@ -62,10 +72,13 @@ async def submit_solution(
     interview_id: str,
     question_id: str,
     payload: SubmitSolutionRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SubmissionOut:
-    return await svc.submit_solution(db, current_user, interview_id, question_id, payload)
+    out = await svc.submit_solution(db, current_user, interview_id, question_id, payload)
+    _schedule_follow_ups(background_tasks, out, interview_id, current_user)
+    return out
 
 
 @router.get(
@@ -90,7 +103,26 @@ def list_submissions(
 async def get_submission(
     interview_id: str,
     submission_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SubmissionOut:
-    return await svc.get_submission(db, current_user, interview_id, submission_id)
+    out = await svc.get_submission(db, current_user, interview_id, submission_id)
+    # A submission that finished while being polled gets its review/follow-up scheduled here
+    # (claims make repeated scheduling a no-op).
+    _schedule_follow_ups(background_tasks, out, interview_id, current_user)
+    return out
+
+
+@router.post(
+    "/interviews/{interview_id}/coding-submissions/{submission_id}/review",
+    response_model=SubmissionOut,
+    summary="Run or retry the AI code review of a submission (code quality only; never changes the verdict)",
+)
+async def retry_review(
+    interview_id: str,
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SubmissionOut:
+    return await svc.retry_review(db, current_user, interview_id, submission_id)

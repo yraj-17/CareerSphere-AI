@@ -46,3 +46,13 @@ def get_current_user(
         raise credentials_exception
         
     return user
+
+
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Allow only accounts listed in ADMIN_EMAILS (comma-separated, case-insensitive)."""
+    from app.core.config import settings
+
+    admins = {email.strip().lower() for email in settings.ADMIN_EMAILS.split(",") if email.strip()}
+    if not admins or (current_user.email or "").lower() not in admins:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required.")
+    return current_user

@@ -552,11 +552,13 @@ async def websocket_messaging(
         logger.warning("ws: failed to start session refresh task: %s", exc)
 
     if is_first_socket:
-        # Notify the conversation partner that this user came online (local).
-        await manager.send_to_user(
-            other_user_id,
+        # Notify every locally connected authenticated client. The global
+        # presence socket may be mounted outside the messaging page, so local
+        # presence updates must not be limited to this conversation partner.
+        await manager.send_to_all(
             "user_online",
             {"user_id": current_user.id},
+            exclude_user_id=current_user.id,
         )
     # NEW — tell the newly-connected client the CURRENT status of the other
     # participant, since they missed whatever earlier user_online event fired.
@@ -694,9 +696,9 @@ async def websocket_messaging(
             )
 
         if is_last_socket:
-            # Notify the conversation partner that this user went offline (local).
-            await manager.send_to_user(
-                other_user_id,
+            # Keep local global-presence clients in sync with the Redis state.
+            await manager.send_to_all(
                 "user_offline",
                 {"user_id": current_user.id},
+                exclude_user_id=current_user.id,
             )

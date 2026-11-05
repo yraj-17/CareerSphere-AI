@@ -1,16 +1,18 @@
-"""Tests for Phase 3.4 deterministic career matching."""
+"""Deterministic matching of real job listings (in-memory objects; no DB, no AI)."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
+from app.data.job_taxonomy import canonical_skill_id, classify_role
 from app.db.models import (
     CareerPreference,
     Opportunity,
-    OpportunityPreferredSkill,
     OpportunityRequiredSkill,
     Profile,
+    ProfileEducation,
     ProfileExperience,
     ProfileProject,
     ProfileSkill,
@@ -18,311 +20,252 @@ from app.db.models import (
 )
 from app.services import career_matching_service as svc
 
+NOW = datetime(2026, 11, 5, tzinfo=timezone.utc)
 
-def _profile(
-    skills: list[str] | None = None,
-    target_role: str | None = "Backend Engineer",
-    preferred_industry: str | None = None,
-    preferred_work_type: str | None = None,
-    preferred_locations: list[str] | None = None,
-    location: str | None = "Mumbai, India",
-    experience_level: str = "Entry Level",
-) -> Profile:
-    profile = Profile(id="profile-1", user_id="user-1", location=location)
-    profile.skills = [
-        ProfileSkill(name=name, normalized_name=name.lower().replace(" ", "-"))
-        for name in (skills or [])
-    ]
-    project = ProfileProject(name="CareerSphere AI")
-    project.technologies = []
+
+def _profile(skills=("Python", "PostgreSQL", "Docker", "FastAPI"), target="Junior Python Developer",
+             years: float = 0, work_type="Flexible", locations=("Pune",), location="Pune, India",
+             project_tech=(), interests=(), education=None) -> Profile:
+    profile = Profile(id="p1", user_id="u1", location=location)
+    profile.skills = [ProfileSkill(name=s, normalized_name=s.lower()) for s in skills]
+    project = ProfileProject(name="Side project")
+    project.technologies = [ProjectTechnology(name=t, normalized_name=t.lower()) for t in project_tech]
     profile.projects = [project]
-    profile.education = []
     profile.experience = []
-    if experience_level == "Intern":
-        profile.experience = [
-            ProfileExperience(
-                company="Demo",
-                job_title="Software Intern",
-                employment_type="Internship",
-                start_date=datetime.now(timezone.utc).date().replace(year=datetime.now(timezone.utc).year - 1),
-                end_date=datetime.now(timezone.utc).date().replace(month=1),
-            )
-        ]
-    elif experience_level == "Junior":
-        profile.experience = [
-            ProfileExperience(
-                company="Demo",
-                job_title="Software Engineer",
-                employment_type="Full-time",
-                start_date=datetime.now(timezone.utc).date().replace(year=datetime.now(timezone.utc).year - 2),
-                end_date=datetime.now(timezone.utc).date(),
-            )
-        ]
-    elif experience_level == "Mid Level":
-        profile.experience = [
-            ProfileExperience(
-                company="Demo",
-                job_title="Software Engineer",
-                employment_type="Full-time",
-                start_date=datetime.now(timezone.utc).date().replace(year=datetime.now(timezone.utc).year - 4),
-                end_date=datetime.now(timezone.utc).date(),
-            )
-        ]
-
-    if any(value is not None for value in [target_role, preferred_industry, preferred_work_type, preferred_locations]):
-        profile.career_preferences = CareerPreference(
-            target_job_role=target_role,
-            preferred_industry=preferred_industry,
-            preferred_work_type=preferred_work_type,
-            preferred_locations=json.dumps(preferred_locations or []),
-        )
-    else:
-        profile.career_preferences = None
+    if years:
+        start = date.today() - timedelta(days=int(years * 365))
+        profile.experience = [ProfileExperience(company="Co", job_title="Developer", employment_type="Full-time",
+                                                start_date=start, end_date=None, currently_working=True)]
+    profile.education = education or []
+    profile.career_preferences = CareerPreference(
+        target_job_role=target, preferred_work_type=work_type,
+        preferred_locations=json.dumps(list(locations)), career_interests=json.dumps(list(interests)),
+    )
     return profile
 
 
-def _opportunity(
-    id: str = "opp-1",
-    required: list[str] | None = None,
-    preferred: list[str] | None = None,
-    target_role: str = "Backend Engineer",
-    opportunity_type: str = "job",
-    is_remote: bool = False,
-    location: str = "Mumbai, India",
-    experience_level: str = "Entry Level",
-    industry: str = "SaaS",
-    expires_at=None,
-) -> Opportunity:
+def _job(title="Software Engineer - Backend", skills=("Python", "PostgreSQL", "Kafka"), location="Pune, India",
+         work_mode="hybrid", min_years=None, max_years=None, level=None, employment="full_time",
+         source="greenhouse", company="Acme", active=True, expires_at=None, country="India", description="") -> Opportunity:
     opp = Opportunity(
-        id=id,
-        title=f"{target_role} {id}",
-        company="DemoCo",
-        description="Build realistic product features with a cross-functional engineering team.",
-        opportunity_type=opportunity_type,
-        target_role=target_role,
-        location=location,
-        is_remote=is_remote,
-        experience_level=experience_level,
-        industry=industry,
-        source="test",
-        expires_at=expires_at,
+        id=str(uuid.uuid4()), title=title, company=company, description=description or f"{title} role.",
+        opportunity_type="internship" if employment == "internship" else "job",
+        target_role=(classify_role(title) or ["Other"])[0], location=location, is_remote=work_mode == "remote", work_mode=work_mode,
+        experience_level=level, experience_min_years=min_years, experience_max_years=max_years, employment_type=employment,
+        source=source, source_board="acme", country=country, is_active=active, expires_at=expires_at,
+        application_url="https://jobs.example.org/apply", job_url="https://jobs.example.org/view",
+        published_at=NOW - timedelta(days=2),
     )
-    opp.required_skills = [
-        OpportunityRequiredSkill(name=name, normalized_name=name.lower().replace(" ", "-"))
-        for name in (required or [])
-    ]
-    opp.preferred_skills = [
-        OpportunityPreferredSkill(name=name, normalized_name=name.lower().replace(" ", "-"))
-        for name in (preferred or [])
-    ]
+    opp.required_skills = [OpportunityRequiredSkill(name=s, normalized_name=canonical_skill_id(s)) for s in skills]
+    opp.preferred_skills = []
     return opp
 
 
-def test_required_skill_calculation_4_of_6_is_66_67():
-    profile = _profile(skills=["Python", "FastAPI", "PostgreSQL", "Docker"])
-    opp = _opportunity(required=["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "Kubernetes"])
-
-    score, summary = svc.calculate_required_skill_score(opp, svc.extract_user_skill_keys(profile))
-
-    assert score == 66.67
-    assert summary.matched == ["Python", "FastAPI", "PostgreSQL", "Docker"]
-    assert summary.missing == ["AWS", "Kubernetes"]
+def _rank(profile, jobs, filters=None):
+    return svc.rank_listings(svc.profile_facts(profile), jobs, filters, now=NOW)
 
 
-def test_preferred_skill_calculation_2_of_4_is_50():
-    profile = _profile(skills=["Redis", "AWS"])
-    opp = _opportunity(preferred=["Redis", "AWS", "Kubernetes", "GraphQL"])
+# ── Normalisation of the profile ─────────────────────────────────────────────
 
-    score, summary = svc.calculate_preferred_skill_score(opp, svc.extract_user_skill_keys(profile))
-
-    assert score == 50.0
-    assert summary.matched == ["Redis", "AWS"]
+def test_profile_skills_are_normalised_and_comma_lists_split():
+    profile = _profile(skills=["Python , Postgre, Mysql , node , express", "ReactJS"], project_tech=["K8s"])
+    facts = svc.profile_facts(profile)
+    assert {"python", "postgresql", "mysql", "nodejs", "express", "react", "kubernetes"} <= facts.skill_ids
 
 
-def test_zero_preferred_skills_scores_100():
-    profile = _profile(skills=["Python"])
-    opp = _opportunity(preferred=[])
-
-    score, summary = svc.calculate_preferred_skill_score(opp, svc.extract_user_skill_keys(profile))
-
-    assert score == 100.0
-    assert summary.matched == []
-    assert summary.missing == []
+def test_target_roles_are_normalised_to_families():
+    assert svc.profile_facts(_profile(target="Backend and Devops")).target_roles == ["Backend Engineer", "DevOps Engineer"]
+    assert svc.profile_facts(_profile(target="Junior Python Developer")).target_roles == ["Backend Engineer"]
 
 
-def test_target_role_exact_strong_partial_and_unrelated_scores():
-    exact, _ = svc.role_relationship_score("Backend Engineer", "Backend Engineer")
-    strong, _ = svc.role_relationship_score("Backend Engineer", "Full Stack Developer")
-    partial, _ = svc.role_relationship_score("Backend Engineer", "Cloud Engineer")
-    unrelated, _ = svc.role_relationship_score("Backend Engineer", "Accountant")
+# ── Equivalent titles / not overly restrictive ───────────────────────────────
 
-    assert exact == 100.0
-    assert strong == 75.0
-    assert partial == 50.0
-    assert unrelated == 0.0
+def test_equivalent_title_is_a_match_for_junior_python_developer():
+    run = _rank(_profile(), [_job(title="Software Engineer - Backend (Python)"), _job(title="SDE I, Payments API")])
+    titles = [m.opportunity.title for m in run.matches]
+    assert "Software Engineer - Backend (Python)" in titles
+    assert "SDE I, Payments API" in titles  # generic software family is related, not excluded
 
 
-def test_multiple_target_roles_use_best_applicable_score():
-    opp = _opportunity(target_role="Cloud Engineer")
-
-    score, match = svc.calculate_target_role_score(["Backend Engineer", "DevOps Engineer"], opp)
-
-    assert score == 75.0
-    assert "DevOps Engineer" in match.relationship
+def test_user_does_not_need_every_skill():
+    run = _rank(_profile(skills=("Python",)), [_job(skills=("Python", "PostgreSQL", "Kafka", "Redis", "AWS"))])
+    assert len(run.matches) == 1
+    assert run.matches[0].matched_skills == ["Python"]
+    assert set(run.matches[0].missing_skills) == {"PostgreSQL", "Kafka", "Redis", "AWS"}
 
 
-def test_experience_exact_and_adjacent_scores():
-    exact, exact_match = svc.calculate_experience_score("Entry Level", "Entry Level")
-    adjacent, adjacent_match = svc.calculate_experience_score("Entry Level", "Junior")
-
-    assert exact == 100.0
-    assert exact_match.relationship == "exact"
-    assert adjacent == 75.0
-    assert adjacent_match.relationship == "adjacent"
-
-
-def test_remote_preference_and_no_work_mode_preference_score_100():
-    remote_opp = _opportunity(is_remote=True, location="Remote - India")
-
-    remote_profile = _profile(preferred_work_type="Remote")
-    neutral_profile = _profile(preferred_work_type=None)
-
-    assert svc.calculate_location_remote_score(remote_profile, remote_opp)[0] == 100.0
-    assert svc.calculate_location_remote_score(neutral_profile, remote_opp)[0] == 100.0
+def test_missing_optional_fields_do_not_exclude():
+    job = _job(skills=(), location=None, work_mode=None, min_years=None, level=None, employment=None, country=None)
+    run = _rank(_profile(), [job])
+    assert len(run.matches) == 1
+    breakdown = run.matches[0].result.breakdown
+    assert breakdown.experience_match.relationship == "not_stated"
+    assert breakdown.required_skill_score == svc.NEUTRAL  # unknown, not perfect
 
 
-def test_preferred_location_match_scores_100():
-    profile = _profile(preferred_locations=["mumbai"])
-    opp = _opportunity(location="Mumbai, India", is_remote=False)
-
-    score, location_match = svc.calculate_location_remote_score(profile, opp)
-
-    assert score == 100.0
-    assert location_match.relationship == "preferred_location_match"
+def test_missing_experience_is_not_ineligibility():
+    run = _rank(_profile(years=0), [_job(min_years=None, level=None)])
+    assert run.matches and "Experience requirement is not stated." in run.matches[0].reasons
 
 
-def test_remote_only_hard_filter_excludes_onsite_opportunity():
-    profile = _profile(preferred_work_type="Remote only")
-    onsite = _opportunity(is_remote=False)
+# ── Hard eligibility vs scoring ──────────────────────────────────────────────
 
-    include, reason = svc.apply_hard_filters(profile, onsite)
-
-    assert include is False
-    assert reason == "remote_only_required"
+def test_far_senior_roles_are_ineligible_for_freshers_but_not_for_experienced():
+    jobs = [_job(title="Staff Backend Engineer"), _job(title="Senior Backend Engineer"), _job(title="Backend Engineer", min_years=7)]
+    assert _rank(_profile(years=0), jobs).excluded.get("far_above_experience") == 3
+    assert len(_rank(_profile(years=6), jobs).matches) == 3
 
 
-def test_expired_opportunity_is_excluded():
-    profile = _profile()
-    expired = _opportunity(expires_at=datetime.now(timezone.utc) - timedelta(days=1))
-
-    include, reason = svc.apply_hard_filters(profile, expired)
-
-    assert include is False
-    assert reason == "expired"
+def test_inactive_and_expired_listings_are_excluded():
+    run = _rank(_profile(), [_job(title="Backend Engineer A", active=False),
+                             _job(title="Backend Engineer B", expires_at=NOW - timedelta(days=1)), _job(title="Backend Engineer C")])
+    assert len(run.matches) == 1
+    assert run.excluded["inactive"] == 1 and run.excluded["expired"] == 1
 
 
-def test_missing_and_no_career_preferences_do_not_penalize():
-    missing_pref_profile = _profile(target_role=None, preferred_industry=None, preferred_work_type=None, preferred_locations=[])
-    no_pref_profile = _profile(target_role=None, preferred_industry=None, preferred_work_type=None, preferred_locations=None)
-    no_pref_profile.career_preferences = None
-    opp = _opportunity()
-
-    assert svc.calculate_career_preference_score(missing_pref_profile, opp)[0] == 100.0
-    assert svc.calculate_career_preference_score(no_pref_profile, opp)[0] == 100.0
+def test_unrelated_listing_is_not_a_match():
+    run = _rank(_profile(), [_job(title="Account Executive, Enterprise Sales", skills=("CRM",))])
+    assert run.matches == [] and run.excluded["low_relevance"] == 1
 
 
-def test_final_weighted_score_uses_exact_phase_3_4_weights():
-    score = svc.calculate_final_score(
-        required_skill_score=66.67,
-        preferred_skill_score=50,
-        target_role_score=100,
-        experience_score=75,
-        location_remote_score=100,
-        career_preference_score=80,
-    )
-
-    assert score == 74.83
+def test_scores_are_not_artificially_high():
+    strong = _job(title="Backend Engineer", skills=("Python", "PostgreSQL", "Docker", "FastAPI"), level="Entry Level")
+    weak = _job(title="Software Engineer", skills=("Java", "Spring Boot", "Kafka", "Kubernetes", "AWS", "Python"),
+                location="Chennai, India", work_mode="onsite")
+    run = _rank(_profile(), [strong, weak])
+    by_title = {m.opportunity.title: m.result.final_score for m in run.matches}
+    assert by_title["Backend Engineer"] >= 85
+    assert by_title["Software Engineer"] < 65
+    assert by_title["Software Engineer"] < by_title["Backend Engineer"]
 
 
-def test_deterministic_sorting_uses_score_required_score_then_id():
-    profile = _profile(skills=["Python", "FastAPI"], target_role="Backend Engineer")
-    opp_b = _opportunity(id="b", required=["Python", "FastAPI"], preferred=[], target_role="Backend Engineer")
-    opp_a = _opportunity(id="a", required=["Python", "FastAPI"], preferred=[], target_role="Backend Engineer")
-
-    first = svc.rank_opportunities(profile, [opp_b, opp_a])
-    second = svc.rank_opportunities(profile, [opp_b, opp_a])
-
-    assert [result.opportunity_id for result in first] == ["a", "b"]
-    assert [result.opportunity_id for result in first] == [result.opportunity_id for result in second]
+def test_scoring_is_deterministic():
+    jobs = [_job(title=f"Backend Engineer {i}") for i in range(5)]
+    first = [(m.opportunity.id, m.result.final_score) for m in _rank(_profile(), jobs).matches]
+    second = [(m.opportunity.id, m.result.final_score) for m in _rank(_profile(), jobs).matches]
+    assert first == second
 
 
-def test_top_10_limit_from_30_candidates():
-    profile = _profile(skills=["Python"], target_role="Backend Engineer")
-    candidates = [
-        _opportunity(id=f"opp-{index:02d}", required=["Python"], preferred=[], target_role="Backend Engineer")
-        for index in range(30)
-    ]
-
-    response = svc.match_opportunities(profile, candidates, limit=10)
-
-    assert response.candidates_considered == 30
-    assert response.candidates_after_filters == 30
-    assert len(response.results) == 10
+def test_explanation_reasons_are_concrete():
+    match = _rank(_profile(), [_job(title="Backend Engineer", min_years=1, max_years=3)]).matches[0]
+    joined = " ".join(match.reasons)
+    assert "Title matches your target role (Backend Engineer)" in joined
+    assert "You have 2 of the 3 skills" in joined
+    assert "1–3 years" in joined
+    assert match.result.breakdown.match_reasons == match.reasons
 
 
-def test_skill_normalization_matches_equivalent_aliases():
-    profile = _profile(skills=["Postgres", "React.js"])
-    opp = _opportunity(required=["PostgreSQL", "React"])
+# ── Location / remote ────────────────────────────────────────────────────────
 
-    score, summary = svc.calculate_required_skill_score(opp, svc.extract_user_skill_keys(profile))
+def test_location_preferences_affect_score_not_eligibility():
+    pune = _job(title="Backend Engineer", location="Pune, India")
+    delhi = _job(title="Backend Engineer", location="New Delhi, India")
+    remote = _job(title="Backend Engineer", location="Remote - India", work_mode="remote")
+    scores = {m.opportunity.location: m.result.breakdown.location_remote_score for m in _rank(_profile(), [pune, delhi, remote]).matches}
+    assert scores["Pune, India"] == 100 and scores["Remote - India"] == 100
+    assert scores["New Delhi, India"] < 100
 
-    assert score == 100.0
-    assert summary.missing == []
+
+def test_city_aliases_match():
+    facts = svc.profile_facts(_profile(locations=("Bangalore",)))
+    score, match = svc.location_score(facts, _job(location="Bengaluru, Karnataka"))
+    assert score == 100 and match.relationship == "preferred_location"
 
 
-def test_full_end_to_end_service_ranks_realistic_backend_match_first():
-    profile = _profile(
-        skills=["Python", "FastAPI", "Postgres", "Docker", "Git"],
-        target_role="Backend Engineer",
-        preferred_industry="SaaS",
-        preferred_work_type="Remote",
-        preferred_locations=["Mumbai"],
-        experience_level="Entry Level",
-    )
-    backend = _opportunity(
-        id="backend",
-        required=["Python", "FastAPI", "PostgreSQL", "Docker"],
-        preferred=["Redis", "AWS"],
-        target_role="Backend Engineer",
-        is_remote=True,
-        location="Remote - India",
-        industry="SaaS",
-        experience_level="Junior",
-    )
-    frontend = _opportunity(
-        id="frontend",
-        required=["React", "TypeScript", "CSS", "HTML"],
-        preferred=["Next.js", "Figma"],
-        target_role="Frontend Developer",
-        is_remote=False,
-        location="Chennai, India",
-        industry="Media",
-        experience_level="Mid Level",
-    )
-    cloud = _opportunity(
-        id="cloud",
-        required=["AWS", "Terraform", "Linux", "Docker"],
-        preferred=["Kubernetes", "Security"],
-        target_role="Cloud Engineer",
-        is_remote=True,
-        location="Remote - India",
-        industry="Cloud Computing",
-        experience_level="Junior",
-    )
+def test_remote_preference_lowers_onsite_without_excluding():
+    run = _rank(_profile(work_type="Remote"), [_job(title="Backend Engineer", work_mode="onsite")])
+    assert run.matches and run.matches[0].result.breakdown.location_remote_score < 100
 
-    response = svc.match_opportunities(profile, [frontend, cloud, backend])
 
-    assert response.results[0].opportunity_id == "backend"
-    assert response.results[0].breakdown.required_skill_score == 100.0
-    assert response.results[0].breakdown.target_role_score == 100.0
-    assert response.results[0].breakdown.missing_preferred_skills == ["Redis", "AWS"]
+# ── Filters ──────────────────────────────────────────────────────────────────
+
+def test_user_filters_are_applied():
+    jobs = [_job(title="Backend Engineer", work_mode="remote", location="Remote"),
+            _job(title="Backend Engineer", work_mode="onsite", location="Mumbai, India"),
+            _job(title="Backend Intern", employment="internship", level="Intern", work_mode="onsite")]
+    assert len(_rank(_profile(), jobs, svc.MatchFilters(work_mode="remote")).matches) == 1
+    assert len(_rank(_profile(), jobs, svc.MatchFilters(location="Bombay")).matches) == 1  # alias
+    assert len(_rank(_profile(), jobs, svc.MatchFilters(employment_type="internship")).matches) == 1
+    assert len(_rank(_profile(), jobs, svc.MatchFilters(experience="internship")).matches) == 1
+    run = _rank(_profile(), jobs, svc.MatchFilters(work_mode="hybrid"))
+    assert run.matches == [] and run.excluded["filter_work_mode"] == 3
+
+
+# ── Duplicates and preferences ───────────────────────────────────────────────
+
+def test_cross_provider_duplicates_prefer_company_board():
+    board = _job(title="Backend Engineer", source="greenhouse")
+    agg = _job(title="Backend Engineer", source="adzuna")
+    run = _rank(_profile(), [agg, board])
+    assert len(run.matches) == 1 and run.matches[0].opportunity.source == "greenhouse"
+    assert run.excluded["duplicate"] == 1
+
+
+def test_education_and_interests_feed_preference_component():
+    edu = [ProfileEducation(institution="X", degree="B.E.", field_of_study="Computer Engineering")]
+    facts = svc.profile_facts(_profile(education=edu, interests=("payments",)))
+    score, items = svc.preference_score(facts, _job(title="Backend Engineer", description="Build payments infrastructure"))
+    assert score == 100 and {i.dimension for i in items} == {"education", "career_interests"}
+
+
+def test_no_target_role_still_matches_on_skills():
+    run = _rank(_profile(target=None), [_job(title="Platform Developer", skills=("Python", "PostgreSQL", "Docker"))])
+    assert len(run.matches) == 1
+
+
+def test_incomplete_profile_detected():
+    assert svc.profile_facts(_profile(skills=(), target=None)).is_complete is False
+
+
+def test_inactive_duplicate_never_shadows_active_copy():
+    run = _rank(_profile(), [_job(title="Backend Engineer", source="greenhouse", active=False),
+                             _job(title="Backend Engineer", source="adzuna")])
+    assert len(run.matches) == 1 and run.matches[0].opportunity.source == "adzuna"
+
+
+# ── Cybersecurity analyst profile (presentation-audit regressions) ──────────
+
+def _cyber_profile():
+    return _profile(
+        skills=("Cybersecurity Fundamentals", "Network Security", "Computer Networking", "Cryptography", "Linux",
+                "TCP/IP", "Wireshark", "Nmap"),
+        target="Cybersecurity Analyst", locations=("Pune",), project_tech=("DNS", "Networking Fundamentals."))
+
+
+def test_cybersecurity_analyst_profile_is_normalised():
+    facts = svc.profile_facts(_cyber_profile())
+    assert facts.target_roles == ["Security Analyst"]
+    assert {"security", "network_security", "networking", "cryptography", "linux", "wireshark", "nmap"} <= facts.skill_ids
+
+
+def test_infrastructure_and_generic_swe_roles_are_not_related_to_security_analyst():
+    jobs = [_job(title="Infrastructure Engineer", skills=("Linux", "Kubernetes", "Python")),
+            _job(title="Software Development Engineer Intern", skills=(), employment="internship", level="Intern")]
+    run = _rank(_cyber_profile(), jobs)
+    assert run.matches == [] and run.excluded["low_relevance"] == 2
+
+
+def test_security_roles_rank_for_cybersecurity_analyst():
+    soc = _job(title="SOC Analyst L1", skills=("Network Security", "SIEM", "Incident Response", "Wireshark"), level="Entry Level")
+    detection = _job(title="Threat Detection Engineer", skills=("Linux", "Network Security"), min_years=2, max_years=6)
+    infra = _job(title="Infrastructure Engineer", skills=("Linux",))
+    run = _rank(_cyber_profile(), [infra, detection, soc])
+    assert {m.opportunity.title for m in run.matches} == {"SOC Analyst L1", "Threat Detection Engineer"}
+    detection_match = next(m for m in run.matches if m.opportunity.title == "Threat Detection Engineer")
+    # The stated 2–6 year requirement is visible in the score and the reasons, not hidden.
+    assert detection_match.result.breakdown.experience_score == 50
+    assert any("2–6 years" in reason for reason in detection_match.reasons)
+
+
+def test_generic_analyst_word_is_not_a_role_match():
+    run = _rank(_cyber_profile(), [_job(title="Payments Analyst", skills=("SQL",))])
+    assert run.matches == []
+
+
+def test_industry_preference_with_multiple_parts_matches_any_part():
+    profile = _cyber_profile()
+    profile.career_preferences.preferred_industry = "Information Technology / Cybersecurity"
+    facts = svc.profile_facts(profile)
+    score, items = svc.preference_score(facts, _job(title="SOC Analyst", description="Protect us from cybersecurity threats"))
+    industry = next(i for i in items if i.dimension == "industry")
+    assert industry.matched is True

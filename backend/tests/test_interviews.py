@@ -171,6 +171,22 @@ class FakeModel:
                 ],
                 "coding_languages": [],
             }
+        if kind == "GeneratedFollowUp":
+            self.question_counter += 1
+            return {
+                "question_text": f"How would your solution behave if the input grew a hundredfold (variant {self.question_counter})?",
+                "interviewer_context": "Probing scalability of the submitted approach.",
+            }
+        if kind == "CodeReviewResult":
+            return {
+                "criteria": {"problem_solving": 80, "code_quality": 70, "efficiency": 90, "time_complexity": 80,
+                             "space_complexity": 60, "edge_cases": 50},
+                "summary": "A clear single-pass approach with readable names; edge cases need more care.",
+                "strengths": ["Single pass over the input"], "weaknesses": ["No guard for empty input"],
+                "improvements": ["Validate the input size first"], "alternative_approaches": ["Sort and use two pointers"],
+                "time_complexity": "O(n)", "space_complexity": "O(n)",
+                "missing_edge_cases": ["Empty input"], "recommendations": ["Add tests for boundary values"],
+            }
         raise AssertionError(f"unexpected schema {kind}")
 
     async def __call__(self, messages, schema, num_predict):
@@ -898,7 +914,7 @@ def test_aggregate_with_no_evaluations():
 def test_migration_head_and_schema():
     with engine.connect() as conn:
         version = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "021_practical_assessments"
+    assert version == "024_real_job_listings"
     inspector = sa.inspect(engine)
     tables = set(inspector.get_table_names())
     assert {"interview_sessions", "interview_questions", "interview_answers", "interview_reports"} <= tables
@@ -964,6 +980,8 @@ def test_report_waits_for_an_evaluation_still_running_in_another_request(user, m
     [
         (httpx.ReadTimeout("timed out"), ai.LLM_TIMEOUT, "busy with other requests"),
         (httpx.ConnectError("refused"), ai.LLM_UNAVAILABLE, "can't reach the AI model"),
+        (ConnectionError("Failed to connect to Ollama"), ai.LLM_UNAVAILABLE, "can't reach the AI model"),  # tunnel down
+        (__import__("ollama").ResponseError("model 'qwen3.8:27b' not found", 404), ai.MODEL_NOT_FOUND, "model isn't available"),
     ],
 )
 def test_first_question_transport_failures_are_categorised_and_persist_nothing(user, monkeypatch, error, category, phrase):

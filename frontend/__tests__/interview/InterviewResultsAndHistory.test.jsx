@@ -145,6 +145,57 @@ describe('InterviewResultsPage', () => {
     expect(screen.getByText(/8 of 8 tests passed \(/)).toBeInTheDocument();
   });
 
+  test('Phase 5 report: executive summary, separate dimensions, competencies and coding results', async () => {
+    const review = {
+      label: 'AI Code Review', status: 'COMPLETED', note: 'Correctness comes only from Judge0 execution; this review rates code quality and is not an execution result.',
+      quality_score: 75, compiled: true, can_retry: false, summary: 'Readable query; add an index on orders.customer_id.',
+      criteria: [{ id: 'efficiency', title: 'Algorithm efficiency', weight: 20, score: 60 }],
+      strengths: ['Correct LEFT JOIN'], weaknesses: [], improvements: [], alternative_approaches: [], time_complexity: 'O(n log n)',
+      space_complexity: 'O(n)', missing_edge_cases: [], recommendations: ['Index the join column'],
+    };
+    const coding = {
+      items: [
+        { question_order: 3, kind: 'sql', competency: 'SQL Queries', title: 'Customer Order Totals', difficulty: 'EASY',
+          language: 'SQLITE', language_label: 'SQL (SQLite 3.27.2)', verdict: 'WRONG_ANSWER', verdict_label: 'Wrong Answer',
+          tests_passed: 4, tests_total: 6, correctness_score: 66.7, quality_score: 75, coding_score: 69.2, max_time_seconds: 0.012,
+          max_memory_kb: 1800, submission_attempts: 2, review_status: 'COMPLETED', review },
+      ],
+      correctness_score: 67, quality_score: 75, coding_score: 69, reviews_pending: 0, reviews_failed: 0,
+    };
+    const sqlAnswer = { ...ANSWER, id: 'a3', question_id: 'q3', answer_text: 'SELECT name FROM customers;', score: 69 };
+    getInterview.mockResolvedValue({
+      ...INTERVIEW,
+      questions: [...INTERVIEW.questions, { id: 'q3', question_order: 3, question_text: 'SQL assessment: Totals', category: 'TECHNICAL', kind: 'sql', competency: 'SQL Queries', difficulty: 'INTERMEDIATE', created_at: '', answer: sqlAnswer }],
+    });
+    getInterviewReport.mockResolvedValue({
+      ...REPORT,
+      aggregates: {
+        ...REPORT.aggregates,
+        sections: { coding, practical: { reserved: 1, reached: 1, assessed: 1, score: 69, items: [] } },
+        dimensions: { technical_knowledge: 72, practical_assessment: 69, coding_correctness: 67, code_quality: 75, problem_solving: 60, communication: 70, behavioral: null },
+        competency_scores: [
+          { competency: 'SQL', category: 'TECHNICAL', score: 72, level: 'Solid', questions: 1, evaluated: 1, strengths: ['Correct idea'], improvements: ['Give an example'] },
+          { competency: 'Teamwork', category: 'BEHAVIORAL', score: null, level: null, questions: 1, evaluated: 0, strengths: [], improvements: [] },
+        ],
+      },
+    });
+    render(<InterviewResultsPage interviewId="iv-1" />);
+    expect(await screen.findByRole('heading', { name: 'Executive summary' })).toBeInTheDocument();
+    const dims = screen.getByLabelText('Evaluation dimensions');
+    expect(dims).toHaveTextContent('Coding correctness (Judge0)67/100');
+    expect(dims).toHaveTextContent('Code quality (AI review)75/100');
+    expect(dims).toHaveTextContent('BehavioralNot assessed'); // never shown as 0
+    expect(screen.getByLabelText('Competency analysis')).toHaveTextContent('72/100 · Solid');
+    expect(screen.getByText(/Not assessed in this interview: Teamwork/)).toBeInTheDocument();
+    const card = screen.getByRole('article', { name: 'Customer Order Totals' });
+    expect(card).toHaveTextContent('Judge0: Wrong Answer'); // execution verdict, separate from AI quality
+    expect(card).toHaveTextContent('Dialect: SQL (SQLite 3.27.2)');
+    expect(card).toHaveTextContent('4/6');
+    expect(card).toHaveTextContent('Combined69/100');
+    expect(card).toHaveTextContent('Attempts2');
+    expect(card).toHaveTextContent('Index the join column');
+  });
+
   test('generates a pending report automatically', async () => {
     getInterview.mockResolvedValue(INTERVIEW);
     getInterviewReport.mockResolvedValue({ ...REPORT, status: 'PENDING', narrative: null, overall_score: null, aggregates: null, can_retry: true });

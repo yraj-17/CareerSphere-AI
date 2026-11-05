@@ -59,6 +59,8 @@ class CareerMatchBreakdown(BaseModel):
     experience_match: ExperienceMatch
     location_match: LocationMatch
     preference_matches: List[PreferenceMatchItem]
+    # Plain-language, deterministic reasons for the score.
+    match_reasons: List[str] = []
 
 
 class CareerMatchResult(BaseModel):

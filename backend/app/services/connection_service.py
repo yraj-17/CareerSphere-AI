@@ -22,16 +22,58 @@ project.
 from __future__ import annotations
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
-from app.db.models import Connection, ConnectionStatus, User
+from app.db.models import Connection, ConnectionStatus, User, UserBlock
 from app.services import notification_service
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def is_networking_eligible_user(
+    user: User,
+    *,
+    require_discoverable: bool = True,
+) -> bool:
+    """Return whether a user may participate in people discovery.
+
+    The flags are explicit account metadata.  ``getattr`` defaults keep this
+    helper safe for transient SQLAlchemy objects created by older unit tests;
+    persisted rows are populated by migration 023.
+    """
+    if getattr(user, "is_active", True) is False:
+        return False
+    if getattr(user, "is_deleted", False) is True:
+        return False
+    if getattr(user, "is_test_account", False) is True:
+        return False
+    if getattr(user, "is_demo_account", False) is True:
+        return False
+    if getattr(user, "is_system_account", False) is True:
+        return False
+    if require_discoverable and getattr(user, "is_discoverable", True) is False:
+        return False
+    return True
+
+
+def users_are_blocked(db: Session, user_a_id: str, user_b_id: str) -> bool:
+    """Return true when either user has blocked the other."""
+    return (
+        db.query(UserBlock.id)
+        .filter(
+            or_(
+                (UserBlock.blocker_id == user_a_id) & (UserBlock.blocked_id == user_b_id),
+                (UserBlock.blocker_id == user_b_id) & (UserBlock.blocked_id == user_a_id),
+            )
+        )
+        .first()
+        is not None
+    )
 
 
 def _build_connection(requester: User, receiver: User) -> Connection:
@@ -87,6 +129,32 @@ def send_connection_request(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user cannot send a connection request to themselves.",
+        )
+
+    if not is_networking_eligible_user(requester, require_discoverable=False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is not eligible to send connection requests.",
+        )
+
+    if not is_networking_eligible_user(receiver, require_discoverable=False):
+        # Do not reveal whether a deactivated, deleted, test, demo, or system
+        # account exists to an arbitrary caller.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not available for connection requests.",
+        )
+
+    if getattr(receiver, "is_discoverable", True) is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This user does not accept connection requests.",
+        )
+
+    if users_are_blocked(db, requester.id, receiver.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Connection requests are unavailable between these users.",
         )
 
     # Check for any existing relationship between this pair before hitting the

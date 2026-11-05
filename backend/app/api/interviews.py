@@ -153,10 +153,16 @@ def save_draft(
 async def submit_answer(
     interview_id: str,
     payload: InterviewAnswerSubmitRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> AnswerSubmitResponse:
-    return await svc.submit_answer(db, current_user, interview_id, payload)
+    out = await svc.submit_answer(db, current_user, interview_id, payload)
+    question = next((q for q in out.interview.questions if q.id == payload.question_id), None)
+    if question is not None and question.kind in svc.FOLLOW_UP_KINDS and question.parent_question_id is None:
+        # Practical answers may get one follow-up (generated after the response; claim-guarded).
+        background_tasks.add_task(svc.generate_follow_up_task, interview_id, current_user.id, payload.question_id)
+    return out
 
 
 @router.post("/{interview_id}/answers/{answer_id}/evaluate", response_model=InterviewAnswerOut, summary="Retry a failed evaluation")

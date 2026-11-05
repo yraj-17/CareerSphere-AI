@@ -37,10 +37,12 @@ METHODOLOGY = (
     "behavioral: structure 30%, relevance 25%, clarity 25%, reflection 20%). The overall interview "
     "score is the mean of evaluated answer scores. Practical assessments are scored separately: "
     "calculations are auto-graded against values computed deterministically (Python ipaddress); "
-    "practical scenarios are AI-reviewed against a fixed rubric and are not executed; coding uses "
-    "70% weighted test results + 30% AI code review once the in-interview editor is enabled. Practical "
-    "slots with no verified assessment are reported but never scored. Unanswered or unevaluated "
-    "questions are excluded."
+    "practical scenarios are AI-reviewed against a fixed rubric and are not executed; coding and SQL "
+    "correctness comes only from weighted Judge0 test results, and the coding score is 70% correctness "
+    "+ 30% AI code-quality review (backend-weighted rubric), shown only when the review completed — "
+    "otherwise correctness alone is used and the review is marked pending or unavailable. Follow-up "
+    "answers are scored like conceptual answers under their parent's competency. Practical slots with "
+    "no verified assessment are reported but never scored. Unanswered or unevaluated questions are excluded."
 )
 
 
@@ -62,21 +64,72 @@ def answer_score(category: str, dimensions: dict[str, int]) -> int:
     return int(round(total))
 
 
-def _competency_scores(conceptual_rows: list[dict]) -> list[dict]:
-    """Role-specific competency breakdown, in the order competencies were asked."""
+def performance_level(score: Optional[int]) -> Optional[str]:
+    if score is None:
+        return None
+    if score >= 85:
+        return "Strong"
+    if score >= 70:
+        return "Solid"
+    if score >= 50:
+        return "Developing"
+    return "Needs significant work"
+
+
+def _unique(items, limit: int) -> list[str]:
+    seen: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.append(item)
+    return seen[:limit]
+
+
+def _competency_scores(rows: list[dict]) -> list[dict]:
+    """
+    Role-specific competency breakdown (competencies come from the role blueprint, including
+    validated custom-role competencies), in the order asked. Includes every assessed answer for
+    the competency: conceptual answers, follow-ups and practical work. Unassessed competencies
+    carry score None and are never shown as evaluated.
+    """
     groups: dict[tuple[str, str], list[dict]] = {}
-    for row in conceptual_rows:
+    for row in rows:
+        if not row.get("answered") and row.get("kind", "question") != "question":
+            continue  # an unanswered practical slot says nothing about the competency
         groups.setdefault((row["category"], row["competency"]), []).append(row)
-    return [
-        {
-            "competency": competency,
-            "category": category,
-            "score": _mean(r["score"] for r in items if r.get("score") is not None),
-            "questions": len(items),
-            "evaluated": sum(1 for r in items if r.get("score") is not None),
-        }
-        for (category, competency), items in groups.items()
-    ]
+    out = []
+    for (category, competency), items in groups.items():
+        scored = [r for r in items if r.get("score") is not None]
+        score = _mean(r["score"] for r in scored)
+        evaluations = [r.get("evaluation") or {} for r in scored]
+        out.append(
+            {
+                "competency": competency,
+                "category": category,
+                "score": score,
+                "level": performance_level(score),
+                "questions": len(items),
+                "evaluated": len(scored),
+                "strengths": _unique((s for e in evaluations for s in e.get("strengths", [])), 2),
+                "improvements": _unique((s for e in evaluations for s in e.get("improvements", [])), 2),
+            }
+        )
+    return out
+
+
+def _coding_section(rows: list[dict]) -> dict:
+    """Per coding/SQL question: Judge0 correctness and AI code quality, never merged silently."""
+    items = [row["coding"] for row in rows if row.get("coding")]
+    corr = [i["correctness_score"] for i in items if i.get("correctness_score") is not None]
+    quality = [i["quality_score"] for i in items if i.get("quality_score") is not None]
+    combined = [i["coding_score"] for i in items if i.get("coding_score") is not None]
+    return {
+        "items": items,
+        "correctness_score": _mean(round(v) for v in corr),
+        "quality_score": _mean(round(v) for v in quality),
+        "coding_score": _mean(round(v) for v in combined) if len(combined) == len(items) and items else None,
+        "reviews_pending": sum(1 for i in items if i.get("review_status") in ("PENDING", "RUNNING")),
+        "reviews_failed": sum(1 for i in items if i.get("review_status") == "FAILED"),
+    }
 
 
 def _practical_section(rows: list[dict], blueprint: Optional[dict], available: Iterable[str]) -> dict:
@@ -138,7 +191,7 @@ def aggregate(rows: list[dict], blueprint: Optional[dict] = None, available_prac
                answered: bool, score: int|None, dimensions: dict|None}
     Rows with kind != "question" are practical slots and are scored separately.
     """
-    conceptual = [row for row in rows if row.get("kind", "question") == "question"]
+    conceptual = [row for row in rows if row.get("kind", "question") == "question"]  # includes follow-ups
     evaluated = [row for row in conceptual if row.get("score") is not None]
 
     dimension_scores: dict[str, Optional[int]] = {}
@@ -183,6 +236,17 @@ def aggregate(rows: list[dict], blueprint: Optional[dict] = None, available_prac
         "communication": {"score": dimension_scores["clarity"]},
         "problem_solving": {"score": dimension_scores["reasoning"]},
         "practical": _practical_section(rows, blueprint, available_practical_kinds),
+        "coding": _coding_section(rows),
+    }
+    # Separate evaluation dimensions; None = not assessed in this interview (never shown as 0).
+    dimensions = {
+        "technical_knowledge": category_scores["TECHNICAL"],
+        "practical_assessment": sections["practical"]["score"],
+        "coding_correctness": sections["coding"]["correctness_score"],
+        "code_quality": sections["coding"]["quality_score"],
+        "problem_solving": dimension_scores["reasoning"],
+        "communication": dimension_scores["clarity"],
+        "behavioral": category_scores["BEHAVIORAL"],
     }
 
     return {
@@ -193,7 +257,12 @@ def aggregate(rows: list[dict], blueprint: Optional[dict] = None, available_prac
             "evaluated_count": len(evaluated),
             "dimension_scores": dimension_scores,
             "category_scores": category_scores,
-            "competency_scores": _competency_scores(conceptual),
+            "competency_scores": _competency_scores(rows),
+            "dimensions": dimensions,
+            "follow_ups": {
+                "asked": sum(1 for row in rows if row.get("parent_question_id")),
+                "answered": sum(1 for row in rows if row.get("parent_question_id") and row.get("answered")),
+            },
             "sections": sections,
             "strongest": [ref(row) for row in strongest],
             "weakest": [ref(row) for row in weakest],

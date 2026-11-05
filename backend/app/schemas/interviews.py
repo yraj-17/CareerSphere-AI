@@ -211,6 +211,12 @@ class AnswerEvaluationOut(BaseModel):
     language: Optional[str] = None
     language_label: Optional[str] = None
     submission_id: Optional[str] = None
+    # Coding/SQL: Judge0 correctness and AI code quality kept separate; coding_score
+    # (correctness x 0.70 + quality x 0.30) only once the AI review has completed.
+    correctness_score: Optional[float] = None
+    quality_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    review_status: Optional[str] = None
     strengths: list[str]
     improvements: list[str]
     feedback: str
@@ -251,6 +257,10 @@ class InterviewQuestionOut(BaseModel):
     # Practical slots: public view of the assigned assessment (scenario text, calculation
     # fields, problem reference) or {"available": false, "reason": ...}. Never answers.
     practical: Optional[dict] = None
+    # Follow-ups: the parent question this follow-up deepens (None for planned questions).
+    parent_question_id: Optional[str] = None
+    # On a parent: PENDING | CREATED | SKIPPED | FAILED (None when no follow-up was considered).
+    follow_up_state: Optional[str] = None
 
 
 class InterviewSessionSummary(BaseModel):
@@ -265,8 +275,10 @@ class InterviewSessionSummary(BaseModel):
     deadline_at: datetime
     completed_at: Optional[datetime] = None
     final_score: Optional[int] = None
-    question_count: int
-    answered_count: int
+    question_count: int  # planned questions prepared (follow-ups excluded)
+    answered_count: int  # planned questions answered (follow-ups excluded)
+    follow_up_count: int = 0
+    follow_up_answered_count: int = 0
     report_status: Optional[str] = None
 
 
@@ -284,6 +296,8 @@ class InterviewSessionOut(InterviewSessionSummary):
     current_position: Optional[int] = None
     # True while planned questions are still being prepared in the background.
     preparing: bool = False
+    # True while a follow-up question is being generated (clients poll until it appears).
+    follow_ups_pending: bool = False
 
 
 class InterviewListResponse(BaseModel):
@@ -323,6 +337,10 @@ class ReportAggregatesOut(BaseModel):
     category_scores: dict[str, Optional[int]]
     competency_scores: list[dict] = Field(default_factory=list)
     sections: dict = Field(default_factory=dict)
+    # Separate dimensions (technical knowledge, practical, coding correctness, code quality,
+    # problem solving, communication, behavioral); None = not assessed.
+    dimensions: dict = Field(default_factory=dict)
+    follow_ups: dict = Field(default_factory=dict)
     strongest: list[ReportQuestionRef]
     weakest: list[ReportQuestionRef]
     methodology: str
@@ -386,6 +404,10 @@ class GeneratedQuestion(BaseModel):
     @classmethod
     def collapse_whitespace(cls, value: str) -> str:
         return " ".join(value.split())
+
+
+class GeneratedFollowUp(GeneratedQuestion):
+    """A follow-up to a completed practical assessment (same shape; separate schema title)."""
 
 
 _Score = Field(..., ge=0, le=100)
@@ -549,7 +571,7 @@ MAX_DRAFT_META_BYTES = 512 * 1024
 
 
 class NavigateRequest(BaseModel):
-    position: int = Field(..., ge=1, le=12)
+    position: int = Field(..., ge=1, le=112)  # 1..12 planned; 101..112 follow-ups (100 + parent position)
     # Client sequence (e.g. a millisecond timestamp). A navigation older than the
     # stored one is ignored, so rapid clicks resolve to the latest.
     seq: int = Field(..., ge=1)

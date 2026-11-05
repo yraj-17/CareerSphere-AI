@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import AppChrome from '@/components/common/AppChrome';
+import { PresenceProvider } from '@/components/common/PresenceProvider';
 
 export const metadata = {
   title: 'CareerSphere AI - AI-Powered Career Platform',
@@ -13,7 +14,9 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-grid-pattern">
         <AuthProvider>
-          <AppChrome>{children}</AppChrome>
+          <PresenceProvider>
+            <AppChrome>{children}</AppChrome>
+          </PresenceProvider>
         </AuthProvider>
       </body>
     </html>

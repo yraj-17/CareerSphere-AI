@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.db.models import (
+    CodingSubmission,
     InterviewAIStatus,
     InterviewAnswer,
     InterviewDifficulty,
@@ -215,6 +216,15 @@ def _answered(session: InterviewSession) -> list[InterviewQuestion]:
     return [q for q in session.questions if q.answer is not None]
 
 
+def is_follow_up(question: InterviewQuestion) -> bool:
+    return question.parent_question_id is not None
+
+
+def _planned(session: InterviewSession) -> list[InterviewQuestion]:
+    """Blueprint questions only (follow-ups are extra and never count toward max_questions)."""
+    return [q for q in session.questions if not is_follow_up(q)]
+
+
 def _ensure_report_row(db: Session, session: InterviewSession) -> None:
     if session.report is None and _answered(session):
         session.report = InterviewReport(session_id=session.id, status=InterviewAIStatus.PENDING, attempts=0)
@@ -319,6 +329,8 @@ def _question_out(question: InterviewQuestion, report_completed: bool) -> Interv
         draft_revision=question.draft_revision or 0,
         draft_updated_at=question.draft_updated_at,
         practical=practicals.public_view(question),
+        parent_question_id=question.parent_question_id,
+        follow_up_state=question.follow_up_state,
     )
 
 
@@ -335,8 +347,10 @@ def _summary_fields(session: InterviewSession) -> dict:
         deadline_at=session.deadline_at,
         completed_at=session.completed_at,
         final_score=session.final_score,
-        question_count=len(session.questions),
-        answered_count=len(_answered(session)),
+        question_count=len(_planned(session)),
+        answered_count=sum(1 for q in _planned(session) if q.answer is not None),
+        follow_up_count=sum(1 for q in session.questions if is_follow_up(q)),
+        follow_up_answered_count=sum(1 for q in session.questions if is_follow_up(q) and q.answer is not None),
         report_status=session.report.status.value if session.report else None,
     )
 
@@ -363,6 +377,7 @@ def serialize_session(session: InterviewSession, now: Optional[datetime] = None)
         blueprint=session.blueprint,
         current_position=session.current_position,
         preparing=in_progress and remaining > 0 and bool(missing),
+        follow_ups_pending=in_progress and remaining > 0 and any(q.follow_up_state == FOLLOW_UP_PENDING for q in session.questions),
     )
 
 
@@ -635,6 +650,11 @@ GENERATION_FAILURES = {
         status.HTTP_503_SERVICE_UNAVAILABLE,
         "The AI interviewer can't reach the AI model right now. Nothing was saved — please try again shortly.",
     ),
+    ai.MODEL_NOT_FOUND: (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "The AI server is reachable but the configured interview model isn't available on it. Nothing was saved — "
+        "please contact the administrator.",
+    ),
     ai.INVALID_RESPONSE: (
         status.HTTP_502_BAD_GATEWAY,
         "The AI model returned a question that couldn't be read. Nothing was saved — please try again.",
@@ -847,6 +867,164 @@ def _insert_question(db: Session, session_id: str, row: InterviewQuestion) -> bo
 
 _PREPARE_LOCK_SECONDS = 600
 
+# ---------------------------------------------------------------------------
+# Follow-up questions: at most one per practical assessment, at most
+# INTERVIEW_MAX_FOLLOW_UPS per interview, inside the existing time (never extends it).
+# ---------------------------------------------------------------------------
+
+FOLLOW_UP_ORDER_OFFSET = 100  # follow-up order = 100 + parent order (outside blueprint positions 1..12)
+FOLLOW_UP_KINDS = frozenset({"coding", "sql", "calculation", "scenario"})
+FOLLOW_UP_PENDING, FOLLOW_UP_CREATED, FOLLOW_UP_SKIPPED, FOLLOW_UP_FAILED = "PENDING", "CREATED", "SKIPPED", "FAILED"
+
+
+def _follow_up_work(db: Session, parent: InterviewQuestion) -> tuple[str, str, str, Optional[str]]:
+    """(assessment title, brief, candidate work, execution facts) — public information only."""
+    from app.services import coding_service
+
+    spec = parent.practical if isinstance(parent.practical, dict) else {}
+    answer = parent.answer
+    if (parent.kind or "question") in practicals.EXECUTABLE_KINDS:
+        problem = parent.problem
+        submission_id = (answer.evaluation or {}).get("submission_id") if answer else None
+        submission = db.get(CodingSubmission, submission_id) if submission_id else None
+        brief = f"{problem.statement}\nConstraints: {problem.constraints}" if problem else ""
+        work = f"Language: {submission.language_label}\n{submission.source_code}" if submission else (answer.answer_text if answer else "")
+        facts = coding_service.execution_facts(submission) if submission else None
+        return (problem.title if problem else parent.question_text), brief, work, facts
+    if parent.kind == "scenario":
+        scenario = practicals.SCENARIO_BY_ID.get(spec.get("scenario_id"))
+        brief = f"{scenario.context}\nTasks: {'; '.join(scenario.tasks)}" if scenario else ""
+        if scenario and scenario.stack:
+            brief += f"\nStack: {', '.join(scenario.stack)}"  # the scenario's own technologies are in scope
+        return (scenario.title if scenario else parent.question_text), brief, (answer.answer_text if answer else ""), None
+    if parent.kind == "calculation":
+        view = practicals.public_view(parent) or {}
+        return view.get("title", parent.question_text), view.get("prompt", ""), (answer.answer_text if answer else ""), None
+    return parent.question_text, "", (answer.answer_text if answer else ""), None
+
+
+def _claim_follow_up(db: Session, session_id: str, user_id: str, parent_id: str) -> Optional[str]:
+    """
+    Decide under a session row lock whether this parent gets a follow-up, and claim it.
+    Returns None when claimed, or the reason it was not.
+    """
+    session = (
+        db.query(InterviewSession)
+        .filter(InterviewSession.id == session_id, InterviewSession.user_id == user_id)
+        .with_for_update()
+        .first()
+    )
+    reason = None
+    parent = db.get(InterviewQuestion, parent_id)
+    if session is None or parent is None or parent.session_id != session_id:
+        reason = "not found"
+    elif settings.INTERVIEW_MAX_FOLLOW_UPS <= 0:
+        reason = "disabled"
+    elif parent.follow_up_state is not None:
+        reason = f"already {parent.follow_up_state.lower()}"
+    elif is_follow_up(parent) or (parent.kind or "question") not in FOLLOW_UP_KINDS or not _answerable(parent):
+        reason = "not a practical assessment"
+    elif parent.answer is None:
+        reason = "not answered"
+    elif _is_code(parent) and (parent.answer.evaluation or {}).get("verdict") != "ACCEPTED":
+        # A deeper follow-up only makes sense once the code works; the claim stays open so the
+        # first Accepted submission can trigger it.
+        reason = "no accepted submission yet"
+    elif session.status != InterviewStatus.IN_PROGRESS:
+        reason = "interview ended"
+    elif (_aware(session.deadline_at) - utcnow()).total_seconds() < settings.INTERVIEW_FOLLOW_UP_MIN_REMAINING_SECONDS:
+        reason = "not enough time left"
+    else:
+        used = (
+            db.query(func.count(InterviewQuestion.id))
+            .filter(
+                InterviewQuestion.session_id == session_id,
+                InterviewQuestion.follow_up_state.in_([FOLLOW_UP_PENDING, FOLLOW_UP_CREATED]),
+            )
+            .scalar()
+        )
+        if used >= settings.INTERVIEW_MAX_FOLLOW_UPS:
+            reason = "follow-up limit reached"
+    if reason is None:
+        parent.follow_up_state = FOLLOW_UP_PENDING
+    db.commit()  # releases the session lock
+    return reason
+
+
+async def create_follow_up(db: Session, session_id: str, user_id: str, parent_id: str) -> Optional[InterviewQuestion]:
+    reason = _claim_follow_up(db, session_id, user_id, parent_id)
+    if reason is not None:
+        logger.info("[Interview] no follow-up for question %s: %s", parent_id, reason)
+        return None
+    db.expire_all()
+    session = _session_query(db).filter(InterviewSession.id == session_id).first()
+    parent = next(q for q in session.questions if q.id == parent_id)
+    role = blueprints.role_from_blueprint(session.blueprint)
+    title, brief, work, facts = _follow_up_work(db, parent)
+    remaining = max(0, int((_aware(session.deadline_at) - utcnow()).total_seconds()))
+    slot = blueprints.slot_at(session.blueprint, parent.question_order) or {}
+    competency = blueprints.competency_detail(session.blueprint, slot.get("competency_id", "")) or {}
+    # Technologies the assessment or the candidate's own work introduced are fair game for a follow-up;
+    # anything else from another role is still rejected.
+    allowed_context = [parent.competency, competency.get("description", ""), title, brief, work]
+    try:
+        generated = await ai.generate_follow_up(
+            role_title=role.title,
+            role_summary=role.summary,
+            competency=parent.competency,
+            difficulty=session.difficulty.value,
+            assessment_kind=parent.kind,
+            assessment_title=title,
+            assessment_brief=brief,
+            candidate_work=work,
+            execution_facts=facts,
+            remaining_minutes=remaining // 60,
+            previous_questions=[q.question_text for q in session.questions],
+            off_role_check=lambda text: roles.off_role_terms(text, role, allowed_context),
+        )
+    except ai.InterviewAIError as exc:
+        parent.follow_up_state = FOLLOW_UP_FAILED
+        db.commit()
+        logger.warning("[Interview] follow-up generation for %s failed (%s)", parent_id, exc.category)
+        return None
+    db.refresh(session)
+    if session.status != InterviewStatus.IN_PROGRESS or utcnow() >= _aware(session.deadline_at):
+        parent.follow_up_state = FOLLOW_UP_SKIPPED  # never add questions after the interview ended
+        db.commit()
+        return None
+    row = InterviewQuestion(
+        session_id=session.id,
+        question_order=FOLLOW_UP_ORDER_OFFSET + parent.question_order,
+        question_text=generated.question_text,
+        category=parent.category,
+        kind="question",
+        competency=parent.competency,
+        difficulty=parent.difficulty,
+        interviewer_context=generated.interviewer_context or f"Follow-up to question {parent.question_order}.",
+        parent_question_id=parent.id,
+    )
+    db.add(row)
+    parent.follow_up_state = FOLLOW_UP_CREATED
+    try:
+        db.commit()
+    except IntegrityError:  # unique parent / order: a follow-up already exists
+        db.rollback()
+        return None
+    logger.info("[Interview] follow-up created for question %s", parent_id)
+    return row
+
+
+async def generate_follow_up_task(session_id: str, user_id: str, parent_id: str) -> None:
+    """Background task (own DB session) scheduled after a practical answer or code submission."""
+    db = SessionLocal()
+    try:
+        await create_follow_up(db, session_id, user_id, parent_id)
+    except Exception:  # noqa: BLE001 — a follow-up must never break the interview
+        logger.exception("[Interview] follow-up task failed for question %s", parent_id)
+        db.rollback()
+    finally:
+        db.close()
+
 
 async def prepare_remaining_questions(session_id: str, user_id: str) -> None:
     """
@@ -945,7 +1123,7 @@ def navigate(db: Session, user: User, interview_id: str, position: int, seq: int
     """
     session = _get_owned_session(db, user, interview_id)
     _require_in_progress(session)
-    if position > session.max_questions:
+    if position > session.max_questions and not any(q.question_order == position and is_follow_up(q) for q in session.questions):
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, f"This interview has {session.max_questions} questions.")
 
     db.execute(
@@ -1301,7 +1479,51 @@ def _practical_difficulty(q: InterviewQuestion) -> Optional[dict]:
     return practicals.difficulty_view(spec)
 
 
-def _report_rows(session: InterviewSession) -> list[dict]:
+def _coding_snapshot(db: Session, q: InterviewQuestion) -> Optional[dict]:
+    """
+    Report snapshot of a coding/SQL question: Judge0 execution facts and the AI code review,
+    kept separate. Built only from the recorded (latest completed) submission.
+    """
+    from app.services import coding_service
+
+    a = q.answer
+    if (q.kind or "question") not in practicals.EXECUTABLE_KINDS or a is None:
+        return None
+    ev = a.evaluation or {}
+    submission = db.get(CodingSubmission, ev.get("submission_id")) if ev.get("submission_id") else None
+    if submission is None:
+        return None
+    problem = q.problem
+    review = coding_service.review_out(submission)
+    attempts = (
+        db.query(func.count(CodingSubmission.id))
+        .filter(CodingSubmission.question_id == q.id, CodingSubmission.submission_type == "SUBMIT")
+        .scalar()
+    )
+    return {
+        "question_order": q.question_order,
+        "kind": q.kind,
+        "competency": q.competency,
+        "title": problem.title if problem else q.question_text,
+        "difficulty": problem.difficulty if problem else None,
+        "language": submission.language,
+        "language_label": submission.language_label,  # e.g. "SQL (SQLite 3.27.2)" — the dialect actually used
+        "verdict": submission.verdict,
+        "verdict_label": ev.get("verdict_label"),
+        "tests_passed": submission.tests_passed,
+        "tests_total": submission.tests_total,
+        "correctness_score": submission.correctness_score,
+        "quality_score": submission.ai_quality_score if submission.ai_review_status == "COMPLETED" else None,
+        "coding_score": coding_service.coding_score_of(submission),
+        "max_time_seconds": submission.max_time_seconds,
+        "max_memory_kb": submission.max_memory_kb,
+        "submission_attempts": attempts,
+        "review_status": submission.ai_review_status,
+        "review": review.model_dump(mode="json") if review is not None else None,
+    }
+
+
+def _report_rows(session: InterviewSession, db: Optional[Session] = None) -> list[dict]:
     rows = []
     for q in session.questions:
         a = q.answer
@@ -1310,6 +1532,7 @@ def _report_rows(session: InterviewSession) -> list[dict]:
             {
                 "question_id": q.id,
                 "question_order": q.question_order,
+                "parent_question_id": q.parent_question_id,
                 "competency": q.competency,
                 "category": q.category,
                 "kind": q.kind or "question",
@@ -1328,6 +1551,7 @@ def _report_rows(session: InterviewSession) -> list[dict]:
                 "score": a.score if evaluated else None,
                 "dimensions": (a.evaluation or {}).get("dimensions") if evaluated else None,
                 "evaluation": a.evaluation if evaluated else None,
+                "coding": _coding_snapshot(db, q) if db is not None else None,
             }
         )
     return rows
@@ -1366,6 +1590,7 @@ async def generate_report(db: Session, user: User, interview_id: str) -> Intervi
     from app.services import coding_service
 
     await coding_service.settle_pending_submissions(db, session.id)
+    await coding_service.settle_pending_reviews(db, session.id)
 
     # Give unevaluated answers one more bounded attempt so the report covers as much as possible.
     for question in session.questions:
@@ -1379,7 +1604,7 @@ async def generate_report(db: Session, user: User, interview_id: str) -> Intervi
     db.expire_all()
     session = _session_query(db).filter(InterviewSession.id == interview_id).first()
     report = session.report
-    rows = _report_rows(session)
+    rows = _report_rows(session, db)
     computed = scoring.aggregate(rows, blueprint=session.blueprint, available_practical_kinds=AVAILABLE_PRACTICAL_KINDS)
 
     # Persist deterministic results first so they survive a narrative failure.

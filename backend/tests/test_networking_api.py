@@ -75,7 +75,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import or_
 
-from app.db.models import Connection, User
+from app.db.models import Connection, User, UserBlock
 from app.db.session import Base, SessionLocal, engine
 from app.db.redis_client import redis_client
 from app.core.config import settings
@@ -151,6 +151,18 @@ def _cleanup_users(*emails: str) -> None:
             ).delete(synchronize_session=False)
             db.query(User).filter(User.id.in_(ids)).delete(synchronize_session=False)
             db.commit()
+    finally:
+        db.close()
+
+
+def _set_user_flags(user_id: str, **flags: bool) -> None:
+    """Set explicit account/privacy metadata for eligibility tests."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).one()
+        for field, value in flags.items():
+            setattr(user, field, value)
+        db.commit()
     finally:
         db.close()
 
@@ -722,7 +734,7 @@ def test_discover_users_no_sensitive_fields(user_a, user_b):
 
 
 # ===========================================================================
-# 30. Discovery — connection status correctly attached
+# 30. Discovery — only request-eligible users are returned
 # ===========================================================================
 
 
@@ -738,7 +750,7 @@ def test_discover_users_connection_status_none(user_a, user_b):
     assert found["connection_status"] == "none"
 
 
-def test_discover_users_connection_status_pending(pending_connection):
+def test_discover_users_excludes_pending_connection(pending_connection):
     conn_id, user_a, user_b = pending_connection
     res = client.get(
         "/api/networking/users",
@@ -746,12 +758,10 @@ def test_discover_users_connection_status_pending(pending_connection):
         headers=user_a["headers"],
     )
     users = res.json()["users"]
-    found = next((u for u in users if u["id"] == user_b["user_id"]), None)
-    assert found is not None
-    assert found["connection_status"] == "pending"
+    assert not any(u["id"] == user_b["user_id"] for u in users)
 
 
-def test_discover_users_connection_status_accepted(accepted_connection):
+def test_discover_users_excludes_accepted_connection(accepted_connection):
     conn_id, user_a, user_b = accepted_connection
     res = client.get(
         "/api/networking/users",
@@ -759,9 +769,84 @@ def test_discover_users_connection_status_accepted(accepted_connection):
         headers=user_a["headers"],
     )
     users = res.json()["users"]
-    found = next((u for u in users if u["id"] == user_b["user_id"]), None)
-    assert found is not None
-    assert found["connection_status"] == "accepted"
+    assert not any(u["id"] == user_b["user_id"] for u in users)
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "is_test_account",
+        "is_demo_account",
+        "is_system_account",
+        "is_active",
+        "is_deleted",
+        "is_discoverable",
+    ],
+)
+def test_discover_users_excludes_ineligible_account(user_a, user_b, flag):
+    _set_user_flags(
+        user_b["user_id"],
+        **{flag: False if flag in {"is_active", "is_discoverable"} else True},
+    )
+
+    res = client.get(
+        "/api/networking/users",
+        params={"q": user_b["username"]},
+        headers=user_a["headers"],
+    )
+
+    assert res.status_code == 200
+    assert user_b["user_id"] not in {u["id"] for u in res.json()["users"]}
+
+
+def test_discover_users_excludes_blocked_account(user_a, user_b):
+    db = SessionLocal()
+    try:
+        db.add(UserBlock(blocker_id=user_a["user_id"], blocked_id=user_b["user_id"]))
+        db.commit()
+    finally:
+        db.close()
+
+    res = client.get(
+        "/api/networking/users",
+        params={"q": user_b["username"]},
+        headers=user_a["headers"],
+    )
+
+    assert res.status_code == 200
+    assert user_b["user_id"] not in {u["id"] for u in res.json()["users"]}
+
+
+def test_connection_request_rejects_ineligible_account(user_a, user_b):
+    _set_user_flags(user_b["user_id"], is_test_account=True)
+
+    res = _send_request(user_a["headers"], user_b["user_id"])
+
+    assert res.status_code == 404
+    assert "not available" in res.json()["detail"].lower()
+
+
+def test_connection_request_rejects_private_account(user_a, user_b):
+    _set_user_flags(user_b["user_id"], is_discoverable=False)
+
+    res = _send_request(user_a["headers"], user_b["user_id"])
+
+    assert res.status_code == 403
+    assert "does not accept" in res.json()["detail"].lower()
+
+
+def test_connection_request_rejects_blocked_account(user_a, user_b):
+    db = SessionLocal()
+    try:
+        db.add(UserBlock(blocker_id=user_b["user_id"], blocked_id=user_a["user_id"]))
+        db.commit()
+    finally:
+        db.close()
+
+    res = _send_request(user_a["headers"], user_b["user_id"])
+
+    assert res.status_code == 403
+    assert "unavailable" in res.json()["detail"].lower()
 
 
 # ===========================================================================

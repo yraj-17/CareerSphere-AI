@@ -6,6 +6,7 @@ import { AlertCircle, AlertTriangle, ArrowLeft, Loader2, PlayCircle, RotateCcw }
 import { extractErrorMessage, generateInterviewReport, getInterview, getInterviewReport } from '@/services/api';
 import AnswerFeedback, { ScoreBar } from '@/components/interview/AnswerFeedback';
 import { levelLabel } from '@/components/interview/PracticalTask';
+import { CodingResults, CompetencyAnalysis, DimensionGrid, ExecutiveSummary, questionLabel } from '@/components/interview/ReportSections';
 import {
   DIMENSION_LABELS,
   PRACTICAL_METHOD_LABELS,
@@ -173,6 +174,7 @@ export default function InterviewResultsPage({ interviewId }) {
         </div>
       ) : (
         <>
+          <ExecutiveSummary interview={interview} report={report} aggregates={aggregates} statusLabel={meta.label} />
           <section className="surface-card grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]" aria-labelledby="overall-heading">
             <div>
               <h2 id="overall-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -237,6 +239,9 @@ export default function InterviewResultsPage({ interviewId }) {
           {aggregates?.sections && (
             <section className="surface-card space-y-5" aria-labelledby="sections-heading">
               <h2 id="sections-heading" className="text-base font-semibold">Assessment breakdown</h2>
+              {aggregates.dimensions && Object.keys(aggregates.dimensions).length > 0 ? (
+                <DimensionGrid dimensions={aggregates.dimensions} />
+              ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   ['Conceptual knowledge', aggregates.sections.conceptual],
@@ -255,6 +260,7 @@ export default function InterviewResultsPage({ interviewId }) {
                     </div>
                   ))}
               </div>
+              )}
 
               {aggregates.sections.practical?.reserved > 0 && (
                 <div aria-labelledby="practical-heading">
@@ -291,20 +297,11 @@ export default function InterviewResultsPage({ interviewId }) {
                 </div>
               )}
 
-              {aggregates.competency_scores?.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Role competencies</h3>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {aggregates.competency_scores
-                      .filter((item) => item.score !== null && item.score !== undefined)
-                      .map((item) => (
-                        <ScoreBar key={`${item.category}-${item.competency}`} label={item.competency} value={item.score} />
-                      ))}
-                  </div>
-                </div>
-              )}
+              {aggregates.competency_scores?.length > 0 && <CompetencyAnalysis competencies={aggregates.competency_scores} />}
             </section>
           )}
+
+          <CodingResults coding={aggregates?.sections?.coding} questions={interview.questions} />
 
           <section className="surface-card space-y-5" aria-labelledby="summary-heading">
             <h2 id="summary-heading" className="text-base font-semibold">Performance summary</h2>
@@ -391,7 +388,7 @@ export default function InterviewResultsPage({ interviewId }) {
               <summary className="flex cursor-pointer items-start justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Question {question.question_order} · {categoryLabel(question.category)} · {question.competency}
+                    {questionLabel(question)} · {categoryLabel(question.category)} · {question.competency}
                   </span>
                   <span className="mt-1 block text-sm font-medium text-slate-900">{question.question_text}</span>
                 </span>

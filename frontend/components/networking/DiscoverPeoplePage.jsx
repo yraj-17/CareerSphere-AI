@@ -9,8 +9,8 @@
  * Features:
  *   - Debounced search (name / username)
  *   - Responsive 1 / 2 / 3-column grid
- *   - Connection status per card (none / pending / accepted / rejected / cancelled)
- *   - Optimistic UI on Connect (card updates instantly, reverts on error)
+ *   - Request-eligible people only (the backend removes existing relationships)
+ *   - Refreshes recommendations after Connect and reverts on error
  *   - Load More (append-only, hides when no more results)
  *   - Loading skeletons, empty state, error state with retry
  *   - Toast-style inline feedback
@@ -122,12 +122,12 @@ function EmptyState({ query }) {
       </div>
       <div className="space-y-1">
         <h2 className="text-lg font-bold text-white">
-          {query ? 'No professionals found' : 'No people to discover yet'}
+          {query ? 'No professionals found' : 'No new people to discover yet.'}
         </h2>
         <p className="text-sm text-slate-400 max-w-xs leading-relaxed">
           {query
             ? `No results for "${query}". Try a different name or username.`
-            : 'Check back later as more people join CareerSphere AI.'}
+            : 'Check back later as more eligible CareerSphere AI members join.'}
         </p>
       </div>
     </div>
@@ -176,7 +176,15 @@ export default function DiscoverPeoplePage() {
     try {
       const data = await getNetworkingUsers({ q, limit: PAGE_SIZE, offset: off });
       setTotal(data.total ?? 0);
-      setUsers((prev) => (append ? [...prev, ...data.users] : data.users));
+      setUsers((prev) => {
+        const incoming = Array.isArray(data.users) ? data.users : [];
+        if (!append) return incoming;
+
+        // The API is paginated and ordered, but de-duplicate defensively in
+        // case a row changes state between two page requests.
+        const seen = new Set(prev.map((user) => user.id));
+        return [...prev, ...incoming.filter((user) => user?.id && !seen.has(user.id))];
+      });
       setError(null);
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -225,6 +233,15 @@ export default function DiscoverPeoplePage() {
     try {
       await sendConnectionRequest(userId);
       showToast('Connection request sent!', 'success');
+
+      // A successful request makes this person ineligible for discovery. Ask
+      // the backend for a fresh page so the list reflects the authoritative
+      // relationship state, and remove the card immediately while it loads.
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setOffset(0);
+      await fetchUsers(debouncedQuery, 0, false);
+      // Keep a stale response from re-introducing the just-requested user.
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch (err) {
       const status = err?.response?.status;
       let msg;
@@ -251,7 +268,7 @@ export default function DiscoverPeoplePage() {
         return next;
       });
     }
-  }, [showToast]);
+  }, [debouncedQuery, fetchUsers, showToast]);
 
   // ── Search input clear ────────────────────────────────────────────────────────
 

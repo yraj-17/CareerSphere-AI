@@ -43,6 +43,9 @@ import {
 } from '@/components/interview/interviewConstants';
 
 const AUTOSAVE_DELAY_MS = 800;
+// Follow-ups use question_order = 100 + parent position (backend FOLLOW_UP_ORDER_OFFSET).
+const FOLLOW_UP_ORDER_OFFSET = 100;
+const isFollowUpQuestion = (q) => Boolean(q?.parent_question_id);
 const CODE_AUTOSAVE_DELAY_MS = 1200;
 const PREPARING_POLL_MS = 2500;
 
@@ -287,9 +290,9 @@ export default function InterviewRoom({ interviewId }) {
     return () => window.clearInterval(timer);
   }, [inProgress]);
 
-  // While planned questions are still being prepared, refresh periodically.
+  // While planned questions or a follow-up are still being prepared, refresh periodically.
   useEffect(() => {
-    if (!inProgress || !interview?.preparing) return undefined;
+    if (!inProgress || !(interview?.preparing || interview?.follow_ups_pending)) return undefined;
     const timer = window.setTimeout(() => {
       refresh().catch(() => {});
     }, PREPARING_POLL_MS);
@@ -307,6 +310,15 @@ export default function InterviewRoom({ interviewId }) {
     return map;
   }, [interview]);
   const selected = position ? questionsByPosition[position] : null;
+  const sequence = useMemo(() => {
+    const order = [];
+    for (let n = 1; n <= total; n += 1) {
+      order.push(n);
+      if (questionsByPosition[FOLLOW_UP_ORDER_OFFSET + n]) order.push(FOLLOW_UP_ORDER_OFFSET + n);
+    }
+    return order;
+  }, [questionsByPosition, total]);
+  const sequenceIndex = sequence.indexOf(position);
 
   // ---------------------------------------------------------------------------
   // Drafts: local first, autosaved to the server; the highest revision wins there.
@@ -386,7 +398,7 @@ export default function InterviewRoom({ interviewId }) {
 
   const goTo = useCallback(
     (target) => {
-      if (!interview || target < 1 || target > total) return;
+      if (!interview || target < 1 || (target > total && !questionsByPosition[target])) return;
       if (selected?.id) persistDraft(selected.id);
       speech.stop();
       setSubmitError('');
@@ -400,7 +412,7 @@ export default function InterviewRoom({ interviewId }) {
         })
         .catch(() => {});
     },
-    [applyInterview, inProgress, interview, interviewId, nextSeq, persistDraft, selected, speech, total]
+    [applyInterview, inProgress, interview, interviewId, nextSeq, persistDraft, questionsByPosition, selected, speech, total]
   );
 
   // Record the restored position as visited once the room opens.
@@ -522,7 +534,7 @@ export default function InterviewRoom({ interviewId }) {
     const open = answerable.filter((q) => !q.answer);
     return {
       answered: answered.length,
-      unanswered: open.length + Math.max(0, total - questions.length),
+      unanswered: open.length + Math.max(0, total - questions.filter((q) => !isFollowUpQuestion(q)).length),
       drafts: open.filter((q) => statusOf(q) === 'IN_PROGRESS'),
       unansweredQuestions: open.filter((q) => statusOf(q) !== 'IN_PROGRESS'),
     };
@@ -568,7 +580,7 @@ export default function InterviewRoom({ interviewId }) {
   const draft = selected ? drafts[selected.id] : null;
   const draftText = draft?.text || '';
   const overLimit = draftText.length > DEFAULT_MAX_ANSWER_LENGTH;
-  const isLast = position === total;
+  const isLast = sequenceIndex === sequence.length - 1;
   const plannedSlot = interview.blueprint?.question_slots?.[(position || 1) - 1];
 
   const isCode = isCodeQuestion(selected) && selected?.assessment_available !== false;
@@ -616,7 +628,7 @@ export default function InterviewRoom({ interviewId }) {
       <section className="surface-card space-y-3 p-4 sm:p-5" aria-label="Question navigator">
         <div className="flex justify-between text-xs font-medium text-[var(--text-secondary)]">
           <span>
-            Question {position} of {total}
+            {position > FOLLOW_UP_ORDER_OFFSET ? `Follow-up to question ${position - FOLLOW_UP_ORDER_OFFSET}` : `Question ${position} of ${total}`}
           </span>
           <span>
             {interview.answered_count} of {total} answered
@@ -633,23 +645,26 @@ export default function InterviewRoom({ interviewId }) {
           <div className="h-full rounded-full bg-[var(--brand-navy)] transition-all" style={{ width: `${progressPct}%` }} />
         </div>
         <ol className="flex flex-wrap gap-2" aria-label="Questions">
-          {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
+          {sequence.map((n) => {
             const status = statusOf(questionsByPosition[n]);
             const meta = QUESTION_STATUS[status] || QUESTION_STATUS.NOT_STARTED;
             const current = n === position;
+            const followUp = n > FOLLOW_UP_ORDER_OFFSET;
+            const label = followUp ? `${n - FOLLOW_UP_ORDER_OFFSET}a` : String(n);
+            const name = followUp ? `Follow-up to question ${n - FOLLOW_UP_ORDER_OFFSET}` : `Question ${n}`;
             return (
               <li key={n}>
                 <button
                   type="button"
                   onClick={() => goTo(n)}
                   aria-current={current ? 'step' : undefined}
-                  aria-label={`Question ${n}, ${meta.label}`}
-                  title={`Question ${n}: ${meta.label}`}
+                  aria-label={`${name}, ${meta.label}`}
+                  title={`${name}: ${meta.label}`}
                   className={`flex h-10 min-w-10 items-center justify-center rounded-lg border px-2 text-sm font-semibold transition-colors ${meta.className} ${
                     current ? 'ring-2 ring-brand-500 ring-offset-2' : 'hover:border-brand-400'
-                  }`}
+                  } ${followUp ? 'border-dashed' : ''}`}
                 >
-                  {n}
+                  {label}
                 </button>
               </li>
             );
@@ -698,7 +713,7 @@ export default function InterviewRoom({ interviewId }) {
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p id="question-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Question {selected.question_order} ·{' '}
+                  {isFollowUpQuestion(selected) ? `Follow-up to question ${selected.question_order - FOLLOW_UP_ORDER_OFFSET}` : `Question ${selected.question_order}`} ·{' '}
                   {selected.assessment_available === false ? slotKindLabel(selected.kind) : categoryLabel(selected.category)} · {selected.competency}
                 </p>
                 <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${QUESTION_STATUS[statusOf(selected)].className}`}>
@@ -856,12 +871,12 @@ export default function InterviewRoom({ interviewId }) {
         )}
 
         <nav className="flex items-center justify-between gap-2 border-t border-slate-100 pt-4" aria-label="Question navigation">
-          <button type="button" onClick={() => goTo(position - 1)} disabled={position <= 1} className="btn-outline">
+          <button type="button" onClick={() => goTo(sequence[sequenceIndex - 1])} disabled={sequenceIndex <= 0} className="btn-outline">
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             Previous question
           </button>
           <span className="hidden text-xs text-slate-500 sm:inline">
-            {position} / {total}
+            {sequenceIndex + 1} / {sequence.length}
           </span>
           {isLast ? (
             <div className="flex gap-2">
@@ -874,7 +889,7 @@ export default function InterviewRoom({ interviewId }) {
               </button>
             </div>
           ) : (
-            <button type="button" onClick={() => goTo(position + 1)} disabled={position >= total} className="btn-outline">
+            <button type="button" onClick={() => goTo(sequence[sequenceIndex + 1])} disabled={sequenceIndex >= sequence.length - 1} className="btn-outline">
               Next question
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>

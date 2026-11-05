@@ -11,12 +11,14 @@ import {
   parseSqlRows,
   toneOf,
 } from '@/components/interview/coding/codingUtils';
+import CodeReviewPanel, { ReviewStatusLine } from '@/components/interview/coding/CodeReviewPanel';
 
 export const RESULT_TABS = [
   { id: 'tests', label: 'Test Cases' },
   { id: 'custom', label: 'Custom Input' },
   { id: 'output', label: 'Output' },
   { id: 'compile', label: 'Compilation' },
+  { id: 'review', label: 'AI Code Review' },
   { id: 'history', label: 'Submission History' },
 ];
 
@@ -184,6 +186,8 @@ export default function ResultsPanel({
   onRefreshHistory,
   onSelectHistory,
   onCheckStatus,
+  onRetryReview,
+  retryingReview,
 }) {
   const submission = view.submission;
   const pending = view.phase === 'sending' || view.phase === 'reconnecting' || isPending(submission);
@@ -242,6 +246,7 @@ export default function ResultsPanel({
           ) : (
             <>
               <VerdictBanner submission={submission} />
+              <ReviewStatusLine submission={submission} onOpen={() => onTab('review')} />
               <ul className="space-y-2" aria-label="Test case results">
                 {results.map((result) => (
                   <TestRow key={`${result.kind}-${result.ordinal}`} result={result} sql={sql} />
@@ -314,6 +319,8 @@ export default function ResultsPanel({
               {submission.status === 'FAILED' ? 'The code was not executed.' : `No compiler messages (${submission.language_label}).`}
             </p>
           ))}
+
+        {tab === 'review' && <CodeReviewPanel submission={pending ? null : submission} onRetry={onRetryReview} retrying={retryingReview} />}
 
         {tab === 'history' && (
           <div className="space-y-2">

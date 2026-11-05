@@ -75,6 +75,7 @@ jest.mock('@/services/api', () => ({
   submitCode: jest.fn(),
   getCodingSubmission: jest.fn(),
   listCodingSubmissions: jest.fn(),
+  retryCodeReview: jest.fn(),
 }));
 
 import { loader } from '@monaco-editor/react';
@@ -85,6 +86,7 @@ import {
   getInterview,
   listCodingSubmissions,
   navigateInterview,
+  retryCodeReview,
   runCode,
   saveInterviewDraft,
   submitCode,
@@ -679,12 +681,17 @@ test('the interview timer keeps running while moving between coding and other qu
 test('an answered coding question shows its recorded Judge0 result and stays editable for resubmission', async () => {
   const answer = {
     id: 'a1', question_id: 'q1', answer_text: 'print(2)', answer_source: 'TEXT', submitted_at: '2026-11-04T10:00:00Z',
-    evaluation_status: 'COMPLETED', score: 100, can_retry_evaluation: false,
-    evaluation: { score: 100, method: 'judge0', verdict: 'ACCEPTED', verdict_label: 'Accepted', correct: 7, total: 7, language_label: 'Python (3.8.1)', strengths: [], improvements: [], feedback: '', key_points: [] },
+    evaluation_status: 'COMPLETED', score: 92, can_retry_evaluation: false,
+    evaluation: {
+      score: 92, method: 'judge0', verdict: 'ACCEPTED', verdict_label: 'Accepted', correct: 7, total: 7, language_label: 'Python (3.8.1)',
+      correctness_score: 100, review_status: 'COMPLETED', quality_score: 75, coding_score: 92.5,
+      strengths: [], improvements: [], feedback: '', key_points: [],
+    },
   };
   setupRoom(interview([codingQ(1, { status: 'ANSWERED', answer, draft_meta: { language: 'PYTHON', code: { PYTHON: 'print(2)' }, edited: true } })]));
   await screen.findByLabelText('Code editor');
-  expect(screen.getByText(/Recorded answer:/)).toHaveTextContent('Accepted · 7/7 tests · score 100/100');
+  // Judge0 correctness, AI quality and the combined score are shown separately.
+  expect(screen.getByText(/Recorded answer:/)).toHaveTextContent('Accepted · 7/7 tests · correctness 100/100 · AI code quality 75/100 · combined 93/100');
   expect(editor()).toHaveValue('print(2)');
   expect(screen.getByRole('button', { name: /submit solution/i })).toBeEnabled();
 });
@@ -703,4 +710,84 @@ test('calculation and scenario questions never show the code editor', async () =
   expect(screen.getByLabelText('Your answer')).toBeInTheDocument();
   expect(screen.queryByLabelText('Code editor')).not.toBeInTheDocument();
   expect(getCodingProblem).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------- Phase 5: AI Code Review + follow-ups
+
+const REVIEW_DONE = {
+  label: 'AI Code Review', status: 'COMPLETED', note: 'Correctness comes only from Judge0 execution; this review rates code quality and is not an execution result.',
+  quality_score: 75, compiled: true, can_retry: false, summary: 'A clear single-pass approach.',
+  criteria: [
+    { id: 'problem_solving', title: 'Problem-solving approach', weight: 25, score: 80 },
+    { id: 'code_quality', title: 'Code quality and readability', weight: 20, score: 70 },
+  ],
+  strengths: ['Single pass'], weaknesses: ['No empty-input guard'], improvements: ['Validate input'], alternative_approaches: ['Two pointers'],
+  time_complexity: 'O(n)', space_complexity: 'O(n)', missing_edge_cases: ['Empty input'], recommendations: ['Add boundary tests'],
+};
+
+test('the Judge0 verdict shows immediately and the AI review loads independently', async () => {
+  jest.useFakeTimers();
+  const pending = submission({ submission_type: 'SUBMIT', verdict: 'WRONG_ANSWER', verdict_label: 'Wrong Answer', tests_passed: 1, tests_total: 2,
+    correctness_score: 40, ai_review: { label: 'AI Code Review', status: 'PENDING', note: 'n', criteria: [], compiled: true } , coding_score: null });
+  submitCode.mockResolvedValue(pending);
+  getCodingSubmission.mockResolvedValue({ ...pending, ai_review: REVIEW_DONE, coding_score: 50.5 });
+  const onSubmissionComplete = jest.fn();
+  renderWorkspace({ onSubmissionComplete });
+  await screen.findByLabelText('Code editor');
+  typeCode('print(0)');
+  fireEvent.click(screen.getByRole('button', { name: /submit solution/i }));
+  expect(await screen.findByText(/reviewing your code/i)).toBeInTheDocument();
+  expect(screen.getAllByText('Wrong Answer').length).toBeGreaterThan(0); // execution result is already final
+  await act(async () => {
+    jest.advanceTimersByTime(4000);
+  });
+  expect(await screen.findByText(/Code quality 75\/100/)).toBeInTheDocument();
+  expect(screen.getByText(/combined coding score 51\/100/)).toBeInTheDocument();
+  expect(screen.getAllByText('Wrong Answer').length).toBeGreaterThan(0); // the review never changes the verdict
+  fireEvent.click(screen.getByRole('button', { name: 'View review' }));
+  const panel = screen.getByRole('region', { name: 'AI Code Review' });
+  expect(within(panel).getByText('Problem-solving approach')).toBeInTheDocument();
+  expect(within(panel).getAllByText('O(n)', { selector: 'dd' })).toHaveLength(2); // time and space (AI estimates)
+  expect(within(panel).getByText(/not an execution result/)).toBeInTheDocument();
+  expect(onSubmissionComplete).toHaveBeenCalledTimes(2); // verdict, then review (refreshes the recorded answer)
+});
+
+test('a failed review is labelled unavailable and can be retried', async () => {
+  const failed = submission({ submission_type: 'SUBMIT', ai_review: { label: 'AI Code Review', status: 'FAILED', note: 'n', criteria: [], compiled: true, can_retry: true }, coding_score: null });
+  submitCode.mockResolvedValue(failed);
+  retryCodeReview.mockResolvedValue({ ...failed, ai_review: REVIEW_DONE, coding_score: 92.5 });
+  renderWorkspace();
+  await screen.findByLabelText('Code editor');
+  typeCode('print(2)');
+  fireEvent.click(screen.getByRole('button', { name: /submit solution/i }));
+  expect(await screen.findByText(/unavailable — correctness from Judge0/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'AI Code Review' }));
+  expect(screen.getByText(/uses Judge0 correctness only/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /retry review/i }));
+  await waitFor(() => expect(retryCodeReview).toHaveBeenCalledWith('iv-1', 's1'));
+  expect(await screen.findByText('A clear single-pass approach.')).toBeInTheDocument();
+});
+
+test('a follow-up appears right after its parent in the navigator and in Previous/Next order', async () => {
+  const follow = q(102, {
+    id: 'f2', parent_question_id: 'q2', question_text: 'How would your solution behave with a hundredfold larger input?',
+    competency: 'Data Structures', interviewer_context: 'Probing scalability.',
+  });
+  const data = interview([q(1), codingQ(2, { follow_up_state: 'CREATED' }), q(3), follow]);
+  data.max_questions = 3; // the follow-up is extra to the planned questions
+  data.blueprint.question_slots = data.blueprint.question_slots.filter((slot) => slot.position <= 3);
+  data.follow_up_count = 1;
+  setupRoom(data);
+  await screen.findByText('Question 1?');
+  const chips = within(screen.getByRole('list', { name: 'Questions' })).getAllByRole('button').map((b) => b.textContent);
+  expect(chips).toEqual(['1', '2', '2a', '3']);
+  fireEvent.click(screen.getByRole('button', { name: /next question/i }));
+  await screen.findByLabelText('Code editor');
+  fireEvent.click(screen.getByRole('button', { name: /next question/i }));
+  expect(await screen.findByText('How would your solution behave with a hundredfold larger input?')).toBeInTheDocument();
+  expect(screen.getAllByText(/Follow-up to question 2/).length).toBeGreaterThan(0);
+  expect(screen.getByLabelText('Your answer')).toBeInTheDocument(); // answered in writing
+  expect(navigateInterview).toHaveBeenLastCalledWith('iv-1', 102, expect.any(Number));
+  fireEvent.click(screen.getByRole('button', { name: /next question/i }));
+  expect(await screen.findByText('Question 3?')).toBeInTheDocument();
 });

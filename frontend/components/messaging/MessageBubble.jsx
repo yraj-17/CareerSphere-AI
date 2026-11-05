@@ -62,16 +62,16 @@ function ReplyPreview({ replyTo, isMine, onScrollTo }) {
         mb-1.5 px-2.5 py-1.5 rounded-xl text-left w-full max-w-full
         border-l-2 transition-colors
         ${isMine
-          ? 'bg-white/15 border-white/30 hover:bg-white/20'
+          ? 'bg-[#ffffff1f] border-[#ffffff4d] hover:bg-[#ffffff2e]'
           : 'bg-brand-50 border-brand-200 hover:bg-brand-100'
         }
       `}
     >
-      <p className={`mb-0.5 text-[10px] font-semibold ${isMine ? 'text-white/75' : 'text-brand-700'}`}>
+      <p className={`mb-0.5 text-[10px] font-semibold ${isMine ? 'chat-inverse' : 'text-brand-700'}`}>
         <Reply className="h-2.5 w-2.5 inline mr-1" />
         Replied to message
       </p>
-      <p className={`truncate text-[11px] ${isMine ? 'text-white/80' : 'text-slate-600'} ${isDeleted ? 'italic' : ''}`}>
+      <p className={`truncate text-[11px] ${isMine ? 'chat-inverse' : 'text-slate-600'} ${isDeleted ? 'italic' : ''}`}>
         {preview}
       </p>
     </button>

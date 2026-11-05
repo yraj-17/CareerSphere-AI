@@ -56,6 +56,7 @@ def _new_user(tag: str) -> User:
         username=f"msgsvc_{tag}_{uid[:8]}",
         email=f"msgsvc_{uid}@example.com",
         password_hash="hashed",
+        is_test_account=True,
     )
 
 

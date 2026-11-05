@@ -32,7 +32,7 @@ def _json_list(raw: Optional[str]) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def matching_input_fingerprint(profile: Profile) -> str:
+def matching_input_fingerprint(profile: Profile, extra: str = "") -> str:
     pref = profile.career_preferences
     payload: dict[str, Any] = {
         "profile": {
@@ -66,14 +66,16 @@ def matching_input_fingerprint(profile: Profile) -> str:
             "preferred_locations": _safe_list(_json_list(pref.preferred_locations if pref else None)),
             "career_interests": _safe_list(_json_list(pref.career_interests if pref else None)),
         },
-        "opportunity_dataset": "curated-v1",
+        # Job dataset version + request options (filters, page, AI) so a new
+        # sync or a different filter never serves a stale cached response.
+        "request": extra,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:24]
 
 
-def career_matching_cache_key(user_id: str, profile: Profile) -> str:
-    return f"{_PREFIX}:{user_id}:{matching_input_fingerprint(profile)}"
+def career_matching_cache_key(user_id: str, profile: Profile, extra: str = "") -> str:
+    return f"{_PREFIX}:{user_id}:{matching_input_fingerprint(profile, extra)}"
 
 
 def get_cached_career_matching(key: str) -> Optional[dict[str, Any]]:

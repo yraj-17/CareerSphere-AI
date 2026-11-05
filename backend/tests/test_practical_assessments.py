@@ -512,7 +512,9 @@ def test_network_interview_calculation_is_graded_deterministically(user, model, 
         res = client.post(url, json={"question_id": question["id"], "structured_answer": answers}, headers=user["headers"])
         assert res.status_code == 201, res.text
         answer = res.json()["answer"]
-        assert answer["evaluation_status"] == "COMPLETED" and len(model.calls) == calls_before  # no model call
+        grading_calls = [c for c in model.calls[calls_before:] if c["kind"] != "GeneratedFollowUp"]
+        assert answer["evaluation_status"] == "COMPLETED" and grading_calls == []  # graded with no model call
+        # (the only model call afterwards is the separate follow-up question, generated in the background)
         ev = answer["evaluation"]
         assert ev["method"] == "deterministic" and ev["total"] == len(expected) and ev["correct"] == len(expected) - 1
         assert answer["score"] == round(100 * (len(expected) - 1) / len(expected))
@@ -551,7 +553,7 @@ def test_devops_scenario_is_ai_reviewed_against_its_rubric(user, model, no_bank)
         assert answer["score"] == 100 - rubric[0]["points"] // 2
         assert [c["id"] for c in ev["criteria"]] == [c["id"] for c in rubric]
         assert ev.get("verdict") is None and ev.get("submission_id") is None and "tests_passed" not in json.dumps(ev)  # no fake execution results
-        prompt = model.calls[-1]["messages"][1]["content"]
+        prompt = next(c for c in reversed(model.calls) if c["kind"] == "ScenarioEvaluation")["messages"][1]["content"]
         assert "RUBRIC:" in prompt and "<candidate_answer>" in prompt
     finally:
         _end(user, interview)

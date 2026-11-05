@@ -371,22 +371,28 @@ export const getSkillAnalysis = async (includeAI = true) => {
 };
 
 /**
- * Fetch the authenticated user's personalised career matches.
+ * Fetch the authenticated user's matches against real job listings.
  *
- * When includeAI is true (default), the backend runs Gemini reranking and
- * Qwen explanation generation — both can be slow.  A generous client timeout
- * is set so the request is not aborted mid-pipeline.
+ * Scores are deterministic and fast. Set includeAI to also annotate the top
+ * results with Gemini rerank notes and Qwen explanations (slow: generous timeout).
  *
  * The backend derives the current user from the JWT — do NOT send user_id,
  * profile_id, or any profile data from the frontend.
  *
- * @param {boolean} includeAI - Include Gemini reranking and Qwen AI explanations.
- * @returns {Promise<import('./api').CareerMatchingAPIResponse>}
+ * @param {object} options
+ * @param {boolean} [options.includeAI=false]
+ * @param {number} [options.page=1]
+ * @param {number} [options.pageSize=10]
+ * @param {{location?: string, work_mode?: string, employment_type?: string, experience?: string, source?: string}} [options.filters]
  */
-export const getCareerMatching = async (includeAI = true) => {
+export const getCareerMatching = async ({ includeAI = false, page = 1, pageSize = 10, filters = {} } = {}) => {
+  const params = { include_ai: includeAI, page, page_size: pageSize };
+  Object.entries(filters || {}).forEach(([key, value]) => {
+    if (value) params[key] = value;
+  });
   const response = await apiClient.get('/api/career-matching/me', {
-    params: { include_ai: includeAI },
-    timeout: CAREER_MATCHING_TIMEOUT_MS,
+    params,
+    timeout: includeAI ? CAREER_MATCHING_TIMEOUT_MS : 60000,
   });
   return response.data;
 };
@@ -1195,6 +1201,14 @@ export const transcribeInterviewAudio = async (interviewId, audioBlob) => {
   const response = await apiClient.post(`/api/interviews/${interviewId}/transcribe`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: INTERVIEW_TRANSCRIBE_TIMEOUT_MS,
+  });
+  return response.data;
+};
+
+// AI Code Review: run or retry the review of a completed submission (code quality only).
+export const retryCodeReview = async (interviewId, submissionId) => {
+  const response = await apiClient.post(`/api/interviews/${interviewId}/coding-submissions/${submissionId}/review`, null, {
+    timeout: 300000,
   });
   return response.data;
 };

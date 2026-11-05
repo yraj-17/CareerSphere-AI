@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # (OLLAMA_TIMEOUT_SECONDS) instead of being the shortest one (was 120 s).
     OLLAMA_INTERVIEW_TIMEOUT_SECONDS: float = 240.0
     INTERVIEW_AI_MAX_CONCURRENCY: int = 2
+    # Follow-up questions after practical assessments: extra to the planned question count,
+    # inside the existing interview time (the timer is never extended). 0 disables them.
+    INTERVIEW_MAX_FOLLOW_UPS: int = 2
+    INTERVIEW_FOLLOW_UP_MIN_REMAINING_SECONDS: int = 180
     # Answers that reach the backend within this window after the deadline are
     # still accepted (covers request latency); later submissions are rejected.
     INTERVIEW_SUBMISSION_GRACE_SECONDS: int = 15
@@ -120,6 +124,48 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_RERANK_TIMEOUT_SECONDS: float = 20.0
     CAREER_MATCHING_CACHE_TTL_SECONDS: int = 900
+
+    # ── Real job listings (Career Matching) ─────────────────────────────────
+    # Backend-only. Credentials are never returned by any endpoint.
+    # Company boards are "slug=Display Name" pairs separated by commas; every slug
+    # must be a real, publicly published board (verify before adding one).
+    JOB_GREENHOUSE_BOARDS: str = ""
+    JOB_LEVER_BOARDS: str = ""
+    JOB_ASHBY_BOARDS: str = ""
+    # Only listings whose location mentions one of these keywords (case-insensitive)
+    # are imported from company boards; empty = import every listing. Remote
+    # listings open to India/APAC/worldwide are kept by the same keyword test.
+    JOB_SYNC_LOCATION_KEYWORDS: str = (
+        "india,bengaluru,bangalore,mumbai,pune,hyderabad,chennai,delhi,new delhi,"
+        "gurgaon,gurugram,noida,kolkata,ahmedabad,jaipur,kochi,coimbatore,indore,chandigarh"
+    )
+    # Remote listings without a country restriction ("Remote", "Worldwide",
+    # "Anywhere") are also imported when this is true.
+    JOB_SYNC_INCLUDE_GLOBAL_REMOTE: bool = True
+    # Automatic synchronisation runs inside the API process (asyncio task) and
+    # uses a Redis lock so only one instance syncs at a time.
+    JOB_SYNC_ENABLED: bool = True
+    JOB_SYNC_INTERVAL_MINUTES: int = 360
+    JOB_SYNC_ON_STARTUP: bool = True
+    JOB_SYNC_HTTP_TIMEOUT_SECONDS: float = 30.0
+    JOB_SYNC_MAX_LISTINGS_PER_SOURCE: int = 1500
+    # Aggregator listings (Adzuna/Remotive) without an explicit expiry are
+    # treated as inactive after this many days since posting.
+    JOB_LISTING_MAX_AGE_DAYS: int = 45
+    # Adzuna (requires a free developer account + a licence for commercial use).
+    ADZUNA_APP_ID: str = ""
+    ADZUNA_APP_KEY: str = ""
+    ADZUNA_COUNTRY: str = "in"
+    ADZUNA_QUERIES: str = "software developer,python developer,data analyst,devops engineer,frontend developer"
+    ADZUNA_MAX_PAGES: int = 2
+    # Remotive's public API terms forbid showing its listings to collect sign-ups,
+    # and Career Matching is behind login, so it stays off until the operator has
+    # Remotive's written permission (or its paid API).
+    REMOTIVE_ENABLED: bool = False
+    REMOTIVE_CATEGORIES: str = "software-dev,data,devops"
+    # Comma-separated e-mail addresses allowed to use admin endpoints
+    # (manual job sync, provider status).
+    ADMIN_EMAILS: str = ""
 
 
     # LanguageTool (grammar / writing assistant — not the AI model)
